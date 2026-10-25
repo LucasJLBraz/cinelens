@@ -23,7 +23,7 @@ const PARECIDOS: usize = 12;
 /// Notas at least this high count as loved for the reason line.
 const LOVED: f32 = 4.0;
 /// Movies named in the reason line, at most.
-const PORQUE: usize = 2;
+const PORQUE_MAX: usize = 2;
 /// Stars a movie with a person the owner is fã of gains in the ranking.
 // ponytail: flat boost whatever the person's role; weigh director above cast if it feels off.
 const FA_BOOST: f32 = 1.0;
@@ -141,6 +141,11 @@ struct Person {
 }
 
 impl Movie {
+    /// Directors, cast and composers.
+    fn people(&self) -> impl Iterator<Item = &Person> {
+        self.directors.iter().chain(&self.cast).chain(&self.composers)
+    }
+
     /// `g<genre id>`, `d<director id>`, `c<cast member id>`, `l<original language>`: the keys of
     /// the content mapping in the model.
     // ponytail: no TMDB keywords (the catalog job does not fetch them) nor synopsis words; add
@@ -434,7 +439,7 @@ impl Core {
             Some(model) => {
                 let profile = model.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days);
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
-                    if self.owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty()) {
+                    if self.rated(m.tmdb_id) {
                         None
                     } else {
                         item.as_ref()
@@ -444,8 +449,7 @@ impl Core {
                 previstas.collect()
             }
         };
-        let hidden = |i: usize| self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id);
-        let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !hidden(i)).collect();
+        let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !self.dispensado(i)).collect();
         // Stable: the rest keep catálogo order, after the recomendações.
         para_voce.sort_by(|&a, &b| {
             let key = |i: usize| if self.recomendavel(i) { self.ranking(i) } else { f32::NEG_INFINITY };
@@ -459,14 +463,23 @@ impl Core {
     /// A recomendação: predicted, neither já vi nor não me interessa.
     fn recomendavel(&self, i: usize) -> bool {
         let id = self.movies[i].tmdb_id;
-        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.owner.nao_me_interessa.contains(&id)
+        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.dispensado(i)
+    }
+
+    /// Marked não me interessa.
+    fn dispensado(&self, i: usize) -> bool {
+        self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id)
+    }
+
+    fn rated(&self, tmdb_id: u32) -> bool {
+        self.owner.notas.get(&tmdb_id).is_some_and(|h| !h.is_empty())
     }
 
     /// What recomendações are ranked by: the nota prevista, plus a boost for a person the owner
     /// is fã of. Only for movies with a nota prevista.
     fn ranking(&self, i: usize) -> f32 {
         let m = &self.movies[i];
-        let fa = m.directors.iter().chain(&m.cast).chain(&m.composers).any(|p| self.owner.fas.contains(&p.id));
+        let fa = m.people().any(|p| self.owner.fas.contains(&p.id));
         self.previstas[i].map_or(0.0, |(p, _)| p) + if fa { FA_BOOST } else { 0.0 }
     }
 
@@ -487,9 +500,11 @@ impl Core {
         let mut found: Vec<usize> = (0..self.movies.len())
             .filter(|&i| {
                 let m = &self.movies[i];
-                let person = m.directors.iter().chain(&m.cast).chain(&m.composers).find(|p| p.id == person_id);
-                name = name.take().or(person.map(|p| p.name.clone()));
-                person.is_some() && !self.owner.nao_me_interessa.contains(&m.tmdb_id)
+                let person = m.people().find(|p| p.id == person_id);
+                if name.is_none() {
+                    name = person.map(|p| p.name.clone());
+                }
+                person.is_some() && !self.dispensado(i)
             })
             .collect();
         let key = |i: usize| {
@@ -524,7 +539,7 @@ impl Core {
         }
     }
 
-    /// The featured pick of Início: the top recomendação not set aside with agora não.
+    /// The destaque, Início's featured pick: the top recomendação not set aside with agora não.
     // ponytail: always the top one; rotate among the top few if the owner sees the same pick too often.
     pub fn destaque(&self, at: i64) -> Option<MovieCard> {
         let set_aside = |i: usize| self.owner.agora_nao.get(&self.movies[i].tmdb_id).is_some_and(|&until| at < until);
@@ -658,16 +673,16 @@ impl Core {
         })
     }
 
-    /// Item-item: the movies whose factors are most like this one's, weighed by confiança so
+    /// Item-item among movies with collaborative factors: those most like this one's, weighed by confiança so
     /// sparsely rated movies do not crowd the top. Not those marked não me interessa.
     fn parecidos(&self, i: usize) -> Vec<MovieCard> {
-        let Some(item) = &self.items[i] else { return Vec::new() };
+        let Some(item) = self.items[i].as_ref().filter(|item| item.collaborative) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = self
             .items
             .iter()
             .enumerate()
-            .filter(|&(j, _)| j != i && !self.owner.nao_me_interessa.contains(&self.movies[j].tmdb_id))
-            .filter_map(|(j, other)| Some((item.similarity(other.as_ref()?) * other.as_ref()?.confianca, j)))
+            .filter(|&(j, _)| j != i && !self.dispensado(j))
+            .filter_map(|(j, other)| other.as_ref().filter(|o| o.collaborative).map(|o| (item.similarity(o) * o.confianca, j)))
             .collect();
         let n = PARECIDOS.min(scored.len());
         if n == 0 {
@@ -694,7 +709,7 @@ impl Core {
             })
             .collect();
         loved.sort_by(|a, b| b.0.total_cmp(&a.0));
-        loved.into_iter().take(PORQUE).map(|(_, j)| self.movies[j].title.clone()).collect()
+        loved.into_iter().take(PORQUE_MAX).map(|(_, j)| self.movies[j].title.clone()).collect()
     }
 
     pub fn owner_data(&self) -> Vec<u8> {
@@ -729,8 +744,7 @@ impl Core {
         let matcher = filtro::Matcher::new(filtro);
         let passes = |&i: &usize| matcher.passes(self, i);
         let mut found: Vec<usize> = if filtro.nao_me_interessa {
-            let dismissed = |&i: &usize| self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id);
-            (0..self.movies.len()).filter(dismissed).filter(passes).collect()
+            (0..self.movies.len()).filter(|&i| self.dispensado(i)).filter(passes).collect()
         } else {
             self.para_voce.iter().copied().filter(passes).collect()
         };

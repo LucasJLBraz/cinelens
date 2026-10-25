@@ -156,3 +156,26 @@ fn marks_survive_a_restart() {
     assert_eq!(restarted.destaque(300).map(|m| m.tmdb_id), core.destaque(300).map(|m| m.tmdb_id));
     assert_eq!(prevista(&restarted, 693134), prevista(&core, 693134));
 }
+
+#[test]
+fn dismissing_a_widely_disliked_movie_still_counts_against_its_kind() {
+    let catalog = br#"{"format_version": 1, "data_version": "t", "movies": [
+        {"tmdb_id": 1, "title": "A", "original_title": "A", "year": 2000, "poster_path": null},
+        {"tmdb_id": 2, "title": "B", "original_title": "B", "year": 2000, "poster_path": null},
+        {"tmdb_id": 3, "title": "C", "original_title": "C", "year": 2000, "poster_path": null}
+    ]}"#;
+    // 2 is like 3, and most people dislike it.
+    let model = br#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [], "movies": [
+        {"tmdb_id": 1, "bias": 0.0, "factors": [0.0, 1.0], "ratings": 50000},
+        {"tmdb_id": 2, "bias": -1.5, "factors": [1.0, 0.0], "ratings": 50000},
+        {"tmdb_id": 3, "bias": 0.0, "factors": [1.0, 0.1], "ratings": 50000}
+    ]}"#;
+    let mut core = Core::open(catalog).unwrap();
+    core.load_model(model).unwrap();
+    core.rate(1, 4.0, 100).unwrap();
+    let before = prevista(&core, 3);
+
+    core.marcar(2, Marca::NaoMeInteressa, true, 200);
+
+    assert!(prevista(&core, 3) < before, "{} vs {before}", prevista(&core, 3));
+}

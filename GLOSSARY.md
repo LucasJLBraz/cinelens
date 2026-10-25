@@ -64,8 +64,12 @@ _Avoid_: assistido, visto
 A permanent mark hiding a movie from recomendações, counted as a weak negative signal.
 _Avoid_: ocultar, agora não
 
+**Destaque** (Featured pick):
+The single movie shown at the top of Início: the best recomendação not set aside with agora não.
+_Avoid_: top pick, hero
+
 **Agora não** (Not now):
-A mark that keeps a movie out of the featured pick of Início for a few weeks; it hides it nowhere else and teaches nothing about taste.
+A mark that keeps a movie out of the destaque for a few weeks; it hides it nowhere else and teaches nothing about taste.
 _Avoid_: adiar, não me interessa
 
 **Para rever** (Rewatch list):

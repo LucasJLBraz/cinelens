@@ -49,7 +49,7 @@
     #filme-fundo img { display: block; width: calc(100% + 32px); margin: calc(-1 * max(16px, env(safe-area-inset-top))) -16px -48px; aspect-ratio: 16 / 9; object-fit: cover; mask-image: linear-gradient(#000 50%, transparent); }
     #filme-fundo:empty { height: 48px; }
     .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
-    #previsao { margin-top: 8px; }
+    #nota-prevista { margin-top: 8px; }
     #sinopse { margin: 16px 0 0; line-height: 1.5; }
     .fileira { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; }
     .fileira .movie { flex: none; width: 104px; }
@@ -138,7 +138,7 @@
             <option value="">Qualquer</option><option>3</option><option>3.5</option><option>4</option><option>4.5</option></select></label>
           <label>Confiança mínima <select data-campo="confianca_min" data-tipo="num">
             <option value="">Qualquer</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="0.7">70%</option></select></label>
-          <label>Avaliados <select data-campo="avaliados"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
+          <label>Com nota <select data-campo="com_nota"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Já vi <select data-campo="ja_vi"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Quero assistir <select data-campo="quero_assistir"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Não me interessa <select data-campo="nao_me_interessa" data-tipo="bool"><option value="">Esconder</option><option value="1">Só estes</option></select></label>
@@ -164,7 +164,7 @@
         <h1 id="filme-title"></h1>
         <div id="filme-original" class="original"></div>
         <div id="filme-meta" class="meta"></div>
-        <div id="previsao">
+        <div id="nota-prevista">
           <div id="filme-exibicao" class="exibicao"></div>
           <div id="porque" class="meta"></div>
         </div>
@@ -188,7 +188,7 @@
         </div>
       </details>
     </div>
-    <div id="avaliar" hidden>
+    <div id="painel-nota" hidden>
       <div id="notas"></div>
       <p id="revelacao" hidden></p>
     </div>
@@ -308,7 +308,10 @@
       if (mine !== generation) return;
       grid.append(...result.movies.map(card));
       more.hidden = !result.has_more;
-      document.getElementById('vazio').hidden = page > 0 || result.movies.length > 0;
+      const vazio = document.getElementById('vazio');
+      vazio.hidden = page > 0 || result.movies.length > 0;
+      vazio.textContent = filtro.no_meu_streaming
+        ? 'Nenhum filme com esses filtros nos serviços escolhidos em Ajustes.' : 'Nenhum filme com esses filtros.';
       page += 1;
     }
 
@@ -361,7 +364,7 @@
       reloadGrid();
     }
 
-    for (const el of campos) el.addEventListener(el.type === 'search' || el.type === 'range' ? 'input' : 'change', applyFiltro);
+    for (const el of campos) el.addEventListener(['search', 'range', 'number'].includes(el.type) ? 'input' : 'change', applyFiltro);
     duracaoEl.addEventListener('change', applyFiltro);
     document.getElementById('streaming').addEventListener('click', e => { e.target.classList.toggle('on'); applyFiltro(); });
     document.getElementById('mais-filtros').addEventListener('click', e => {
@@ -528,13 +531,13 @@
       document.getElementById('elenco').replaceChildren(...pessoas(m.elenco));
       const trailer = document.getElementById('trailer');
       trailer.hidden = !m.trailer_youtube;
-      trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${m.trailer_youtube}`);
+      trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
     }
 
     function closeRating() {
-      document.getElementById('avaliar').hidden = true;
+      document.getElementById('painel-nota').hidden = true;
       document.getElementById('revelacao').hidden = true;
-      document.getElementById('previsao').hidden = false;
+      document.getElementById('nota-prevista').hidden = false;
     }
 
     async function openMovie(id, push = true) {
@@ -582,9 +585,9 @@
     document.getElementById('back').addEventListener('click', () => history.back());
     document.getElementById('dar-nota').addEventListener('click', () => {
       // The rating screen never shows the prediction, so it cannot anchor the nota.
-      const avaliar = document.getElementById('avaliar');
-      avaliar.hidden = !avaliar.hidden;
-      document.getElementById('previsao').hidden = !avaliar.hidden;
+      const painelNota = document.getElementById('painel-nota');
+      painelNota.hidden = !painelNota.hidden;
+      document.getElementById('nota-prevista').hidden = !painelNota.hidden;
     });
     document.getElementById('ver-historico').addEventListener('click', () => {
       const historico = document.getElementById('nota-history');
@@ -652,7 +655,7 @@
       const [m, revealed] = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
       stale = true;
       if (m) showMovie(m);
-      document.getElementById('previsao').hidden = false;
+      document.getElementById('nota-prevista').hidden = false;
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
       if (revealed) revelacao.textContent = `O app achava: ${exibicaoText(revealed)}`;

@@ -55,8 +55,8 @@ const CONFIANCA_RATINGS: f32 = 100.0;
 /// a collaborative one does.
 const CONTENT_CONFIANCA: f32 = 0.3;
 
-/// A movie the owner marked não me interessa counts as a nota this far below what they usually
-/// give it (relative to their mean and its bias)...
+/// A movie the owner marked não me interessa counts as a nota this far below what they would
+/// usually give it (their mean plus its bias)...
 const NEGATIVE_OFFSET: f32 = 1.0;
 /// ...weighing this much of a nota: a weak signal.
 // ponytail: fixed offset and weight; tune against held-out notas if dismissals skew the ranking.
@@ -68,6 +68,8 @@ pub(crate) struct Item {
     bias: f32,
     factors: Vec<f32>,
     pub confianca: f32,
+    /// Factors learned from who rated it, not guessed from its content.
+    pub collaborative: bool,
 }
 
 impl Item {
@@ -82,7 +84,7 @@ impl Item {
     fn collaborative(m: MovieFactors) -> Item {
         let n = m.ratings as f32;
         let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
-        Item { bias: m.bias, factors: m.factors, confianca }
+        Item { bias: m.bias, factors: m.factors, confianca, collaborative: true }
     }
 }
 
@@ -151,7 +153,7 @@ impl Model {
         });
         let negatives = negatives.iter().filter(|id| !notas.contains_key(id)).filter_map(|id| {
             let item = self.movies.get(id)?;
-            Some((item.factors.as_slice(), -NEGATIVE_OFFSET - item.bias, NEGATIVE_WEIGHT))
+            Some((item.factors.as_slice(), -NEGATIVE_OFFSET, NEGATIVE_WEIGHT))
         });
         let rows = rows.chain(negatives);
         Profile { mean, factors: weighted_ridge(rows, self.dim, self.lambda) }
@@ -178,6 +180,7 @@ impl Model {
             bias: mapped.iter().map(|(b, _)| b).sum::<f32>() / k,
             factors,
             confianca: CONTENT_CONFIANCA * k / features.len() as f32,
+            collaborative: false,
         })
     }
 

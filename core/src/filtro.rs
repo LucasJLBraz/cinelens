@@ -35,7 +35,8 @@ pub struct Filtro {
     pub pais: Option<String>,
     pub nota_prevista_min: Option<f32>,
     pub confianca_min: Option<f32>,
-    pub avaliados: Mostrar,
+    /// Movies the owner gave a nota.
+    pub com_nota: Mostrar,
     pub ja_vi: Mostrar,
     pub quero_assistir: Mostrar,
     /// Only the movies marked não me interessa (hidden otherwise), so they can be restored.
@@ -76,7 +77,7 @@ impl<'a> Matcher<'a> {
             (min.is_none() && max.is_none()) || v.is_some_and(|v| min.is_none_or(|min| v >= min) && max.is_none_or(|max| v <= max))
         };
         let previsto = core.previstas[i];
-        let rated = owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty());
+        let rated = core.rated(m.tmdb_id);
         let shown = |mostrar: Mostrar, marked: bool| match mostrar {
             Mostrar::Todos => true,
             Mostrar::Esconder => !marked,
@@ -91,7 +92,7 @@ impl<'a> Matcher<'a> {
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
-            && shown(f.avaliados, rated)
+            && shown(f.com_nota, rated)
             && shown(f.ja_vi, owner.ja_vi.contains(&m.tmdb_id))
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.tmdb_id))
             && (!f.no_meu_streaming
@@ -102,12 +103,15 @@ impl<'a> Matcher<'a> {
 
 /// What search looks in: the titles and people's names, folded.
 pub(crate) fn searchable(m: &Movie) -> String {
+    // Composers are not searched: owners look up who directed or acted.
     let people = m.directors.iter().chain(&m.cast).map(|p| p.name.as_str());
     let texts: Vec<&str> = [m.title.as_str(), m.original_title.as_str()].into_iter().chain(people).collect();
     fold(&texts.join("\n"))
 }
 
 /// Lowercase without accents, so "amelie" finds "Amélie".
+// ponytail: hand-written table for Portuguese, Spanish and French accents; misses ø, œ and the
+// like. Unicode normalization (a new dependency) if titles in other languages fail to match.
 fn fold(text: &str) -> String {
     text.chars()
         .flat_map(char::to_lowercase)

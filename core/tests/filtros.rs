@@ -104,8 +104,8 @@ fn rated_ja_vi_and_quero_assistir_can_be_hidden_or_shown_alone() {
     core.marcar(3, Marca::JaVi, true, 100);
     core.marcar(5, Marca::QueroAssistir, true, 100);
 
-    assert_eq!(ids(&core, Filtro { avaliados: Mostrar::So, ..Default::default() }), [2]);
-    assert!(!ids(&core, Filtro { avaliados: Mostrar::Esconder, ..Default::default() }).contains(&2));
+    assert_eq!(ids(&core, Filtro { com_nota: Mostrar::So, ..Default::default() }), [2]);
+    assert!(!ids(&core, Filtro { com_nota: Mostrar::Esconder, ..Default::default() }).contains(&2));
     assert_eq!(ids(&core, Filtro { ja_vi: Mostrar::So, ..Default::default() }), [3]);
     assert!(!ids(&core, Filtro { ja_vi: Mostrar::Esconder, ..Default::default() }).contains(&3));
     assert_eq!(ids(&core, Filtro { quero_assistir: Mostrar::So, ..Default::default() }), [5]);

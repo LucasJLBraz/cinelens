@@ -1,7 +1,7 @@
 //! Seam 2: the training job, run on a tiny ratings fixture, produces a model the core loads
 //! and predicts with.
 
-use cinelens_core::{content_features, Core};
+use cinelens_core::{content_features, Core, Filtro};
 use cinelens_train::{catalog_imdb_ids, train, Letterboxd};
 
 /// MovieLens ids 1–4 are sci-fi, 5–8 drama; 30 users, half loving each side and disliking the
@@ -71,7 +71,7 @@ fn core_predicts_with_the_trained_model() {
             assert!(prevista(sci_fi) > prevista(drama) + 1.0, "{sci_fi} vs {drama}");
         }
     }
-    let ids: Vec<u32> = core.explorar(0).movies.iter().take(3).map(|m| m.tmdb_id).collect();
+    let ids: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().take(3).map(|m| m.tmdb_id).collect();
     assert!(ids.iter().all(|id| (102..=104).contains(id)), "{ids:?}");
 }
 
