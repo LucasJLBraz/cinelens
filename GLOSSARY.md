@@ -16,6 +16,10 @@ _Avoid_: previsão, match, recomendação
 How certain the recommender is about a nota prevista, shown alongside it as a range or level.
 _Avoid_: certeza, precisão
 
+**Faixa** (Prediction band):
+A nota prevista shown as one of four ordinal bands (Aposta forte, Boa chance, Arriscado, Provavelmente não), set by where it falls among the owner's own predictions; the default way of showing a nota prevista.
+_Avoid_: categoria, nível
+
 **Recomendação** (Recommendation):
 A movie surfaced to the owner because its nota prevista is high and it passes the active filters.
 _Avoid_: top pick, sugestão

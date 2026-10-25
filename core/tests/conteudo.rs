@@ -19,7 +19,7 @@ const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "movies": [
 
 /// Movie 1 is a classic with many ratings; the content mapping covers the genres and
 /// directors of 1–6.
-const MODEL: &str = r#"{"format_version": 1, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
     "movies": [
         {"tmdb_id": 1, "bias": 0.3, "factors": [1.0, 0.0], "ratings": 50000},
         {"tmdb_id": 2, "bias": 0.2, "factors": [0.9, 0.1], "ratings": 800},

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, ExplorarPage, Previsao, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -64,7 +64,7 @@ fn rate(
     core: tauri::State<RwLock<Core>>,
     tmdb_id: u32,
     nota: f32,
-) -> Result<(Option<MoviePage>, Option<Previsao>), String> {
+) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let mut core = core.write().unwrap();
     let revealed = core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;

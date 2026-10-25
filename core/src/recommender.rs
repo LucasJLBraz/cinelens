@@ -15,8 +15,11 @@ use serde::Deserialize;
 
 use crate::{Error, NotaEntry};
 
+/// The owner's notas by movie, each history in time order.
+type Notas = BTreeMap<u32, Vec<NotaEntry>>;
+
 /// The model artifact format this core reads; the training job writes the same.
-pub const MODEL_FORMAT_VERSION: u32 = 1;
+pub const MODEL_FORMAT_VERSION: u32 = 2;
 
 #[derive(Deserialize)]
 struct ModelArtifact {
@@ -25,7 +28,6 @@ struct ModelArtifact {
     global_mean: f32,
     lambda: f32,
     movies: Vec<MovieFactors>,
-    #[serde(default)]
     content: Vec<ContentFactors>,
 }
 
@@ -35,7 +37,6 @@ struct MovieFactors {
     bias: f32,
     factors: Vec<f32>,
     /// Training ratings behind the factors; the confiança grows with them.
-    #[serde(default)]
     ratings: u32,
 }
 
@@ -62,14 +63,21 @@ pub(crate) struct Item {
     pub confianca: f32,
 }
 
+impl Item {
+    fn collaborative(m: MovieFactors) -> Item {
+        let n = m.ratings as f32;
+        let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
+        Item { bias: m.bias, factors: m.factors, confianca }
+    }
+}
+
 pub(crate) struct Model {
     pub data_version: String,
     /// Stands in for the owner's mean before the first nota.
     global_mean: f32,
     lambda: f32,
     dim: usize,
-    /// `tmdb_id` → (bias, factors, training ratings).
-    movies: HashMap<u32, (f32, Vec<f32>, u32)>,
+    movies: HashMap<u32, Item>,
     /// Content feature → (bias, factors).
     content: HashMap<String, (f32, Vec<f32>)>,
 }
@@ -101,14 +109,14 @@ impl Model {
             global_mean: artifact.global_mean,
             lambda: artifact.lambda,
             dim,
-            movies: artifact.movies.into_iter().map(|m| (m.tmdb_id, (m.bias, m.factors, m.ratings))).collect(),
+            movies: artifact.movies.into_iter().map(|m| (m.tmdb_id, Item::collaborative(m))).collect(),
             content: artifact.content.into_iter().map(|c| (c.feature, (c.bias, c.factors))).collect(),
         })
     }
 
     /// Fold-in: the owner's factors given the fixed movie factors. With a half-life, a nota
     /// weighs half as much for every `half_life_days` it is older than the most recent one.
-    pub fn profile(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>, half_life_days: Option<u32>) -> Profile {
+    pub fn profile(&self, notas: &Notas, half_life_days: Option<u32>) -> Profile {
         let current: Vec<(u32, &NotaEntry)> = notas.iter().filter_map(|(&id, h)| Some((id, h.last()?))).collect();
         let latest = current.iter().map(|(_, e)| e.at).max().unwrap_or(0);
         let weight = |e: &NotaEntry| match half_life_days {
@@ -122,8 +130,8 @@ impl Model {
             current.iter().map(|(_, e)| weight(e) * e.nota).sum::<f32>() / total
         };
         let rows = current.iter().filter_map(|(id, e)| {
-            let (bias, factors, _) = self.movies.get(id)?;
-            Some((factors.as_slice(), e.nota - mean - bias, weight(e)))
+            let item = self.movies.get(id)?;
+            Some((item.factors.as_slice(), e.nota - mean - item.bias, weight(e)))
         });
         Profile { mean, factors: weighted_ridge(rows, self.dim, self.lambda) }
     }
@@ -131,10 +139,8 @@ impl Model {
     /// The movie's collaborative factors, else the mean of its mapped content features';
     /// `None` when neither is known.
     pub fn item(&self, tmdb_id: u32, features: &[String]) -> Option<Item> {
-        if let Some((bias, factors, ratings)) = self.movies.get(&tmdb_id) {
-            let n = *ratings as f32;
-            let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
-            return Some(Item { bias: *bias, factors: factors.clone(), confianca });
+        if let Some(item) = self.movies.get(&tmdb_id) {
+            return Some(item.clone());
         }
         // ponytail: plain mean of feature centroids; a learned weight per feature kind (genre vs
         // director) if content-only predictions turn out poor.
@@ -160,13 +166,10 @@ impl Model {
     }
 }
 
-/// The owner's notas by movie, each history in time order.
-type Notas = BTreeMap<u32, Vec<NotaEntry>>;
-
 /// The owner's most recent notas, hidden from the fold-in, and the rest. `fraction` is 0–1;
 /// same-second notas are held out in tmdb_id order.
 pub(crate) fn hold_out(
-    notas: &BTreeMap<u32, Vec<NotaEntry>>,
+    notas: &Notas,
     fraction: f32,
 ) -> (Notas, Vec<(u32, NotaEntry)>) {
     let mut by_recency: Vec<(u32, NotaEntry)> =
@@ -182,7 +185,7 @@ pub(crate) fn hold_out(
 /// Absolute errors on the `hidden` notas the model knows, folding in `known`.
 pub(crate) fn errors<'a>(
     model: &Model,
-    known: &BTreeMap<u32, Vec<NotaEntry>>,
+    known: &Notas,
     hidden: &'a [(u32, NotaEntry)],
     half_life_days: Option<u32>,
 ) -> Vec<(f32, &'a NotaEntry)> {
@@ -199,7 +202,7 @@ const MIN_NOTAS_TO_CALIBRATE: usize = 10;
 
 /// The half-life that best predicts the owner's most recent fifth of notas from the rest; no
 /// decay unless one does strictly better.
-pub(crate) fn calibrate(model: &Model, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
+pub(crate) fn calibrate(model: &Model, notas: &Notas) -> Option<u32> {
     if notas.len() < MIN_NOTAS_TO_CALIBRATE {
         return None;
     }

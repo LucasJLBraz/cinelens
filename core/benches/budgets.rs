@@ -65,11 +65,11 @@ fn synthetic_model(n: usize) -> Vec<u8> {
     let movies: Vec<String> = (0..n)
         .map(|i| {
             let factors: Vec<String> = (0..FACTORS).map(|_| next().to_string()).collect();
-            format!(r#"{{"tmdb_id":{i},"bias":{},"factors":[{}]}}"#, next(), factors.join(","))
+            format!(r#"{{"tmdb_id":{i},"bias":{},"factors":[{}],"ratings":100}}"#, next(), factors.join(","))
         })
         .collect();
     format!(
-        r#"{{"format_version":1,"data_version":"bench","global_mean":3.5,"lambda":0.05,"movies":[{}]}}"#,
+        r#"{{"format_version":2,"data_version":"bench","global_mean":3.5,"lambda":0.05,"movies":[{}],"content":[]}}"#,
         movies.join(",")
     )
     .into_bytes()

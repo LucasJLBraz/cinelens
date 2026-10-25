@@ -1,6 +1,6 @@
 //! How the nota prevista is shown ("Mostrar previsão como"), and the reveal after a nota.
 
-use cinelens_core::{Core, DisplayMode, Faixa, Previsao};
+use cinelens_core::{Core, DisplayMode, Exibicao, Faixa};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
 /// Sci-fi: 603, 27205, 157336, 693134, 11. Crime/drama: 238, 240, 278, 769, 424.
@@ -15,8 +15,8 @@ fn owner() -> Core {
     core
 }
 
-fn previsoes(core: &Core) -> Vec<Option<Previsao>> {
-    core.explorar(0).movies.into_iter().map(|m| m.previsao).collect()
+fn exibicoes(core: &Core) -> Vec<Option<Exibicao>> {
+    core.explorar(0).movies.into_iter().map(|m| m.exibicao).collect()
 }
 
 #[test]
@@ -24,10 +24,10 @@ fn faixa_is_the_default_with_bands_from_the_owners_own_predictions() {
     let core = owner();
     assert_eq!(core.display_mode(), DisplayMode::Faixa);
 
-    let faixas: Vec<Faixa> = previsoes(&core)
+    let faixas: Vec<Faixa> = exibicoes(&core)
         .into_iter()
         .map_while(|p| match p {
-            Some(Previsao::Faixa { faixa }) => Some(faixa),
+            Some(Exibicao::Faixa { faixa, .. }) => Some(faixa),
             _ => None,
         })
         .collect();
@@ -45,8 +45,8 @@ fn estrelas_shows_the_decimal_the_most_likely_half_star_and_the_confianca() {
     core.set_display_mode(DisplayMode::Estrelas);
 
     let card = core.movie(27205).unwrap().card;
-    let Some(Previsao::Estrelas { nota, meia_estrela, confianca }) = card.previsao else {
-        panic!("{:?}", card.previsao);
+    let Some(Exibicao::Estrelas { nota, meia_estrela, confianca }) = card.exibicao else {
+        panic!("{:?}", card.exibicao);
     };
     assert_eq!(nota, card.nota_prevista.unwrap());
     assert_eq!(meia_estrela, (nota * 2.0).round() / 2.0);
@@ -60,7 +60,7 @@ fn oculto_shows_nothing_but_keeps_the_order() {
     let order: Vec<u32> = core.explorar(0).movies.iter().map(|m| m.tmdb_id).collect();
     core.set_display_mode(DisplayMode::Oculto);
 
-    assert!(previsoes(&core).iter().all(Option::is_none));
+    assert!(exibicoes(&core).iter().all(Option::is_none));
     assert_eq!(core.explorar(0).movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), order);
 }
 
@@ -71,8 +71,8 @@ fn after_a_nota_the_app_reveals_what_it_predicted_in_the_chosen_mode() {
 
     let revealed = core.rate(27205, 4.0, 200).unwrap();
 
-    assert_eq!(revealed, before.previsao);
-    assert!(matches!(revealed, Some(Previsao::Faixa { .. })));
+    assert_eq!(revealed, before.exibicao);
+    assert!(matches!(revealed, Some(Exibicao::Faixa { .. })));
 }
 
 #[test]

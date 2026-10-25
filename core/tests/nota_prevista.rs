@@ -99,7 +99,7 @@ fn without_a_model_explorar_keeps_catalogo_order() {
 #[test]
 fn loading_model_with_unknown_format_version_keeps_the_current_one() {
     let mut core = with_model();
-    let newer = br#"{"format_version": 2, "data_version": "x", "global_mean": 3, "lambda": 1, "movies": []}"#;
+    let newer = br#"{"format_version": 3, "data_version": "x", "global_mean": 3, "lambda": 1, "movies": [], "content": []}"#;
 
     assert!(core.load_model(newer).is_err());
     assert!(core.load_model(b"not json").is_err());

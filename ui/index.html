@@ -38,7 +38,7 @@
     #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
     #nota-history li { padding: 4px 0; }
     #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
-    .previsao { font-size: 12px; color: var(--accent); }
+    .exibicao { font-size: 12px; color: var(--accent); }
     #revelacao { margin: 8px 0 0; color: var(--accent); }
     #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
@@ -132,11 +132,12 @@
     }
 
     // Only in the chosen mode; the raw nota_prevista is never shown.
-    function previsaoText(p) {
+    function exibicaoText(p) {
       if (!p) return '';
-      if (p.modo === 'Faixa') return p.faixa;
+      const confianca = `confiança ${Math.round(p.confianca * 100)}%`;
+      if (p.modo === 'Faixa') return `${p.faixa} · ${confianca}`;
       const one = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-      return `★ ${one(p.nota)} (${one(p.meia_estrela)}) · confiança ${Math.round(p.confianca * 100)}%`;
+      return `★ ${one(p.nota)} (${one(p.meia_estrela)}) · ${confianca}`;
     }
 
     function card(m) {
@@ -151,11 +152,11 @@
       original.className = 'original';
       original.textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
       el.append(poster, title, original);
-      if (m.previsao) {
-        const previsao = document.createElement('div');
-        previsao.className = 'previsao';
-        previsao.textContent = previsaoText(m.previsao);
-        el.append(previsao);
+      if (m.exibicao) {
+        const exibicao = document.createElement('div');
+        exibicao.className = 'exibicao';
+        exibicao.textContent = exibicaoText(m.exibicao);
+        el.append(exibicao);
       }
       return el;
     }
@@ -293,7 +294,7 @@
       if (m) showMovie(m);
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
-      if (revealed) revelacao.textContent = `O app achava: ${previsaoText(revealed)}`;
+      if (revealed) revelacao.textContent = `O app achava: ${exibicaoText(revealed)}`;
     });
 
     const importFiles = document.getElementById('import-files');

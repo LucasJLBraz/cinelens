@@ -8,7 +8,7 @@ mod display;
 mod movielens;
 mod recommender;
 
-pub use display::{DisplayMode, Faixa, Previsao};
+pub use display::{DisplayMode, Faixa, Exibicao};
 pub use recommender::{ridge, MODEL_FORMAT_VERSION};
 use recommender::Model;
 
@@ -72,6 +72,8 @@ struct Person {
 impl Movie {
     /// `g<genre id>`, `d<director id>`, `c<cast member id>`, `l<original language>`: the keys of
     /// the content mapping in the model.
+    // ponytail: no TMDB keywords (the catalog job does not fetch them) nor synopsis words; add
+    // them as features if content-only predictions of new releases miss.
     fn content_features(&self) -> Vec<String> {
         let genres = self.genre_ids.iter().map(|g| format!("g{g}"));
         let directors = self.directors.iter().map(|p| format!("d{}", p.id));
@@ -109,7 +111,7 @@ pub struct MovieCard {
     /// 0–1, alongside every nota prevista; content-only predictions stay low.
     pub confianca: Option<f32>,
     /// The nota prevista as the owner chose to see it; `None` without one or in Oculto.
-    pub previsao: Option<Previsao>,
+    pub exibicao: Option<Exibicao>,
 }
 
 #[derive(Debug, Serialize)]
@@ -267,7 +269,7 @@ impl Core {
     }
 
     /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
-    /// change to the catálogo, the model or the notas.
+    /// change to the notas or settings, and by `refresh_items` after the catálogo or model.
     fn recompute(&mut self) {
         self.half_life_days = self.half_life(&self.owner.notas);
         self.previstas = match &self.model {
@@ -355,12 +357,12 @@ impl Core {
 
     /// Gives or changes the owner's nota; the previous one stays in the history. Returns what
     /// the app predicted for it, in the chosen display mode, to reveal now that it is given.
-    pub fn rate(&mut self, tmdb_id: u32, nota: f32, at: i64) -> Result<Option<Previsao>, Error> {
+    pub fn rate(&mut self, tmdb_id: u32, nota: f32, at: i64) -> Result<Option<Exibicao>, Error> {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
         let card = self.movies.iter().position(|m| m.tmdb_id == tmdb_id).map(|i| self.card(i));
-        let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.previsao));
+        let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
         self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
         Ok(revealed)
@@ -433,8 +435,8 @@ impl Core {
             poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),
             nota_prevista: self.previstas[i].map(|(p, _)| p),
             confianca: self.previstas[i].map(|(_, c)| c),
-            previsao: self.previstas[i]
-                .and_then(|(p, c)| display::previsao(self.owner.settings.display_mode, p, c, &self.ranked)),
+            exibicao: self.previstas[i]
+                .and_then(|(p, c)| display::exibicao(self.owner.settings.display_mode, p, c, &self.ranked)),
         }
     }
 }
