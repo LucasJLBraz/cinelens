@@ -3,7 +3,7 @@
 //! `build` only sees TMDB through `fetch`, so the same code runs against the real API
 //! (see `main.rs`) and against a fixture in tests.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -42,6 +42,8 @@ pub struct Artifact {
     genres: Vec<Genre>,
     /// TMDB trending this week, in TMDB's order.
     trending: Vec<u32>,
+    /// Streaming, rental and purchase services some movie is on in Brazil, by name.
+    providers: Vec<Provider>,
     /// Most voted first.
     movies: Vec<Movie>,
 }
@@ -56,6 +58,22 @@ struct Genre {
 struct Person {
     id: u32,
     name: String,
+}
+
+#[derive(Serialize, Clone)]
+struct Provider {
+    id: u32,
+    name: String,
+}
+
+/// Where a movie is in Brazil (TMDB's data from JustWatch), as provider ids.
+#[derive(Serialize)]
+struct Watch {
+    /// TMDB's watch page, which links on to each service.
+    link: Option<String>,
+    flatrate: Vec<u32>,
+    rent: Vec<u32>,
+    buy: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -81,6 +99,7 @@ struct Movie {
     composers: Vec<Person>,
     cast: Vec<Person>,
     trailer_youtube: Option<String>,
+    watch: Option<Watch>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +134,30 @@ struct Details {
     popularity: f32,
     credits: Credits,
     videos: Videos,
+    #[serde(rename = "watch/providers", default)]
+    watch_providers: WatchProviders,
+}
+
+#[derive(Deserialize, Default)]
+struct WatchProviders {
+    results: HashMap<String, Region>,
+}
+
+#[derive(Deserialize)]
+struct Region {
+    link: Option<String>,
+    #[serde(default)]
+    flatrate: Vec<RegionProvider>,
+    #[serde(default)]
+    rent: Vec<RegionProvider>,
+    #[serde(default)]
+    buy: Vec<RegionProvider>,
+}
+
+#[derive(Deserialize)]
+struct RegionProvider {
+    provider_id: u32,
+    provider_name: String,
 }
 
 #[derive(Deserialize)]
@@ -166,14 +209,19 @@ pub fn build(fetch: &impl Fetch, config: &Config) -> Result<Artifact, String> {
     }
     ids.extend(discover(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
-    let mut movies = details(fetch, &ids.into_iter().collect::<Vec<_>>())?;
+    let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
+        details(fetch, &ids.into_iter().collect::<Vec<_>>())?.into_iter().unzip();
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
+    let providers: BTreeMap<u32, Provider> = providers.into_iter().flatten().map(|p| (p.id, p)).collect();
+    let mut providers: Vec<Provider> = providers.into_values().collect();
+    providers.sort_by(|a, b| a.name.cmp(&b.name));
 
     Ok(Artifact {
         format_version: cinelens_core::CATALOG_FORMAT_VERSION,
         data_version: config.today.to_string(),
         genres: genres.genres,
         trending,
+        providers,
         movies,
     })
 }
@@ -209,8 +257,9 @@ fn discover(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<
 }
 
 /// Fetches every movie's details in parallel. A movie TMDB no longer knows is skipped;
-/// any other failure fails the build, so a partial catálogo is never published.
-fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<Movie>, String> {
+/// any other failure fails the build, so a partial catálogo is never published. Each movie
+/// comes with the providers it is on in Brazil.
+fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<(Movie, Vec<Provider>)>, String> {
     let next = AtomicUsize::new(0);
     let movies = Mutex::new(Vec::with_capacity(ids.len()));
     let failure = Mutex::new(None);
@@ -219,7 +268,7 @@ fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<Movie>, String> {
             s.spawn(|| {
                 while let Some(&id) = ids.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let request = format!(
-                        "/movie/{id}?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en"
+                        "/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en"
                     );
                     match fetch(&request).and_then(|body| match body {
                         None => Ok(None),
@@ -244,7 +293,19 @@ fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<Movie>, String> {
     }
 }
 
-fn movie(d: Details) -> Movie {
+fn movie(mut d: Details) -> (Movie, Vec<Provider>) {
+    let region = d.watch_providers.results.remove("BR");
+    let providers: Vec<Provider> = region
+        .iter()
+        .flat_map(|r| r.flatrate.iter().chain(&r.rent).chain(&r.buy))
+        .map(|p| Provider { id: p.provider_id, name: p.provider_name.clone() })
+        .collect();
+    let ids = |list: &[RegionProvider]| list.iter().map(|p| p.provider_id).collect();
+    let watch = region.map(|r| Watch { flatrate: ids(&r.flatrate), rent: ids(&r.rent), buy: ids(&r.buy), link: r.link });
+    (movie_details(d, watch), providers)
+}
+
+fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
     let crew = |job: &str| -> Vec<Person> {
         d.credits
             .crew
@@ -282,5 +343,6 @@ fn movie(d: Details) -> Movie {
         vote_count: d.vote_count,
         vote_average: d.vote_average,
         popularity: d.popularity,
+        watch,
     }
 }

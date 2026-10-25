@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, Marca, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -99,6 +99,20 @@ fn display_mode(core: tauri::State<RwLock<Core>>) -> DisplayMode {
 fn set_display_mode(app: AppHandle, core: tauri::State<RwLock<Core>>, mode: DisplayMode) -> Result<(), String> {
     let mut core = core.write().unwrap();
     core.set_display_mode(mode);
+    save_owner(&app, &core)
+}
+
+/// Every service in the catálogo, and the ids of those the owner subscribes to.
+#[tauri::command]
+fn servicos(core: tauri::State<RwLock<Core>>) -> (Vec<Provedor>, Vec<u32>) {
+    let core = core.read().unwrap();
+    (core.provedores().to_vec(), core.servicos())
+}
+
+#[tauri::command]
+fn set_servicos(app: AppHandle, core: tauri::State<RwLock<Core>>, ids: Vec<u32>) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.set_servicos(&ids);
     save_owner(&app, &core)
 }
 
@@ -277,7 +291,9 @@ pub fn run() {
             decay,
             set_decay,
             display_mode,
-            set_display_mode
+            set_display_mode,
+            servicos,
+            set_servicos
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -77,3 +77,37 @@ fn build_fails_instead_of_publishing_a_partial_catalogo() {
     let config = Config { today: "2026-10-25", recent_since: "2026-04-28", extra_ids: &[] };
     assert!(build(&flaky, &config).is_err());
 }
+
+#[test]
+fn artifact_carries_brazil_watch_providers() {
+    let artifact: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
+
+    // Only providers some movie is on in Brazil, by name.
+    assert_eq!(
+        artifact["providers"],
+        json!([{"id": 2, "name": "Apple TV"}, {"id": 1899, "name": "Max"}, {"id": 8, "name": "Netflix"}])
+    );
+    assert_eq!(
+        artifact["movies"][0]["watch"],
+        json!({
+            "link": "https://www.themoviedb.org/movie/550-fight-club/watch?locale=BR",
+            "flatrate": [8],
+            "rent": [2],
+            "buy": [2]
+        })
+    );
+    // Forrest Gump is nowhere in Brazil.
+    assert_eq!(artifact["movies"][1]["watch"], Value::Null);
+}
+
+#[test]
+fn core_lists_where_to_watch_a_built_movie() {
+    let core = Core::open(&fixture_artifact()).unwrap();
+
+    let matrix = core.movie(603).unwrap().onde_assistir.unwrap();
+    let names = |p: &[cinelens_core::Provedor]| p.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&matrix.assinatura), ["Max", "Netflix"]);
+    assert!(matrix.aluguel.is_empty() && matrix.compra.is_empty());
+    assert_eq!(names(core.provedores()), ["Apple TV", "Max", "Netflix"]);
+    assert!(core.movie(13).unwrap().onde_assistir.is_none());
+}

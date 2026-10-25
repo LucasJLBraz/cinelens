@@ -43,6 +43,11 @@
     .menu-items { position: absolute; right: 0; z-index: 1; min-width: 200px; margin-top: 4px; padding: 4px 0; border-radius: 8px; background: var(--card); box-shadow: 0 4px 16px #0008; }
     .menu-items button { display: block; width: 100%; padding: 10px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
     .menu-items button.on { color: var(--accent); }
+    h2 { margin: 24px 0 8px; font-size: 16px; }
+    .credito { margin-top: 4px; font-size: 11px; color: var(--muted); }
+    #onde-lista div { margin-top: 4px; font-size: 14px; }
+    #onde-lista span { color: var(--muted); }
+    .checks label { display: flex; gap: 10px; align-items: center; margin-top: 10px; font-weight: 400; }
     #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
     #nota-history li { padding: 4px 0; }
     #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
@@ -94,6 +99,11 @@
         </div>
       </details>
     </div>
+    <section id="onde" hidden>
+      <h2>Onde assistir</h2>
+      <div id="onde-lista"></div>
+      <div class="credito">Dados de onde assistir: JustWatch</div>
+    </section>
     <div id="notas"></div>
     <p id="revelacao" hidden></p>
     <ul id="nota-history"></ul>
@@ -118,8 +128,11 @@
       <option value="Estrelas">Estrelas</option>
       <option value="Oculto">Oculto: só a ordem</option>
     </select>
+    <label>Serviços que você assina</label>
+    <div id="servicos" class="checks"></div>
+    <div class="hint">Lista de serviços: JustWatch.</div>
   </section>
-  <footer>Dados e imagens de filmes: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
+  <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
     const { invoke, convertFileSrc } = window.__TAURI__.core;
     const { listen } = window.__TAURI__.event;
@@ -242,6 +255,18 @@
       document.getElementById('filme-poster').replaceChildren(posterOf(m));
       document.getElementById('filme-title').textContent = m.title;
       document.getElementById('filme-original').textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
+      const onde = m.onde_assistir;
+      document.getElementById('onde').hidden = !onde;
+      if (onde) {
+        const rows = [['Assinatura', onde.assinatura], ['Aluguel', onde.aluguel], ['Compra', onde.compra]];
+        document.getElementById('onde-lista').replaceChildren(...rows.filter(([, p]) => p.length).map(([kind, p]) => {
+          const row = document.createElement('div');
+          const label = document.createElement('span');
+          label.textContent = `${kind}: `;
+          row.append(label, p.map(x => x.name).join(', '));
+          return row;
+        }));
+      }
       const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, NaoMeInteressa: m.nao_me_interessa };
       for (const b of filmeEl.querySelectorAll('[data-marca]')) b.classList.toggle('on', marcas[b.dataset.marca]);
       for (const b of notasEl.children) b.classList.toggle('on', Number(b.dataset.nota) === m.nota);
@@ -293,9 +318,25 @@
     document.getElementById('open-ajustes').addEventListener('click', async () => {
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
+      const [provedores, meus] = await invoke('servicos');
+      servicosEl.replaceChildren(...provedores.map(p => {
+        const label = document.createElement('label');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = p.id;
+        box.checked = meus.includes(p.id);
+        label.append(box, p.name);
+        return label;
+      }));
       explorarEl.hidden = true;
       ajustesEl.hidden = false;
       history.pushState({ ajustes: true }, '');
+    });
+    const servicosEl = document.getElementById('servicos');
+    servicosEl.addEventListener('change', async () => {
+      const ids = [...servicosEl.querySelectorAll('input:checked')].map(b => Number(b.value));
+      await invoke('set_servicos', { ids });
+      stale = true;
     });
     ajustesEl.querySelector('.back').addEventListener('click', () => history.back());
     decayEl.addEventListener('change', async () => {

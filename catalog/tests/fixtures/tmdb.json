@@ -62,7 +62,7 @@
    }
   ]
  },
- "/movie/550?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+ "/movie/550?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
   "id": 550,
   "imdb_id": "tt0000550",
   "title": "Clube da Luta",
@@ -140,9 +140,51 @@
      "iso_639_1": "pt"
     }
    ]
+  },
+  "watch/providers": {
+   "results": {
+    "BR": {
+     "link": "https://www.themoviedb.org/movie/550-fight-club/watch?locale=BR",
+     "flatrate": [
+      {
+       "provider_id": 8,
+       "provider_name": "Netflix",
+       "logo_path": "/n.jpg",
+       "display_priority": 1
+      }
+     ],
+     "rent": [
+      {
+       "provider_id": 2,
+       "provider_name": "Apple TV",
+       "logo_path": "/a.jpg",
+       "display_priority": 4
+      }
+     ],
+     "buy": [
+      {
+       "provider_id": 2,
+       "provider_name": "Apple TV",
+       "logo_path": "/a.jpg",
+       "display_priority": 4
+      }
+     ]
+    },
+    "US": {
+     "link": "x",
+     "flatrate": [
+      {
+       "provider_id": 384,
+       "provider_name": "HBO Max",
+       "logo_path": "/h.jpg",
+       "display_priority": 2
+      }
+     ]
+    }
+   }
   }
  },
- "/movie/603?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+ "/movie/603?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
   "id": 603,
   "imdb_id": "tt0000603",
   "title": "Matrix",
@@ -207,9 +249,30 @@
      "iso_639_1": "en"
     }
    ]
+  },
+  "watch/providers": {
+   "results": {
+    "BR": {
+     "link": "https://www.themoviedb.org/movie/603-the-matrix/watch?locale=BR",
+     "flatrate": [
+      {
+       "provider_id": 1899,
+       "provider_name": "Max",
+       "logo_path": "/m.jpg",
+       "display_priority": 2
+      },
+      {
+       "provider_id": 8,
+       "provider_name": "Netflix",
+       "logo_path": "/n.jpg",
+       "display_priority": 1
+      }
+     ]
+    }
+   }
   }
  },
- "/movie/13?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+ "/movie/13?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
   "id": 13,
   "imdb_id": "tt0000013",
   "title": "Forrest Gump: O Contador de Histórias",
@@ -269,7 +332,7 @@
    "results": []
   }
  },
- "/movie/1311?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+ "/movie/1311?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
   "id": 1311,
   "imdb_id": "tt0001311",
   "title": "Lançamento Recente",

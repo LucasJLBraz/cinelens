@@ -46,7 +46,28 @@ impl std::error::Error for Error {}
 struct CatalogArtifact {
     format_version: u32,
     data_version: String,
+    #[serde(default)]
+    providers: Vec<Provedor>,
     movies: Vec<Movie>,
+}
+
+/// A streaming, rental or purchase service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Provedor {
+    pub id: u32,
+    pub name: String,
+}
+
+/// Where a movie is in Brazil, as provider ids (TMDB's data from JustWatch).
+#[derive(Deserialize)]
+struct Watch {
+    link: Option<String>,
+    #[serde(default)]
+    flatrate: Vec<u32>,
+    #[serde(default)]
+    rent: Vec<u32>,
+    #[serde(default)]
+    buy: Vec<u32>,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +85,8 @@ struct Movie {
     cast: Vec<Person>,
     #[serde(default)]
     original_language: Option<String>,
+    #[serde(default)]
+    watch: Option<Watch>,
 }
 
 #[derive(Deserialize)]
@@ -158,6 +181,16 @@ pub struct Accuracy {
     pub movielens_mae: Option<f32>,
 }
 
+/// Where to watch a movie in Brazil; shown credited to JustWatch.
+#[derive(Debug, Serialize)]
+pub struct OndeAssistir {
+    /// TMDB's watch page, which links on to each service.
+    pub link: Option<String>,
+    pub assinatura: Vec<Provedor>,
+    pub aluguel: Vec<Provedor>,
+    pub compra: Vec<Provedor>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MoviePage {
     #[serde(flatten)]
@@ -167,6 +200,7 @@ pub struct MoviePage {
     pub quero_assistir: bool,
     pub ja_vi: bool,
     pub nao_me_interessa: bool,
+    pub onde_assistir: Option<OndeAssistir>,
 }
 
 /// What the owner can mark a movie with, and unmark.
@@ -204,6 +238,9 @@ struct Settings {
     decay: Decay,
     #[serde(default)]
     display_mode: DisplayMode,
+    /// Provider ids of the services the owner subscribes to.
+    #[serde(default)]
+    servicos: BTreeSet<u32>,
 }
 
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
@@ -231,6 +268,7 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 pub struct Core {
     data_version: Option<String>,
     movies: Vec<Movie>,
+    provedores: Vec<Provedor>,
     owner: OwnerData,
     model: Option<Model>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
@@ -265,6 +303,7 @@ impl Core {
         }
         self.data_version = Some(artifact.data_version);
         self.movies = artifact.movies;
+        self.provedores = artifact.providers;
         self.refresh_items();
         Ok(())
     }
@@ -375,6 +414,19 @@ impl Core {
         self.owner.settings.display_mode
     }
 
+    /// Every service some catálogo movie is on in Brazil, by name.
+    pub fn provedores(&self) -> &[Provedor] {
+        &self.provedores
+    }
+
+    pub fn servicos(&self) -> Vec<u32> {
+        self.owner.settings.servicos.iter().copied().collect()
+    }
+
+    pub fn set_servicos(&mut self, ids: &[u32]) {
+        self.owner.settings.servicos = ids.iter().copied().collect();
+    }
+
     pub fn decay(&self) -> DecayStatus {
         DecayStatus { setting: self.owner.settings.decay, half_life_days: self.half_life_days }
     }
@@ -446,6 +498,10 @@ impl Core {
             quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
             ja_vi: self.owner.ja_vi.contains(&tmdb_id),
             nao_me_interessa: self.owner.nao_me_interessa.contains(&tmdb_id),
+            onde_assistir: self.movies[i].watch.as_ref().map(|w| {
+                let named = |ids: &[u32]| ids.iter().filter_map(|id| self.provedores.iter().find(|p| p.id == *id).cloned()).collect();
+                OndeAssistir { link: w.link.clone(), assinatura: named(&w.flatrate), aluguel: named(&w.rent), compra: named(&w.buy) }
+            }),
         })
     }
 
