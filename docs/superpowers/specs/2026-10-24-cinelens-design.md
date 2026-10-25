@@ -44,7 +44,7 @@ Por quê: o dono quer que o app reflita seu gosto atual, sempre com lançamentos
   - Letterboxd sample abr/2026 (Kaggle `tliocastro/letterboxd-sample-apr-2026`): CC BY-NC-SA 4.0.
   - TMDB: atribuição obrigatória; dados de onde assistir exigem crédito ao **JustWatch**.
   - O modelo publicado herda NC/SA; o projeto é não comercial.
-- Google Drive: escopo `drive.appdata` (não sensível). O projeto OAuth precisa estar **"Em produção"** (em "Testing" o refresh token expira em 7 dias). Uso pessoal < 100 usuários dispensa verificação; o dono clica uma vez no aviso de app não verificado.
+- Google Drive: escopo `drive.appdata` (não sensível). O projeto OAuth fica em **"Teste"**, com o dono como usuário de teste (escolha do dono, 2026-10-25): publicar exige página inicial e política de privacidade num domínio próprio. Custo: o Google derruba o login a cada 7 dias e o dono toca "Entrar com Google" de novo no Perfil; o sync espera sem perder nada.
 
 ## 4. Arquitetura (decidida)
 
@@ -196,7 +196,7 @@ Funciona sem internet. Só pôsteres novos, onde assistir atualizado, lançament
 ## 11. Passos únicos do dono (com guia)
 1. Chave gratuita TMDB.
 2. Chave gratuita OMDb.
-3. Projeto Google Cloud: tela de consentimento "Em produção", cliente OAuth Android + desktop, escopo `drive.appdata`.
+3. Projeto Google Cloud: tela de consentimento em "Teste" com o dono como usuário de teste, cliente OAuth Android + desktop, escopo `drive.appdata`.
 4. Instalar Obtainium e adicionar o repo.
 5. Colocar como secrets do repositório GitHub: chaves TMDB e OMDb, token do Kaggle (download da base Letterboxd no CI) e a chave de assinatura do APK. A chave de assinatura é gerada uma vez e nunca muda: o cliente OAuth Android do Google fica preso à impressão digital (SHA-1) dela.
 6. Copiar os CSVs do export do MovieLens para o celular na primeira abertura (o app pede o arquivo).

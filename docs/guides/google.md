@@ -15,9 +15,12 @@ Precisa da impressão digital SHA-1 da chave de assinatura (passo 1 de `release.
 1. Menu → **APIs e serviços** → **Tela de permissão OAuth** (ou **Google Auth Platform**) → **Começar**.
 2. Nome do app `Cinelens`, e-mail de suporte: o seu. Público: **Externo**. Contato: o seu e-mail. Aceite a política e **Criar**.
 3. Em **Acesso a dados** → **Adicionar ou remover escopos** → marque `.../auth/drive.appdata` (ou cole `https://www.googleapis.com/auth/drive.appdata` em "Adicionar escopos manualmente") → **Atualizar** → **Salvar**.
-4. Em **Público** → **Publicar app** → confirme. O status tem que ficar **Em produção**: em "Teste" o Google invalida o login a cada 7 dias.
+4. Em **Público** → **Usuários de teste** → **Adicionar usuários** → o seu e-mail do Google → **Salvar**.
+5. **Não** clique em "Publicar app": o app fica em **Teste**. Publicar exige página inicial e política de privacidade num domínio seu, e não vale o trabalho para um app só seu.
 
-Uso pessoal (menos de 100 usuários) com escopo não sensível dispensa a verificação do Google. Na primeira vez que entrar, o Google pode mostrar "O Google não verificou este app": clique em **Avançado** → **Acessar Cinelens (não seguro)**. É só uma vez por conta.
+O custo de ficar em Teste: o Google derruba o login a cada 7 dias. Quando isso acontece, o Perfil volta a mostrar **Entrar com Google**; é um toque por aparelho. Até lá o sync só espera: as mudanças ficam no aparelho e vão juntas quando você entrar de novo.
+
+Ao entrar, o Google mostra "O Google não verificou este app": clique em **Continuar** (ou **Avançado** → **Acessar Cinelens**).
 
 ## 3. Cliente Android
 
