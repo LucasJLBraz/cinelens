@@ -1,18 +1,24 @@
 name: Model
 
-# Trains the movie factors on MovieLens ml-latest plus the Letterboxd April 2026 sample every
-# month and publishes the asset
+# Trains the movie factors on MovieLens ml-latest (optionally plus the Letterboxd April 2026
+# sample) every month and publishes the asset
 # `model.json.gz` of the release `model-v<format version>`, which the app downloads when
 # `model-version.txt` names a version it has not seen, plus a
 # dated copy `model-<date>.json.gz` that stays as the history. Only public data: the owner's
 # notas never reach CI, the app folds them in on-device. Letterboxd comes from Kaggle with the
-# KAGGLE_API_TOKEN secret (docs/guides/kaggle.md) and is joined through the catálogo's IMDb ids;
-# without the secret the model is trained on MovieLens alone (ADR 0002: Letterboxd stays only
-# while it does not worsen the MAE on the owner's notas).
+# KAGGLE_API_TOKEN secret (docs/guides/kaggle.md), only when a manual run asks for it: the
+# published sample has no IMDb ids, so it cannot be joined yet. Scheduled runs train on
+# MovieLens alone (ADR 0002: Letterboxd stays only while it does not worsen the MAE on the
+# owner's notas).
 on:
   schedule:
     - cron: "41 6 3 * *"
   workflow_dispatch:
+    inputs:
+      letterboxd:
+        description: Also train on the Letterboxd sample (needs KAGGLE_API_TOKEN)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -40,13 +46,17 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          if [ -z "$KAGGLE_API_TOKEN" ]; then
-            echo "::warning::KAGGLE_API_TOKEN secret missing, training on MovieLens alone; see docs/guides/kaggle.md"
+          # Off unless asked for: the sample has no IMDb ids to join on (ADR 0002).
+          if [ "${{ inputs.letterboxd }}" != true ]; then
+            echo "Training on MovieLens alone"
             exit 0
+          fi
+          if [ -z "$KAGGLE_API_TOKEN" ]; then
+            echo "::error::KAGGLE_API_TOKEN secret missing, see docs/guides/kaggle.md"
+            exit 1
           fi
           echo "LETTERBOXD=1" >> "$GITHUB_ENV"
           pip install --quiet kaggle==2.2.5
-          kaggle datasets files tliocastro/letterboxd-sample-apr-2026
           kaggle datasets download tliocastro/letterboxd-sample-apr-2026 -f letterboxd_interactions.csv -p "$RUNNER_TEMP"
           # Kaggle may hand the file over zipped.
           if [ -f "$RUNNER_TEMP/letterboxd_interactions.csv.zip" ]; then

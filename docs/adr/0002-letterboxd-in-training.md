@@ -15,6 +15,10 @@ Owner's export, 289 notas; the most recent are hidden from the fold-in. "MovieLe
 
 The MovieLens-only model already meets the v1 bar (MAE ≤ 0.65; MovieLens on all the owner's notas: 0.654). A third of the held-out notas are of movies outside `ml-latest`, which is what Letterboxd would add.
 
+## Blocked (2026-10-25)
+
+The published `letterboxd_interactions.csv` has the columns `username, film_slug, lb_film_id, film_name, film_year, rating, liked`: no `tconst` nor `confidence`, though the dataset card lists them. The trainer joins on IMDb ids, so it cannot read the file. Joining by title and year against the catálogo would work for English titles only. Until that is done, the Model workflow trains on MovieLens alone; a manual run with the `letterboxd` input turns it on.
+
 ## Decision
 
 Off until measured: the owner has not created the Kaggle token yet. When it exists, train both models, fill the last row, and set the secret only if the Letterboxd model's MAE at 20% is not above 0.428.
