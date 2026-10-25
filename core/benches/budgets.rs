@@ -7,13 +7,31 @@ use cinelens_core::Core;
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
+/// ml-latest movies with enough ratings to be published.
+const MODEL_SIZE: usize = 40_000;
+const FACTORS: usize = 32;
+/// About the owner's MovieLens export.
+const NOTAS: u32 = 300;
 
 fn main() {
     let catalog = synthetic_catalog(CATALOG_SIZE);
+    let model = synthetic_model(MODEL_SIZE);
     let mut failed = false;
 
-    failed |= !budget("startup: load catálogo", Duration::from_secs(1), || {
-        Core::open(&catalog).unwrap();
+    failed |= !budget("startup: load catálogo and model", Duration::from_secs(1), || {
+        Core::open(&catalog).unwrap().load_model(&model).unwrap();
+    });
+
+    let mut core = Core::open(&catalog).unwrap();
+    core.load_model(&model).unwrap();
+    for id in 0..NOTAS {
+        core.rate(id * 97, 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
+    }
+    let mut at = 1;
+    failed |= !budget("nota: fold-in and ranking", Duration::from_millis(200), || {
+        at += 1;
+        core.rate(12_345, 4.0, at).unwrap();
+        assert!(core.explorar(0).movies[0].nota_prevista.is_some());
     });
 
     if failed {
@@ -35,6 +53,26 @@ fn budget(name: &str, limit: Duration, mut f: impl FnMut()) -> bool {
     let ok = median <= limit;
     println!("{} {name}: median {median:?} (budget {limit:?})", if ok { "ok  " } else { "FAIL" });
     ok
+}
+
+/// Factors in the training job's output format, for catálogo ids `0..n`.
+fn synthetic_model(n: usize) -> Vec<u8> {
+    let mut seed = 1u32;
+    let mut next = || {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (seed >> 8) as f32 / (1 << 24) as f32 - 0.5
+    };
+    let movies: Vec<String> = (0..n)
+        .map(|i| {
+            let factors: Vec<String> = (0..FACTORS).map(|_| next().to_string()).collect();
+            format!(r#"{{"tmdb_id":{i},"bias":{},"factors":[{}]}}"#, next(), factors.join(","))
+        })
+        .collect();
+    format!(
+        r#"{{"format_version":1,"data_version":"bench","global_mean":3.5,"lambda":0.05,"movies":[{}]}}"#,
+        movies.join(",")
+    )
+    .into_bytes()
 }
 
 /// Movies shaped like the catalog job's output, so startup also pays for the fields

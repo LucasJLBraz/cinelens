@@ -49,7 +49,10 @@
   </section>
   <div id="explorar" hidden>
     <header>
-      <h1>Explorar</h1>
+      <div>
+        <h1>Explorar</h1>
+        <div class="original">Para você</div>
+      </div>
       <button id="import" class="pill">Importar do MovieLens</button>
       <input id="import-files" type="file" multiple hidden>
     </header>
@@ -114,6 +117,9 @@
       return el;
     }
 
+    // Recomendações change after every nota; the grid is rebuilt on the way back to it.
+    let stale = false;
+
     async function load() {
       const result = await invoke('explorar', { page });
       grid.append(...result.movies.map(card));
@@ -130,7 +136,8 @@
       retry.hidden = true;
       text.textContent = 'Baixando os filmes, só desta vez.';
       progress.removeAttribute('value');
-      const stop = await listen('catalog-progress', ({ payload: [received, total] }) => {
+      const stop = await listen('download-progress', ({ payload: [received, total] }) => {
+        if (setupEl.hidden) return;
         const mb = (received / 1e6).toFixed(1);
         if (total) {
           progress.max = total;
@@ -150,6 +157,12 @@
       } finally {
         stop();
       }
+    }
+
+    function reloadGrid() {
+      page = 0;
+      grid.replaceChildren();
+      load();
     }
 
     const explorarEl = document.getElementById('explorar');
@@ -192,6 +205,10 @@
     window.addEventListener('popstate', () => {
       filmeEl.hidden = true;
       explorarEl.hidden = false;
+      if (stale) {
+        stale = false;
+        reloadGrid();
+      }
     });
     document.getElementById('back').addEventListener('click', () => history.back());
 
@@ -199,6 +216,7 @@
       const nota = Number(e.target.dataset.nota);
       if (!nota) return;
       const m = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
+      stale = true;
       if (m) showMovie(m);
     });
 
@@ -212,20 +230,25 @@
       importResult.hidden = false;
       try {
         const s = await invoke('import_movielens', { files });
+        reloadGrid();
         importResult.textContent = `Importadas ${s.notas} notas: ${s.matched} encontradas no catálogo, ${s.unmatched} não encontradas. ${s.quero_assistir} filmes em quero assistir.`;
       } catch (e) {
         importResult.textContent = `Não deu para importar (${e}). Escolha os arquivos de notas e de logs do export do MovieLens.`;
       }
     });
 
-    function start() {
+    // Explorar works in catálogo order until the model arrives; it is fetched in the
+    // background, so the app never waits on it (and retries on the next launch if offline).
+    async function start() {
       document.getElementById('explorar').hidden = false;
       load();
+      const [, model] = await invoke('status');
+      if (!model) invoke('download_model').then(reloadGrid, () => {});
     }
 
     more.addEventListener('click', load);
     document.getElementById('retry').addEventListener('click', setup);
-    invoke('catalog_status').then(version => version ? start() : setup());
+    invoke('status').then(([catalog]) => catalog ? start() : setup());
   </script>
 </body>
 </html>

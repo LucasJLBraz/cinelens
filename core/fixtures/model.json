@@ -1,0 +1,18 @@
+{
+ "format_version": 1,
+ "data_version": "fixture-2026-10-25",
+ "global_mean": 3.5,
+ "lambda": 0.05,
+ "movies": [
+  {"tmdb_id": 603, "bias": 0.3, "factors": [1.0, 0.0]},
+  {"tmdb_id": 27205, "bias": 0.2, "factors": [0.9, 0.1]},
+  {"tmdb_id": 157336, "bias": 0.2, "factors": [1.0, -0.1]},
+  {"tmdb_id": 693134, "bias": 0.1, "factors": [0.8, 0.0]},
+  {"tmdb_id": 11, "bias": 0.3, "factors": [0.9, 0.0]},
+  {"tmdb_id": 238, "bias": 0.5, "factors": [0.0, 1.0]},
+  {"tmdb_id": 240, "bias": 0.4, "factors": [0.1, 0.9]},
+  {"tmdb_id": 278, "bias": 0.6, "factors": [0.0, 1.0]},
+  {"tmdb_id": 769, "bias": 0.3, "factors": [-0.1, 0.9]},
+  {"tmdb_id": 424, "bias": 0.4, "factors": [0.0, 0.8]}
+ ]
+}

@@ -1,5 +1,5 @@
-//! Thin Tauri adapters over the core facade: catálogo file and download, owner data file,
-//! poster cache.
+//! Thin Tauri adapters over the core facade: catálogo and model files and downloads, owner data
+//! file, poster cache.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION};
+use cinelens_core::{Core, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -18,8 +18,16 @@ fn catalog_url() -> String {
     format!("https://github.com/LucasJLBraz/cinelens/releases/download/catalog-v{CATALOG_FORMAT_VERSION}/catalog.json.gz")
 }
 
+fn model_url() -> String {
+    format!("https://github.com/LucasJLBraz/cinelens/releases/download/model-v{MODEL_FORMAT_VERSION}/model.json.gz")
+}
+
 fn catalog_file(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().expect("app data dir").join("catalog.json")
+}
+
+fn model_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("model.json")
 }
 
 fn owner_file(app: &AppHandle) -> PathBuf {
@@ -68,52 +76,71 @@ fn explorar(core: tauri::State<RwLock<Core>>, page: usize) -> ExplorarPage {
     core.read().unwrap().explorar(page)
 }
 
-/// The data version of the local catálogo, or `None` before the first download.
+/// The data versions of the local catálogo and model; `None` before their first download.
 #[tauri::command]
-fn catalog_status(core: tauri::State<RwLock<Core>>) -> Option<String> {
-    core.read().unwrap().data_version().map(str::to_string)
+fn status(core: tauri::State<RwLock<Core>>) -> (Option<String>, Option<String>) {
+    let core = core.read().unwrap();
+    (core.data_version().map(str::to_string), core.model_version().map(str::to_string))
 }
 
-/// Downloads the full catálogo, emitting `catalog-progress` as `[received, total]` bytes
-/// (`total` is null when unknown). The local catálogo is only replaced once the core accepts
-/// the new one.
+/// Downloads the full catálogo, emitting `download-progress`. The local catálogo is only
+/// replaced once the core accepts the new one.
 #[tauri::command]
-async fn download_catalog(app: AppHandle) -> Result<String, String> {
+async fn download_catalog(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut response = ureq::get(catalog_url())
-            .config()
-            .timeout_connect(Some(Duration::from_secs(15)))
-            .timeout_recv_response(Some(Duration::from_secs(30)))
-            .build()
-            .call()
-            .map_err(|e| e.to_string())?;
-        let total: Option<usize> = response
-            .headers()
-            .get("content-length")
-            .and_then(|v| v.to_str().ok()?.parse().ok());
-        let mut body = response.body_mut().with_config().limit(u64::MAX).reader();
-        let mut gz = Vec::with_capacity(total.unwrap_or(0));
-        let mut chunk = vec![0; READ_BUFFER];
-        loop {
-            let n = body.read(&mut chunk).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            gz.extend_from_slice(&chunk[..n]);
-            let _ = app.emit("catalog-progress", (gz.len(), total));
-        }
-
-        let mut json = Vec::new();
-        flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut json).map_err(|e| e.to_string())?;
-        // Validated before it touches disk, swapped in only once it is saved.
-        let new = Core::open(&json).map_err(|e| e.to_string())?;
+        let json = download(&app, &catalog_url())?;
+        // Validated before it touches disk, loaded only once it is saved; parsed twice so the
+        // lock is never held during a download.
+        Core::open(&json).map_err(|e| e.to_string())?;
         write_atomically(&catalog_file(&app), &json).map_err(|e| e.to_string())?;
-        let version = new.data_version().unwrap_or_default().to_string();
-        *app.state::<RwLock<Core>>().write().unwrap() = new;
-        Ok(version)
+        app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Downloads the model, emitting `download-progress`; same guarantees as the catálogo.
+#[tauri::command]
+async fn download_model(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let json = download(&app, &model_url())?;
+        Core::default().load_model(&json).map_err(|e| e.to_string())?;
+        write_atomically(&model_file(&app), &json).map_err(|e| e.to_string())?;
+        app.state::<RwLock<Core>>().write().unwrap().load_model(&json).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Downloads and gunzips `url`, emitting `download-progress` as `[received, total]` bytes
+/// (`total` is null when unknown).
+fn download(app: &AppHandle, url: &str) -> Result<Vec<u8>, String> {
+    let mut response = ureq::get(url)
+        .config()
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
+        .build()
+        .call()
+        .map_err(|e| e.to_string())?;
+    let total: Option<usize> = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok()?.parse().ok());
+    let mut body = response.body_mut().with_config().limit(u64::MAX).reader();
+    let mut gz = Vec::with_capacity(total.unwrap_or(0));
+    let mut chunk = vec![0; READ_BUFFER];
+    loop {
+        let n = body.read(&mut chunk).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        gz.extend_from_slice(&chunk[..n]);
+        let _ = app.emit("download-progress", (gz.len(), total));
+    }
+
+    let mut json = Vec::new();
+    flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut json).map_err(|e| e.to_string())?;
+    Ok(json)
 }
 
 fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -176,6 +203,10 @@ pub fn run() {
             if let Ok(json) = std::fs::read(catalog_file(app.handle())) {
                 let _ = core.load_catalog(&json);
             }
+            // Same for the model.
+            if let Ok(json) = std::fs::read(model_file(app.handle())) {
+                let _ = core.load_model(&json);
+            }
             // Unlike the catálogo, owner data cannot be downloaded again: refuse to start over it.
             match std::fs::read(owner_file(app.handle())) {
                 Ok(bytes) => core.load_owner_data(&bytes)?,
@@ -192,8 +223,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             explorar,
-            catalog_status,
+            status,
             download_catalog,
+            download_model,
             import_movielens,
             movie,
             rate

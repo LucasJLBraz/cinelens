@@ -5,6 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde::{Deserialize, Serialize};
 
 mod movielens;
+mod recommender;
+
+pub use recommender::{ridge, MODEL_FORMAT_VERSION};
+use recommender::Model;
 
 /// The catálogo artifact format this core reads; the catalog job writes the same.
 pub const CATALOG_FORMAT_VERSION: u32 = 1;
@@ -14,6 +18,7 @@ const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
 #[derive(Debug)]
 pub enum Error {
     InvalidArtifact(String),
+    InvalidModel(String),
     InvalidImport(String),
     InvalidNota(f32),
     InvalidOwnerData(String),
@@ -23,6 +28,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::InvalidArtifact(msg) => write!(f, "invalid catálogo artifact: {msg}"),
+            Error::InvalidModel(msg) => write!(f, "invalid model artifact: {msg}"),
             Error::InvalidImport(msg) => write!(f, "invalid MovieLens export: {msg}"),
             Error::InvalidNota(nota) => write!(f, "nota {nota} is not 0.5–5 in half stars"),
             Error::InvalidOwnerData(msg) => write!(f, "invalid owner data: {msg}"),
@@ -55,6 +61,8 @@ pub struct MovieCard {
     pub original_title: String,
     pub year: Option<u16>,
     pub poster_url: Option<String>,
+    /// `None` for a movie the owner rated or one the model does not know.
+    pub nota_prevista: Option<f32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -108,6 +116,11 @@ pub struct Core {
     data_version: Option<String>,
     movies: Vec<Movie>,
     owner: OwnerData,
+    model: Option<Model>,
+    /// Aligned with `movies`.
+    previstas: Vec<Option<f32>>,
+    /// Explorar order: indexes into `movies`, highest nota prevista first.
+    para_voce: Vec<usize>,
 }
 
 impl Core {
@@ -129,7 +142,44 @@ impl Core {
         }
         self.data_version = Some(artifact.data_version);
         self.movies = artifact.movies;
+        self.recompute();
         Ok(())
+    }
+
+    /// Replaces the model. On error the current one stays in place.
+    pub fn load_model(&mut self, model_artifact: &[u8]) -> Result<(), Error> {
+        self.model = Some(Model::parse(model_artifact)?);
+        self.recompute();
+        Ok(())
+    }
+
+    pub fn model_version(&self) -> Option<&str> {
+        self.model.as_ref().map(|m| m.data_version.as_str())
+    }
+
+    /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
+    /// change to the catálogo, the model or the notas.
+    fn recompute(&mut self) {
+        self.previstas = match &self.model {
+            None => vec![None; self.movies.len()],
+            Some(model) => {
+                let profile = model.profile(&self.owner.notas);
+                let previstas = self.movies.iter().map(|m| {
+                    if self.owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty()) {
+                        None
+                    } else {
+                        model.predict(&profile, m.tmdb_id)
+                    }
+                });
+                previstas.collect()
+            }
+        };
+        self.para_voce = (0..self.movies.len()).collect();
+        // Stable: movies without a nota prevista keep catálogo order, after the others.
+        self.para_voce.sort_by(|&a, &b| {
+            let key = |i: usize| self.previstas[i].unwrap_or(f32::NEG_INFINITY);
+            key(b).total_cmp(&key(a))
+        });
     }
 
     pub fn data_version(&self) -> Option<&str> {
@@ -162,6 +212,7 @@ impl Core {
             }
         }
         self.owner.quero_assistir.extend(export.quero_assistir);
+        self.recompute();
         Ok(summary)
     }
 
@@ -171,6 +222,7 @@ impl Core {
             return Err(Error::InvalidNota(nota));
         }
         self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None });
+        self.recompute();
         Ok(())
     }
 
@@ -185,10 +237,10 @@ impl Core {
 
     /// The movie page, or `None` if the movie is not in the catálogo.
     pub fn movie(&self, tmdb_id: u32) -> Option<MoviePage> {
-        let movie = self.movies.iter().find(|m| m.tmdb_id == tmdb_id)?;
+        let i = self.movies.iter().position(|m| m.tmdb_id == tmdb_id)?;
         let history = self.owner.notas.get(&tmdb_id).cloned().unwrap_or_default();
         Some(MoviePage {
-            card: card(movie),
+            card: self.card(i),
             nota: history.last().map(|e| e.nota),
             history,
             quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
@@ -203,25 +255,29 @@ impl Core {
     pub fn load_owner_data(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.owner =
             serde_json::from_slice(bytes).map_err(|e| Error::InvalidOwnerData(e.to_string()))?;
+        self.recompute();
         Ok(())
     }
 
+    /// The catálogo "Para você": highest nota prevista first.
     pub fn explorar(&self, page: usize) -> ExplorarPage {
         let start = (page * PAGE_SIZE).min(self.movies.len());
         let end = (start + PAGE_SIZE).min(self.movies.len());
         ExplorarPage {
-            movies: self.movies[start..end].iter().map(card).collect(),
+            movies: self.para_voce[start..end].iter().map(|&i| self.card(i)).collect(),
             has_more: end < self.movies.len(),
         }
     }
-}
 
-fn card(m: &Movie) -> MovieCard {
-    MovieCard {
-        tmdb_id: m.tmdb_id,
-        title: m.title.clone(),
-        original_title: m.original_title.clone(),
-        year: m.year,
-        poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),
+    fn card(&self, i: usize) -> MovieCard {
+        let m = &self.movies[i];
+        MovieCard {
+            tmdb_id: m.tmdb_id,
+            title: m.title.clone(),
+            original_title: m.original_title.clone(),
+            year: m.year,
+            poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),
+            nota_prevista: self.previstas[i],
+        }
     }
 }

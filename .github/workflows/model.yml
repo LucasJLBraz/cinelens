@@ -1,0 +1,56 @@
+name: Model
+
+# Trains the movie factors on MovieLens ml-latest every month and publishes the asset
+# `model.json.gz` of the release `model-v<format version>`, which the app downloads, plus a
+# dated copy `model-<date>.json.gz` that stays as the history. Only public data: the owner's
+# notas never reach CI, the app folds them in on-device.
+on:
+  schedule:
+    - cron: "41 6 3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download ml-latest
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/ml-latest.zip" https://files.grouplens.org/datasets/movielens/ml-latest.zip
+          unzip -q -d "$RUNNER_TEMP" "$RUNNER_TEMP/ml-latest.zip" ml-latest/ratings.csv ml-latest/links.csv
+
+      - name: Train
+        run: |
+          TODAY=$(date -u +%F)
+          echo "TODAY=$TODAY" >> "$GITHUB_ENV"
+          cargo run --release -p cinelens-train -- \
+            --ratings "$RUNNER_TEMP/ml-latest/ratings.csv" \
+            --links "$RUNNER_TEMP/ml-latest/links.csv" \
+            --out model.json.gz \
+            --data-version "$TODAY"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORMAT=$(grep -oP 'MODEL_FORMAT_VERSION: u32 = \K[0-9]+' core/src/recommender.rs)
+          TAG="model-v$FORMAT"
+          cat > notes.md <<NOTES
+          Modelo de recomendação (fatores dos filmes), formato $FORMAT, treinado em $TODAY. Baixado pelo app; não é uma versão do app.
+
+          Treinado no conjunto de dados MovieLens \`ml-latest\` do GroupLens Research (https://grouplens.org/datasets/movielens/), usado sob os termos do GroupLens: uso em pesquisa e não comercial, transformações redistribuídas sob os mesmos termos, sem endosso da Universidade de Minnesota nem do GroupLens. Este modelo herda esses termos.
+
+          Citação: F. Maxwell Harper and Joseph A. Konstan. 2015. The MovieLens Datasets: History and Context. ACM Transactions on Interactive Intelligent Systems (TiiS) 5, 4: 19:1–19:19. https://doi.org/10.1145/2827872
+          NOTES
+          # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Modelo (formato $FORMAT)" --notes-file notes.md
+          cp model.json.gz "model-$TODAY.json.gz"
+          gh release upload "$TAG" model.json.gz "model-$TODAY.json.gz" --clobber
+          gh release edit "$TAG" --notes-file notes.md
