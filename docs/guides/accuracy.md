@@ -14,14 +14,15 @@ Roda só no seu computador: o export do MovieLens nunca vai para o CI nem para o
 
 ```bash
 mkdir -p data && cd data
-curl -fLO https://files.grouplens.org/datasets/movielens/ml-latest.zip
+curl -fL -o ml-latest.zip https://web.archive.org/web/20260101230406id_/https://files.grouplens.org/datasets/movielens/ml-latest.zip
+echo "66a9e518c747d76b241d9a859b001a2619d3ed1672ceef599eb50daf73a7b4a3  ml-latest.zip" | sha256sum -c -
 unzip -o ml-latest.zip ml-latest/ratings.csv ml-latest/links.csv
 kaggle datasets download tliocastro/letterboxd-sample-apr-2026 -f letterboxd_interactions.csv --unzip
 curl -fLO https://github.com/LucasJLBraz/cinelens/releases/download/catalog-v1/catalog.json.gz
 cd ..
 ```
 
-A pasta `data/` fica fora do git (`.gitignore`). Se o `curl` do GroupLens falhar com `SSL certificate problem`, o seu sistema não tem a raiz `emSign ECC Root CA - G3`: atualize o pacote `ca-certificates`.
+A pasta `data/` fica fora do git (`.gitignore`). O `ml-latest` vem da cópia do Internet Archive, conferida pelo hash: o certificado do site do GroupLens deixou de ser aceito em outubro de 2026 (raiz `emSign ECC Root CA - G3` removida dos navegadores e sistemas).
 
 ## 2. Treinar os dois modelos
 

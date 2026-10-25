@@ -27,7 +27,12 @@ jobs:
 
       - name: Download ml-latest
         run: |
-          curl -fsSLo "$RUNNER_TEMP/ml-latest.zip" https://files.grouplens.org/datasets/movielens/ml-latest.zip
+          # files.grouplens.org chains to emSign ECC Root CA - G3, which trust stores removed in
+          # October 2026 after a security incident, so curl rejects it. ml-latest has not changed
+          # since 2023: use the Internet Archive copy, checked against the hash of the GroupLens
+          # file (its published MD5 matches). Back to GroupLens once its certificate is trusted.
+          curl -fsSLo "$RUNNER_TEMP/ml-latest.zip" https://web.archive.org/web/20260101230406id_/https://files.grouplens.org/datasets/movielens/ml-latest.zip
+          echo "66a9e518c747d76b241d9a859b001a2619d3ed1672ceef599eb50daf73a7b4a3  $RUNNER_TEMP/ml-latest.zip" | sha256sum -c -
           unzip -q -d "$RUNNER_TEMP" "$RUNNER_TEMP/ml-latest.zip" ml-latest/ratings.csv ml-latest/links.csv
 
       - name: Download Letterboxd sample
