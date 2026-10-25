@@ -2,7 +2,7 @@
 
 use cinelens_core::{Aspecto, Core, Direcao, Filtro};
 
-/// 1–5 are sci-fi, most alike to 1 in id order; 6 and 7 are dramas.
+/// 1–5 are sci-fi, most alike to 1 in id order; 6–8 are dramas.
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "movies": [
     {"tmdb_id": 1, "title": "Base", "original_title": "Base", "year": 2000, "runtime": 130, "poster_path": null},
     {"tmdb_id": 2, "title": "Dois", "original_title": "Two", "year": 1990, "runtime": 150, "poster_path": null},
@@ -10,10 +10,11 @@ const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "movies": [
     {"tmdb_id": 4, "title": "Quatro", "original_title": "Four", "year": 2020, "runtime": 120, "poster_path": null},
     {"tmdb_id": 5, "title": "Cinco", "original_title": "Five", "year": 1985, "runtime": 90, "poster_path": null},
     {"tmdb_id": 6, "title": "Seis", "original_title": "Six", "year": 2015, "runtime": 140, "poster_path": null},
-    {"tmdb_id": 7, "title": "Sete", "original_title": "Seven", "year": 1970, "poster_path": null}
+    {"tmdb_id": 7, "title": "Sete", "original_title": "Seven", "year": 1970, "poster_path": null},
+    {"tmdb_id": 8, "title": "Oito", "original_title": "Eight", "year": 1960, "poster_path": null}
 ]}"#;
 
-/// Genome scores are leve, fotografia, atuações, roteiro, trilha, ritmo, diálogos; 4 and 7 have none.
+/// Genome scores are leve, fotografia, atuações, roteiro, trilha, ritmo, diálogos; 4 and 8 have none.
 const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [],
     "movies": [
         {"tmdb_id": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 10000},
@@ -22,14 +23,16 @@ const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean":
         {"tmdb_id": 4, "bias": 0.0, "factors": [0.85, 0.15], "ratings": 10000},
         {"tmdb_id": 5, "bias": 0.0, "factors": [0.8, 0.2], "ratings": 10000},
         {"tmdb_id": 6, "bias": 0.0, "factors": [0.0, 1.0], "ratings": 10000},
-        {"tmdb_id": 7, "bias": 0.0, "factors": [0.1, 0.9], "ratings": 10000}
+        {"tmdb_id": 7, "bias": 0.0, "factors": [0.1, 0.9], "ratings": 10000},
+        {"tmdb_id": 8, "bias": 0.0, "factors": [0.15, 0.85], "ratings": 10000}
     ],
     "genome": {"aspects": ["leve", "fotografia", "atuacoes", "roteiro", "trilha", "ritmo", "dialogos"], "movies": [
         {"tmdb_id": 1, "scores": [0.2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]},
         {"tmdb_id": 2, "scores": [0.1, 0.9, 0.2, 0.5, 0.5, 0.5, 0.5]},
         {"tmdb_id": 3, "scores": [0.8, 0.3, 0.9, 0.5, 0.5, 0.5, 0.5]},
         {"tmdb_id": 5, "scores": [0.6, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5]},
-        {"tmdb_id": 6, "scores": [0.5, 0.95, 0.5, 0.5, 0.5, 0.5, 0.5]}
+        {"tmdb_id": 6, "scores": [0.5, 0.95, 0.5, 0.5, 0.5, 0.5, 0.5]},
+        {"tmdb_id": 7, "scores": [0.0, 0.0, 1.0, 0.5, 0.5, 0.5, 0.5]}
     ]}}"#;
 
 fn core() -> Core {
@@ -84,6 +87,19 @@ fn o_que_pesou_pulls_recomendacoes_toward_movies_strong_in_it() {
 
     core.set_pesou(1, &[]);
     assert!(before(&para_voce(&core), 2, 3));
+}
+
+#[test]
+fn o_que_pesou_never_lifts_a_movie_the_owner_would_probably_not_like() {
+    let mut core = core();
+    core.rate(1, 5.0, 100).unwrap();
+    core.rate(6, 1.0, 100).unwrap();
+    assert!(before(&para_voce(&core), 8, 7));
+
+    core.set_pesou(1, &[Aspecto::Atuacoes]);
+
+    // Sete is the strongest in atuações, but a drama, which this owner rates low.
+    assert!(before(&para_voce(&core), 8, 7));
 }
 
 #[test]

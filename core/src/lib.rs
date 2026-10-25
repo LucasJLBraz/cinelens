@@ -36,6 +36,10 @@ const FA_BOOST: f32 = 1.0;
 /// aspects the owner said weighed in their notas (each aspect by its share of all those marked).
 // ponytail: fixed weight; tune once the owner has tagged a few dozen notas.
 const PESOU_BOOST: f32 = 2.0;
+/// Only movies whose nota prevista is among this top share of the owner's predictions (Aposta
+/// forte and Boa chance) are pulled by o que pesou: an aspect never lifts a movie they would
+/// probably not like.
+const PESOU_TOP: f32 = 0.35;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
 
@@ -495,6 +499,8 @@ impl Core {
                 previstas.collect()
             }
         };
+        self.ranked = self.previstas.iter().flatten().map(|(p, _)| *p).collect();
+        self.ranked.sort_by(|a, b| b.total_cmp(a));
         let pesos = self.pesos();
         self.boost = (0..self.movies.len()).map(|i| self.fa_boost(i) + self.pesou_boost(i, &pesos)).collect();
         let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !self.dispensado(i)).collect();
@@ -504,8 +510,6 @@ impl Core {
             key(b).total_cmp(&key(a))
         });
         self.para_voce = para_voce;
-        self.ranked = self.previstas.iter().flatten().map(|(p, _)| *p).collect();
-        self.ranked.sort_by(|a, b| b.total_cmp(a));
     }
 
     /// A recomendação: predicted, neither já vi nor não me interessa.
@@ -543,9 +547,14 @@ impl Core {
         pesos
     }
 
-    /// Movies without genome scores (the genome stops in 2023) get none: a weaker effect.
+    /// Movies without genome scores (the genome stops in 2023) get none: a weaker effect. Nor do
+    /// those below the `PESOU_TOP` share of the owner's predictions.
     fn pesou_boost(&self, i: usize, pesos: &[f32]) -> f32 {
-        let (Some(model), Some(item)) = (&self.model, &self.items[i]) else { return 0.0 };
+        let (Some(model), Some(item), Some((prevista, _))) = (&self.model, &self.items[i], self.previstas[i]) else { return 0.0 };
+        let top = self.ranked.get((self.ranked.len() as f32 * PESOU_TOP) as usize).copied().unwrap_or(f32::NEG_INFINITY);
+        if prevista < top {
+            return 0.0;
+        }
         let shift = |(a, peso): (usize, &f32)| Some(peso * (item.genome_score(a)? - model.genome_means[a]));
         PESOU_BOOST * pesos.iter().enumerate().filter_map(shift).sum::<f32>()
     }
