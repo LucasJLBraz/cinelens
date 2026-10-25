@@ -1,4 +1,4 @@
-use cinelens_core::Core;
+use cinelens_core::{Core, Filtro};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
 /// Two tastes: sci-fi (603 Matrix, 27205 Inception, 157336 Interstellar, 693134 Duna 2, 11 Star
@@ -61,9 +61,9 @@ fn explorar_puts_highest_nota_prevista_first() {
     core.rate(603, 5.0, 100).unwrap();
     core.rate(278, 1.5, 100).unwrap();
 
-    let ids: Vec<u32> = core.explorar(0).movies.iter().map(|m| m.tmdb_id).collect();
+    let ids: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect();
     let previstas: Vec<f32> =
-        core.explorar(0).movies.iter().map_while(|m| m.nota_prevista).collect();
+        core.explorar(&Filtro::default(), 0).movies.iter().map_while(|m| m.nota_prevista).collect();
 
     assert_eq!(previstas.len(), 8, "every unrated movie in the model comes first");
     assert!(previstas.windows(2).all(|w| w[0] >= w[1]));
@@ -90,7 +90,7 @@ fn notas_imported_or_loaded_from_disk_also_drive_predictions() {
 #[test]
 fn without_a_model_explorar_keeps_catalogo_order() {
     let core = Core::open(CATALOG).unwrap();
-    let page = core.explorar(0);
+    let page = core.explorar(&Filtro::default(), 0);
     assert_eq!(page.movies[0].tmdb_id, 550);
     assert!(page.movies.iter().all(|m| m.nota_prevista.is_none()));
     assert_eq!(core.model_version(), None);

@@ -1,6 +1,6 @@
 //! How the nota prevista is shown ("Mostrar previsão como"), and the reveal after a nota.
 
-use cinelens_core::{Core, DisplayMode, Exibicao, Faixa};
+use cinelens_core::{Core, Filtro, DisplayMode, Exibicao, Faixa};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
 /// Sci-fi: 603, 27205, 157336, 693134, 11. Crime/drama: 238, 240, 278, 769, 424.
@@ -16,7 +16,7 @@ fn owner() -> Core {
 }
 
 fn exibicoes(core: &Core) -> Vec<Option<Exibicao>> {
-    core.explorar(0).movies.into_iter().map(|m| m.exibicao).collect()
+    core.explorar(&Filtro::default(), 0).movies.into_iter().map(|m| m.exibicao).collect()
 }
 
 #[test]
@@ -57,11 +57,11 @@ fn estrelas_shows_the_decimal_the_most_likely_half_star_and_the_confianca() {
 #[test]
 fn oculto_shows_nothing_but_keeps_the_order() {
     let mut core = owner();
-    let order: Vec<u32> = core.explorar(0).movies.iter().map(|m| m.tmdb_id).collect();
+    let order: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect();
     core.set_display_mode(DisplayMode::Oculto);
 
     assert!(exibicoes(&core).iter().all(Option::is_none));
-    assert_eq!(core.explorar(0).movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), order);
+    assert_eq!(core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), order);
 }
 
 #[test]

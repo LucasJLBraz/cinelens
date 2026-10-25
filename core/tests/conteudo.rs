@@ -1,7 +1,7 @@
 //! Movies without collaborative data get a nota prevista from their content, and every nota
 //! prevista carries a confiança.
 
-use cinelens_core::Core;
+use cinelens_core::{Core, Filtro};
 
 /// 1–3 sci-fi by director 900, 4–6 drama by director 901, all in the model. 7 is a new sci-fi
 /// release by 900 and 8 a new drama by 901, neither in the model; 9 shares nothing with it.
@@ -65,7 +65,7 @@ fn content_only_predictions_have_lower_confianca_than_well_rated_classics() {
 #[test]
 fn every_nota_prevista_has_a_confianca() {
     let core = sci_fi_lover();
-    for card in core.explorar(0).movies {
+    for card in core.explorar(&Filtro::default(), 0).movies {
         assert_eq!(
             card.nota_prevista.is_some(),
             card.confianca.is_some(),

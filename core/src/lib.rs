@@ -5,10 +5,12 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde::{Deserialize, Serialize};
 
 mod display;
+mod filtro;
 mod movielens;
 mod recommender;
 
 pub use display::{DisplayMode, Faixa, Exibicao};
+pub use filtro::{Filtro, Mostrar};
 pub use recommender::{ridge, MODEL_FORMAT_VERSION};
 use recommender::Model;
 
@@ -47,8 +49,27 @@ struct CatalogArtifact {
     format_version: u32,
     data_version: String,
     #[serde(default)]
+    genres: Vec<Genero>,
+    #[serde(default)]
     providers: Vec<Provedor>,
     movies: Vec<Movie>,
+}
+
+/// A TMDB genre, named in Portuguese.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Genero {
+    pub id: u32,
+    pub name: String,
+}
+
+/// What Explorar's filters can choose from.
+#[derive(Debug, Serialize)]
+pub struct Opcoes {
+    pub generos: Vec<Genero>,
+    /// Original languages (ISO 639-1), most movies first.
+    pub idiomas: Vec<String>,
+    /// Production countries (ISO 3166-1), most movies first.
+    pub paises: Vec<String>,
 }
 
 /// A streaming, rental or purchase service.
@@ -87,11 +108,19 @@ struct Movie {
     original_language: Option<String>,
     #[serde(default)]
     watch: Option<Watch>,
+    #[serde(default)]
+    runtime: Option<u32>,
+    #[serde(default)]
+    countries: Vec<String>,
+    #[serde(default)]
+    vote_count: u32,
 }
 
 #[derive(Deserialize)]
 struct Person {
     id: u32,
+    #[serde(default)]
+    name: String,
 }
 
 impl Movie {
@@ -268,7 +297,12 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 pub struct Core {
     data_version: Option<String>,
     movies: Vec<Movie>,
+    generos: Vec<Genero>,
     provedores: Vec<Provedor>,
+    /// Aligned with `movies`: what search matches against.
+    busca: Vec<String>,
+    /// Aligned with `movies`: 0 (no votes) to 1 (the most voted), on a log scale.
+    popularidade: Vec<f32>,
     owner: OwnerData,
     model: Option<Model>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
@@ -302,7 +336,12 @@ impl Core {
             )));
         }
         self.data_version = Some(artifact.data_version);
+        self.busca = artifact.movies.iter().map(filtro::searchable).collect();
+        let log_votes = |m: &Movie| (m.vote_count as f32).ln_1p();
+        let most = artifact.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
+        self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
         self.movies = artifact.movies;
+        self.generos = artifact.genres;
         self.provedores = artifact.providers;
         self.refresh_items();
         Ok(())
@@ -531,13 +570,42 @@ impl Core {
         Some(Accuracy { held_out: hidden.len(), notas: errors.len(), mae: mean(&errors)?, movielens_mae: mean(&movielens) })
     }
 
-    /// The catálogo "Para você": highest nota prevista first.
-    pub fn explorar(&self, page: usize) -> ExplorarPage {
-        let start = (page * PAGE_SIZE).min(self.para_voce.len());
-        let end = (start + PAGE_SIZE).min(self.para_voce.len());
-        ExplorarPage {
-            movies: self.para_voce[start..end].iter().map(|&i| self.card(i)).collect(),
-            has_more: end < self.para_voce.len(),
+    /// The catálogo movies passing `filtro`, recomendações first ("Para você": highest nota
+    /// prevista first, popularity weighed by `filtro.garimpo`), then the rest in catálogo order.
+    pub fn explorar(&self, filtro: &Filtro, page: usize) -> ExplorarPage {
+        let matcher = filtro::Matcher::new(filtro);
+        let passes = |&i: &usize| matcher.passes(self, i);
+        let mut found: Vec<usize> = if filtro.nao_me_interessa {
+            let dismissed = |&i: &usize| self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id);
+            (0..self.movies.len()).filter(dismissed).filter(passes).collect()
+        } else {
+            self.para_voce.iter().copied().filter(passes).collect()
+        };
+        if filtro.garimpo != 0.0 {
+            // ponytail: popularity is log TMDB votes, one star at either end of the slider; tune
+            // the weight once the owner has used it.
+            let score = |i: usize| self.previstas[i].map_or(0.0, |(p, _)| p) - filtro.garimpo * self.popularidade[i];
+            let n = found.partition_point(|&i| self.recomendavel(i));
+            found[..n].sort_by(|&a, &b| score(b).total_cmp(&score(a)));
+        }
+        let start = (page * PAGE_SIZE).min(found.len());
+        let end = (start + PAGE_SIZE).min(found.len());
+        ExplorarPage { movies: found[start..end].iter().map(|&i| self.card(i)).collect(), has_more: end < found.len() }
+    }
+
+    pub fn opcoes(&self) -> Opcoes {
+        fn by_count<'a>(values: impl Iterator<Item = &'a String>) -> Vec<String> {
+            let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+            values.for_each(|v| *counts.entry(v).or_default() += 1);
+            let mut sorted: Vec<(&str, usize)> = counts.into_iter().collect();
+            // Stable: ties stay in code order.
+            sorted.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
+            sorted.into_iter().map(|(v, _)| v.to_string()).collect()
+        }
+        Opcoes {
+            generos: self.generos.clone(),
+            idiomas: by_count(self.movies.iter().filter_map(|m| m.original_language.as_ref())),
+            paises: by_count(self.movies.iter().flat_map(|m| &m.countries)),
         }
     }
 

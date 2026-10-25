@@ -1,6 +1,6 @@
 //! Já vi, não me interessa and agora não: what each mark does, and that each can be undone.
 
-use cinelens_core::{Core, Marca};
+use cinelens_core::{Core, Filtro, Marca};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
 /// Sci-fi: 603, 27205, 157336, 693134, 11. Crime/drama: 238, 240, 278, 769, 424.
@@ -20,7 +20,7 @@ fn owner() -> Core {
 fn explorar(core: &Core) -> Vec<u32> {
     let mut ids = Vec::new();
     for page in 0.. {
-        let result = core.explorar(page);
+        let result = core.explorar(&Filtro::default(), page);
         ids.extend(result.movies.iter().map(|m| m.tmdb_id));
         if !result.has_more {
             return ids;
@@ -33,7 +33,7 @@ fn explorar(core: &Core) -> Vec<u32> {
 fn recomendacoes(core: &Core) -> Vec<u32> {
     let mut ids = Vec::new();
     for page in 0.. {
-        let result = core.explorar(page);
+        let result = core.explorar(&Filtro::default(), page);
         let ranked = result.movies.iter().take_while(|m| m.nota_prevista.is_some() && !core.movie(m.tmdb_id).unwrap().ja_vi);
         ids.extend(ranked.map(|m| m.tmdb_id));
         if !result.has_more {

@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use cinelens_core::Core;
+use cinelens_core::{Core, Filtro};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
@@ -31,7 +31,21 @@ fn main() {
     failed |= !budget("nota: fold-in and ranking", Duration::from_millis(200), || {
         at += 1;
         core.rate(12_345, 4.0, at).unwrap();
-        assert!(core.explorar(0).movies[0].nota_prevista.is_some());
+        assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
+    });
+
+    // Every movie passes every filter, so all of them are checked and every recomendação re-sorted.
+    let filtro = Filtro {
+        incluir: vec![18, 35],
+        excluir: vec![99],
+        ano_min: Some(1900),
+        duracao_max: Some(180),
+        busca: "filme número".into(),
+        garimpo: -0.7,
+        ..Default::default()
+    };
+    failed |= !budget("filtro: filter change to updated page", Duration::from_millis(100), || {
+        assert_eq!(core.explorar(&filtro, 0).movies.len(), 30);
     });
 
     if failed {

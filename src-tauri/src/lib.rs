@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filtro, ImportSummary, Opcoes, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -130,8 +130,13 @@ fn set_decay(app: AppHandle, core: tauri::State<RwLock<Core>>, decay: Decay) -> 
 }
 
 #[tauri::command]
-fn explorar(core: tauri::State<RwLock<Core>>, page: usize) -> ExplorarPage {
-    core.read().unwrap().explorar(page)
+fn explorar(core: tauri::State<RwLock<Core>>, filtro: Filtro, page: usize) -> ExplorarPage {
+    core.read().unwrap().explorar(&filtro, page)
+}
+
+#[tauri::command]
+fn opcoes(core: tauri::State<RwLock<Core>>) -> Opcoes {
+    core.read().unwrap().opcoes()
 }
 
 /// The data versions of the local catálogo and model; `None` before their first download.
@@ -281,6 +286,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             explorar,
+            opcoes,
             status,
             download_catalog,
             download_model,

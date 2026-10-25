@@ -1,7 +1,7 @@
 //! Seam 2: the catalog job, run on a tiny TMDB fixture, produces an artifact the core loads.
 
 use cinelens_catalog::{build, Config};
-use cinelens_core::Core;
+use cinelens_core::{Core, Filtro};
 use serde_json::{json, Value};
 
 /// Answers requests from the fixture. Discover pages not listed are empty years; anything
@@ -32,7 +32,7 @@ fn core_queries_the_built_catalogo_most_voted_first() {
     let core = Core::open(&fixture_artifact()).unwrap();
     assert_eq!(core.data_version(), Some("2026-10-25"));
 
-    let page = core.explorar(0);
+    let page = core.explorar(&Filtro::default(), 0);
     let ids: Vec<u32> = page.movies.iter().map(|m| m.tmdb_id).collect();
     // Discover (both 1999 pages), the training-data extra and the recent release; 999999 skipped.
     assert_eq!(ids, [550, 13, 603, 1311]);

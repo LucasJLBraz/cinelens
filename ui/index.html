@@ -24,6 +24,22 @@
     #retry { margin-top: 16px; padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .pill { padding: 8px 16px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; font-size: 13px; }
+    #filtros { padding: 0 16px; }
+    #busca { width: 100%; padding: 10px 14px; border: 1px solid var(--card); border-radius: 20px; background: var(--card); color: var(--text); font: inherit; }
+    .linha { display: flex; gap: 8px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+    .chips { display: flex; gap: 8px; }
+    .chip { flex: none; padding: 6px 12px; border: 1px solid var(--muted); border-radius: 16px; background: none; color: var(--text); font: inherit; font-size: 13px; white-space: nowrap; }
+    select.chip { background: var(--bg); }
+    .chip.on, .chip.incluir { border-color: var(--accent); color: var(--accent); }
+    .chip.excluir { border-color: #e5534b; color: #e5534b; text-decoration: line-through; }
+    #painel { margin-top: 8px; padding: 12px; border-radius: 8px; background: var(--card); font-size: 13px; }
+    #painel .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+    #painel label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); min-width: 0; }
+    #painel label.inline { flex-direction: row; align-items: center; color: var(--text); }
+    #painel input[type=number], #painel select { width: 100%; padding: 6px; border: 1px solid var(--muted); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+    .garimpo { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+    .garimpo input { flex: 1; accent-color: var(--accent); }
+    #vazio { padding: 24px 16px; color: var(--muted); text-align: center; }
     #import-result { margin: 0 16px; color: var(--muted); font-size: 13px; }
     .movie { cursor: pointer; }
     #filme { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
@@ -77,7 +93,47 @@
       <input id="import-files" type="file" multiple hidden>
     </header>
     <p id="import-result" hidden></p>
+    <div id="filtros">
+      <input id="busca" type="search" placeholder="Título, direção ou elenco" data-campo="busca">
+      <div class="linha">
+        <div id="generos" class="chips"></div>
+      </div>
+      <div class="linha">
+        <button id="streaming" class="chip">No meu streaming</button>
+        <select id="duracao" class="chip">
+          <option value="">Qualquer duração</option>
+          <option value="-100">Até 1h40</option>
+          <option value="100-150">1h40 a 2h30</option>
+          <option value="150-">Mais de 2h30</option>
+        </select>
+        <button id="mais-filtros" class="chip">+ filtros</button>
+      </div>
+      <div id="painel" hidden>
+        <label class="inline"><input type="checkbox" data-campo="qualquer" data-tipo="bool"> Gêneros: qualquer um dos marcados (OU)</label>
+        <div class="grade">
+          <label>Ano de <input type="number" inputmode="numeric" data-campo="ano_min" data-tipo="num" placeholder="1900"></label>
+          <label>até <input type="number" inputmode="numeric" data-campo="ano_max" data-tipo="num" placeholder="2026"></label>
+          <label>Idioma original <select id="idioma" data-campo="idioma"><option value="">Qualquer</option></select></label>
+          <label>País <select id="pais" data-campo="pais"><option value="">Qualquer</option></select></label>
+          <label>Nota prevista mínima <select data-campo="nota_prevista_min" data-tipo="num">
+            <option value="">Qualquer</option><option>3</option><option>3.5</option><option>4</option><option>4.5</option></select></label>
+          <label>Confiança mínima <select data-campo="confianca_min" data-tipo="num">
+            <option value="">Qualquer</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="0.7">70%</option></select></label>
+          <label>Avaliados <select data-campo="avaliados"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
+          <label>Já vi <select data-campo="ja_vi"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
+          <label>Quero assistir <select data-campo="quero_assistir"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
+          <label>Não me interessa <select data-campo="nao_me_interessa" data-tipo="bool"><option value="">Esconder</option><option value="1">Só estes</option></select></label>
+        </div>
+        <button id="limpar" class="chip">Limpar filtros</button>
+      </div>
+      <label class="garimpo">
+        <span>Populares</span>
+        <input type="range" min="-1" max="1" step="0.1" value="0" data-campo="garimpo" data-tipo="num">
+        <span>Garimpo</span>
+      </label>
+    </div>
     <main id="grid"></main>
+    <p id="vazio" hidden>Nenhum filme com esses filtros.</p>
     <button id="more" hidden>Mais filmes</button>
   </div>
   <section id="filme" hidden>
@@ -194,11 +250,109 @@
     // Recomendações change after every nota; the grid is rebuilt on the way back to it.
     let stale = false;
 
+    // Explorar's filters, as the core's Filtro; {} is no filter.
+    let filtro = {};
+    // Bumped on every reload, so a page that arrives after a newer filter is dropped.
+    let generation = 0;
+
     async function load() {
-      const result = await invoke('explorar', { page });
+      const mine = generation;
+      const result = await invoke('explorar', { filtro, page });
+      if (mine !== generation) return;
       grid.append(...result.movies.map(card));
       more.hidden = !result.has_more;
+      document.getElementById('vazio').hidden = page > 0 || result.movies.length > 0;
       page += 1;
+    }
+
+    const campos = [...document.querySelectorAll('[data-campo]')];
+    const generosEl = document.getElementById('generos');
+    const duracaoEl = document.getElementById('duracao');
+
+    // Controls → filtro.
+    function readFiltro() {
+      const f = { incluir: filtro.incluir || [], excluir: filtro.excluir || [] };
+      for (const el of campos) {
+        const v = el.type === 'checkbox' ? el.checked : el.value;
+        if (el.dataset.tipo === 'bool') f[el.dataset.campo] = Boolean(v);
+        else if (el.dataset.tipo === 'num') { if (v !== '' && Number(v) !== 0) f[el.dataset.campo] = Number(v); }
+        else if (v !== '') f[el.dataset.campo] = v;
+      }
+      const [min, max] = duracaoEl.value.split('-');
+      if (min) f.duracao_min = Number(min);
+      if (max) f.duracao_max = Number(max);
+      f.no_meu_streaming = document.getElementById('streaming').classList.contains('on');
+      return f;
+    }
+
+    // Filtro → controls.
+    function showFiltro() {
+      for (const el of campos) {
+        const v = filtro[el.dataset.campo];
+        if (el.type === 'checkbox') el.checked = Boolean(v);
+        else if (el.dataset.tipo === 'bool') el.value = v ? '1' : '';
+        else el.value = v ?? (el.dataset.campo === 'garimpo' ? 0 : el.tagName === 'SELECT' ? el.options[0].value : '');
+      }
+      duracaoEl.value = filtro.duracao_min || filtro.duracao_max ? `${filtro.duracao_min ?? ''}-${filtro.duracao_max ?? ''}` : '';
+      if (duracaoEl.selectedIndex < 0) duracaoEl.value = '';
+      document.getElementById('streaming').classList.toggle('on', Boolean(filtro.no_meu_streaming));
+      for (const chip of generosEl.children) {
+        const id = Number(chip.dataset.id);
+        chip.className = 'chip' + ((filtro.incluir || []).includes(id) ? ' incluir' : (filtro.excluir || []).includes(id) ? ' excluir' : '');
+      }
+    }
+
+    function applyFiltro() {
+      filtro = readFiltro();
+      reloadGrid();
+    }
+
+    // Opens Explorar with `preset` as the only filters (Início's rows and chips); {} clears them.
+    function abrirExplorar(preset) {
+      filtro = { ...preset };
+      showFiltro();
+      reloadGrid();
+    }
+
+    for (const el of campos) el.addEventListener(el.type === 'search' || el.type === 'range' ? 'input' : 'change', applyFiltro);
+    duracaoEl.addEventListener('change', applyFiltro);
+    document.getElementById('streaming').addEventListener('click', e => { e.target.classList.toggle('on'); applyFiltro(); });
+    document.getElementById('mais-filtros').addEventListener('click', e => {
+      const painel = document.getElementById('painel');
+      painel.hidden = !painel.hidden;
+      e.target.classList.toggle('on', !painel.hidden);
+    });
+    document.getElementById('limpar').addEventListener('click', () => abrirExplorar({}));
+    // Tap: include; second tap: exclude; third: clear.
+    generosEl.addEventListener('click', e => {
+      const id = Number(e.target.dataset.id);
+      if (!id) return;
+      const incluir = (filtro.incluir || []).filter(g => g !== id);
+      const excluir = (filtro.excluir || []).filter(g => g !== id);
+      if (e.target.classList.contains('incluir')) excluir.push(id);
+      else if (!e.target.classList.contains('excluir')) incluir.push(id);
+      filtro = { ...filtro, incluir, excluir };
+      showFiltro();
+      reloadGrid();
+    });
+
+    async function loadOpcoes() {
+      const opcoes = await invoke('opcoes');
+      generosEl.replaceChildren(...opcoes.generos.map(g => {
+        const chip = document.createElement('button');
+        chip.className = 'chip';
+        chip.dataset.id = g.id;
+        chip.textContent = g.name;
+        return chip;
+      }));
+      const fill = (id, codes, type) => {
+        const names = new Intl.DisplayNames(['pt-BR'], { type });
+        const name = c => { try { return names.of(c); } catch { return c; } };
+        document.getElementById(id).append(...codes.map(c => new Option(name(c), c)));
+      };
+      fill('idioma', opcoes.idiomas, 'language');
+      fill('pais', opcoes.paises, 'region');
+      showFiltro();
     }
 
     async function setup() {
@@ -234,6 +388,7 @@
     }
 
     function reloadGrid() {
+      generation += 1;
       page = 0;
       grid.replaceChildren();
       load();
@@ -384,6 +539,7 @@
     // background, so the app never waits on it (and retries on the next launch if offline).
     async function start() {
       document.getElementById('explorar').hidden = false;
+      loadOpcoes();
       load();
       const [, model] = await invoke('status');
       if (!model) invoke('download_model').then(reloadGrid, () => {});
