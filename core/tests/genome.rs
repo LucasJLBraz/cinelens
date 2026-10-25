@@ -77,7 +77,7 @@ fn o_que_pesou_pulls_recomendacoes_toward_movies_strong_in_it() {
     let prevista = core.movie(3).unwrap().card.nota_prevista;
     assert!(before(&para_voce(&core), 2, 3));
 
-    core.set_pesou(1, &[Aspecto::Atuacoes]);
+    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
 
     assert!(before(&para_voce(&core), 3, 2), "Três is strong in atuações");
     assert_eq!(core.movie(3).unwrap().card.nota_prevista, prevista, "the nota prevista itself stays");
@@ -85,7 +85,7 @@ fn o_que_pesou_pulls_recomendacoes_toward_movies_strong_in_it() {
     // Quatro has no genome data: still ranked, just not pulled either way.
     assert!(para_voce(&core).contains(&4));
 
-    core.set_pesou(1, &[]);
+    core.set_pesou(1, &[], 0);
     assert!(before(&para_voce(&core), 2, 3));
 }
 
@@ -96,7 +96,7 @@ fn o_que_pesou_never_lifts_a_movie_the_owner_would_probably_not_like() {
     core.rate(6, 1.0, 100).unwrap();
     assert!(before(&para_voce(&core), 8, 7));
 
-    core.set_pesou(1, &[Aspecto::Atuacoes]);
+    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
 
     // Sete is the strongest in atuações, but a drama, which this owner rates low.
     assert!(before(&para_voce(&core), 8, 7));
@@ -107,8 +107,8 @@ fn o_que_pesou_and_hiding_its_prompt_survive_a_restart() {
     let mut core = core();
     assert!(!core.pesou_oculto());
     core.rate(1, 5.0, 100).unwrap();
-    core.set_pesou(1, &[Aspecto::Atuacoes, Aspecto::Fotografia]);
-    core.set_pesou_oculto(true);
+    core.set_pesou(1, &[Aspecto::Atuacoes, Aspecto::Fotografia], 0);
+    core.set_pesou_oculto(true, 0);
 
     let mut restarted = Core::open(CATALOG.as_bytes()).unwrap();
     restarted.load_model(MODEL.as_bytes()).unwrap();
@@ -125,7 +125,7 @@ fn a_model_without_genome_still_loads_and_ranks() {
     core.load_model(model.as_bytes()).unwrap();
     core.rate(1, 5.0, 100).unwrap();
     let ranked = para_voce(&core);
-    core.set_pesou(1, &[Aspecto::Atuacoes]);
+    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
     assert_eq!(para_voce(&core), ranked);
     assert!(core.parecidos_mas(1, Direcao::MelhorFotografia).is_empty());
     assert_eq!(ids(&core, 1, Direcao::MaisRecente), [3, 4, 6]);

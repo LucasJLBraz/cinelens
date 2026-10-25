@@ -149,7 +149,7 @@ fn no_seu_streaming_hoje_is_on_a_service_the_owner_subscribes_to() {
     let mut core = core();
     assert!(fileira(&core, "No seu streaming hoje").is_empty());
     // 9 is only for rent on Netflix (8): not something to watch right now.
-    core.set_servicos(&[8]);
+    core.set_servicos(&[8], 0);
     assert_eq!(fileira(&core, "No seu streaming hoje"), [2]);
 }
 

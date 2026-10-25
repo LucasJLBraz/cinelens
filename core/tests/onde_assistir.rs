@@ -29,7 +29,7 @@ fn subscribed_services_are_saved_with_the_owner_data() {
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
     assert!(core.servicos().is_empty());
 
-    core.set_servicos(&[8]);
+    core.set_servicos(&[8], 0);
 
     let mut restarted = Core::open(CATALOG.as_bytes()).unwrap();
     restarted.load_owner_data(&core.owner_data()).unwrap();

@@ -115,7 +115,7 @@ fn sou_fa_raises_a_persons_movies_in_the_ranking() {
     let before = para_voce(&core);
     assert!(before.iter().position(|&m| m == 6) > before.iter().position(|&m| m == 7));
 
-    core.set_fa(14, true);
+    core.set_fa(14, true, 0);
 
     let after = para_voce(&core);
     assert!(after.iter().position(|&m| m == 6) < after.iter().position(|&m| m == 7), "{after:?}");
@@ -123,14 +123,14 @@ fn sou_fa_raises_a_persons_movies_in_the_ranking() {
     assert!(core.movie(6).unwrap().direcao[0].fa);
     assert!(core.pessoa(14).unwrap().pessoa.fa);
 
-    core.set_fa(14, false);
+    core.set_fa(14, false, 0);
     assert_eq!(para_voce(&core), before);
 }
 
 #[test]
 fn sou_fa_works_for_composers_and_survives_a_restart() {
     let mut core = owner();
-    core.set_fa(31, true);
+    core.set_fa(31, true, 0);
     let ranked = para_voce(&core);
     assert!(ranked.iter().position(|&m| m == 6) < ranked.iter().position(|&m| m == 7), "{ranked:?}");
 

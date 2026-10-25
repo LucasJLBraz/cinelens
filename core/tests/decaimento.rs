@@ -35,7 +35,7 @@ fn changed_taste(core: &mut Core) {
 #[test]
 fn with_decay_on_a_recent_nota_pattern_dominates_an_old_contradicting_one() {
     let mut core = with_model();
-    core.set_decay(Decay::HalfLifeDays(180));
+    core.set_decay(Decay::HalfLifeDays(180), 0);
     changed_taste(&mut core);
 
     // Duna 2 is sci-fi, A Lista de Schindler drama.
@@ -45,11 +45,11 @@ fn with_decay_on_a_recent_nota_pattern_dominates_an_old_contradicting_one() {
 #[test]
 fn disabling_decay_gives_every_nota_the_same_weight() {
     let mut core = with_model();
-    core.set_decay(Decay::Off);
+    core.set_decay(Decay::Off, 0);
     changed_taste(&mut core);
 
     let mut undated = with_model();
-    undated.set_decay(Decay::HalfLifeDays(180));
+    undated.set_decay(Decay::HalfLifeDays(180), 0);
     for (id, nota) in [(603, 5.0), (157336, 5.0), (278, 1.0), (769, 1.0), (27205, 1.0), (11, 1.0), (238, 5.0), (240, 5.0)] {
         undated.rate(id, nota, 0).unwrap();
     }
@@ -85,7 +85,7 @@ fn few_notas_are_not_enough_to_calibrate() {
 #[test]
 fn decay_setting_survives_a_restart() {
     let mut core = with_model();
-    core.set_decay(Decay::HalfLifeDays(365));
+    core.set_decay(Decay::HalfLifeDays(365), 0);
 
     let mut restarted = with_model();
     restarted.load_owner_data(&core.owner_data()).unwrap();

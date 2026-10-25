@@ -1,8 +1,10 @@
 name: Catalog
 
 # Builds the full catálogo from TMDB every day and publishes it as the asset
-# `catalog.json.gz` of the release `catalog-v<format version>`. See docs/guides/tmdb.md and
-# docs/guides/omdb.md.
+# `catalog.json.gz` of the release `catalog-v<format version>`, with `catalog-version.txt`
+# (its data version) and `catalog-delta-<yesterday's data version>.json.gz`, the changes since
+# the catálogo published before: the app checks the version and downloads only the deltas.
+# See docs/guides/tmdb.md and docs/guides/omdb.md.
 on:
   schedule:
     - cron: "17 5 * * *"
@@ -46,6 +48,16 @@ jobs:
           key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: omdb-
 
+      - name: Download previous catálogo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          echo "TAG=catalog-v$FORMAT" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/previous"
+          # None on the first run: then no delta is published.
+          gh release download "catalog-v$FORMAT" -p catalog.json.gz -D "$RUNNER_TEMP/previous" || true
+
       - name: Build catálogo
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
@@ -59,7 +71,9 @@ jobs:
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)" \
             --extra-ids training-ids.txt \
-            --omdb-cache omdb-cache.json
+            --omdb-cache omdb-cache.json \
+            --previous "$RUNNER_TEMP/previous/catalog.json.gz" \
+            --delta-dir deltas
 
       - uses: actions/cache/save@v4
         with:
@@ -70,10 +84,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
-          TAG="catalog-v$FORMAT"
+          FORMAT=${TAG#catalog-v}
           NOTES="Catálogo completo, formato $FORMAT, dados de $TODAY. Baixado pelo app; não é uma versão do app."
           # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
           gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Catálogo (formato $FORMAT)" --notes "$NOTES"
-          gh release upload "$TAG" catalog.json.gz --clobber
+          echo -n "$TODAY" > catalog-version.txt
+          # The version last, so an app never sees it before the files it names.
+          shopt -s nullglob
+          gh release upload "$TAG" catalog.json.gz deltas/*.json.gz --clobber
+          gh release upload "$TAG" catalog-version.txt --clobber
+          # Deltas older than 60 days: an app that far behind downloads the full catálogo.
+          CUTOFF=$(date -u -d '-60 days' +%F)
+          gh release view "$TAG" --json assets --jq '.assets[].name' | { grep -oP '^catalog-delta-\K[0-9-]+(?=\.json\.gz$)' || true; } | while read -r FROM; do
+            if [[ "$FROM" < "$CUTOFF" ]]; then gh release delete-asset "$TAG" "catalog-delta-$FROM.json.gz" -y; fi
+          done
           gh release edit "$TAG" --notes "$NOTES"

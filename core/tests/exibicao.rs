@@ -42,7 +42,7 @@ fn faixa_is_the_default_with_bands_from_the_owners_own_predictions() {
 #[test]
 fn estrelas_shows_the_decimal_the_most_likely_half_star_and_the_confianca() {
     let mut core = owner();
-    core.set_display_mode(DisplayMode::Estrelas);
+    core.set_display_mode(DisplayMode::Estrelas, 0);
 
     let card = core.movie(27205).unwrap().card;
     let Some(Exibicao::Estrelas { nota, meia_estrela, confianca }) = card.exibicao else {
@@ -58,7 +58,7 @@ fn estrelas_shows_the_decimal_the_most_likely_half_star_and_the_confianca() {
 fn oculto_shows_nothing_but_keeps_the_order() {
     let mut core = owner();
     let order: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect();
-    core.set_display_mode(DisplayMode::Oculto);
+    core.set_display_mode(DisplayMode::Oculto, 0);
 
     assert!(exibicoes(&core).iter().all(Option::is_none));
     assert_eq!(core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), order);
@@ -92,7 +92,7 @@ fn the_prediction_at_rating_time_is_stored_with_the_nota() {
 #[test]
 fn no_reveal_when_hidden_or_without_a_prediction() {
     let mut core = owner();
-    core.set_display_mode(DisplayMode::Oculto);
+    core.set_display_mode(DisplayMode::Oculto, 0);
     assert_eq!(core.rate(27205, 4.0, 200).unwrap(), None);
 
     let mut core = owner();
@@ -103,7 +103,7 @@ fn no_reveal_when_hidden_or_without_a_prediction() {
 #[test]
 fn display_mode_survives_a_restart() {
     let mut core = owner();
-    core.set_display_mode(DisplayMode::Estrelas);
+    core.set_display_mode(DisplayMode::Estrelas, 0);
 
     let mut restarted = Core::open(CATALOG).unwrap();
     restarted.load_owner_data(&core.owner_data()).unwrap();

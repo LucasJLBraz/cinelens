@@ -2,7 +2,8 @@ name: Model
 
 # Trains the movie factors on MovieLens ml-latest plus the Letterboxd April 2026 sample every
 # month and publishes the asset
-# `model.json.gz` of the release `model-v<format version>`, which the app downloads, plus a
+# `model.json.gz` of the release `model-v<format version>`, which the app downloads when
+# `model-version.txt` names a version it has not seen, plus a
 # dated copy `model-<date>.json.gz` that stays as the history. Only public data: the owner's
 # notas never reach CI, the app folds them in on-device. Letterboxd comes from Kaggle with the
 # KAGGLE_API_TOKEN secret (docs/guides/kaggle.md) and is joined through the catálogo's IMDb ids;
@@ -111,4 +112,7 @@ jobs:
           gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Modelo (formato $FORMAT)" --notes-file notes.md
           cp model.json.gz "model-$TODAY.json.gz"
           gh release upload "$TAG" model.json.gz "model-$TODAY.json.gz" --clobber
+          # What the app checks for a new model; uploaded last, after the files it names.
+          echo -n "$TODAY" > model-version.txt
+          gh release upload "$TAG" model-version.txt --clobber
           gh release edit "$TAG" --notes-file notes.md

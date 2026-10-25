@@ -127,10 +127,10 @@ fn onde_assistir_keeps_movies_on_the_owners_services() {
     let filtro = || Filtro { no_meu_streaming: true, ..Default::default() };
     assert_eq!(ids(&core, filtro()), [] as [u32; 0], "no services chosen yet");
 
-    core.set_servicos(&[8]);
+    core.set_servicos(&[8], 0);
     assert_eq!(ids(&core, filtro()), [4, 1]);
     // Renting is not subscription.
-    core.set_servicos(&[337]);
+    core.set_servicos(&[337], 0);
     assert_eq!(ids(&core, filtro()), [2]);
 }
 

@@ -4,17 +4,21 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+mod delta;
 mod display;
 mod estatisticas;
 mod filtro;
 mod listas;
 mod movielens;
 mod recommender;
+mod sync;
 
+pub use delta::{apply_catalog_delta, catalog_delta};
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, Mudanca};
 pub use filtro::{Filtro, Mostrar};
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
+pub use sync::SyncStorage;
 use recommender::Model;
 
 /// The catálogo artifact format this core reads; the catalog job writes the same.
@@ -49,6 +53,10 @@ const DESTAQUES: usize = 5;
 const FILEIRA: usize = 12;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
+/// A new model must predict the owner's notas within this MAE to replace the current one.
+const MAE_LIMITE: f32 = 0.65;
+/// Share of the owner's most recent notas a new model is measured on (ADR 0002 uses 20%).
+const MAE_FRACAO: f32 = 0.2;
 
 #[derive(Debug)]
 pub enum Error {
@@ -57,6 +65,7 @@ pub enum Error {
     InvalidImport(String),
     InvalidNota(f32),
     InvalidOwnerData(String),
+    Sync(String),
 }
 
 impl std::fmt::Display for Error {
@@ -67,6 +76,7 @@ impl std::fmt::Display for Error {
             Error::InvalidImport(msg) => write!(f, "invalid MovieLens export: {msg}"),
             Error::InvalidNota(nota) => write!(f, "nota {nota} is not 0.5–5 in half stars"),
             Error::InvalidOwnerData(msg) => write!(f, "invalid owner data: {msg}"),
+            Error::Sync(msg) => write!(f, "sync: {msg}"),
         }
     }
 }
@@ -266,6 +276,18 @@ pub struct Accuracy {
     pub movielens_mae: Option<f32>,
 }
 
+/// A new model kept out because it predicts the owner worse; shown in Perfil.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rejeicao {
+    pub data_version: String,
+    /// Its MAE on the owner's most recent notas; `None` when it could predict none of them.
+    pub mae: Option<f32>,
+    /// The current model's, on the same notas.
+    pub mae_atual: Option<f32>,
+    /// Why, in Portuguese, for the owner.
+    pub motivo: String,
+}
+
 /// Início's featured pick, one of a few to swipe through.
 #[derive(Debug, Serialize)]
 pub struct Destaque {
@@ -441,6 +463,25 @@ struct OwnerData {
     nao_vi: BTreeSet<u32>,
     #[serde(default)]
     settings: Settings,
+    /// When (Unix seconds) each mark or setting last changed on any device, removals included,
+    /// keyed `<field>/<id>` or `settings/<name>`: what sync settles conflicts by.
+    #[serde(default)]
+    changed: BTreeMap<String, i64>,
+}
+
+impl OwnerData {
+    fn add_nota(&mut self, tmdb_id: u32, entry: NotaEntry) {
+        let history = self.notas.entry(tmdb_id).or_default();
+        if !history.contains(&entry) {
+            history.push(entry);
+            // Stable: same-second notas keep the order they were given in.
+            history.sort_by_key(|e| e.at);
+        }
+    }
+
+    fn stamp(&mut self, key: String, at: i64) {
+        self.changed.insert(key, at);
+    }
 }
 
 pub(crate) fn is_valid_nota(nota: f32) -> bool {
@@ -522,6 +563,36 @@ impl Core {
         Ok(())
     }
 
+    /// Replaces the model with a new version only if it predicts the owner's most recent notas
+    /// no worse than the current one, and within `MAE_LIMITE`; otherwise keeps the current one
+    /// and says why. With nothing to measure on (no current model, no notas) it replaces it.
+    pub fn trocar_modelo(&mut self, model_artifact: &[u8]) -> Result<Option<Rejeicao>, Error> {
+        let novo = Model::parse(model_artifact)?;
+        let atual = self.model.as_ref().and_then(|m| self.accuracy_with(m, MAE_FRACAO)).map(|a| a.mae);
+        let mae = self.accuracy_with(&novo, MAE_FRACAO).map(|a| a.mae);
+        let virgula = |x: f32| format!("{x:.2}").replace('.', ",");
+        let motivo = match (mae, atual) {
+            (None, Some(_)) => Some("o modelo novo não prevê nenhuma das suas notas recentes".to_string()),
+            (Some(mae), _) if mae > MAE_LIMITE => Some(format!(
+                "erro médio de {} nas suas notas recentes, acima do limite de {}",
+                virgula(mae),
+                virgula(MAE_LIMITE)
+            )),
+            (Some(mae), Some(atual)) if mae > atual => Some(format!(
+                "erro médio de {} nas suas notas recentes, pior que o do modelo atual ({})",
+                virgula(mae),
+                virgula(atual)
+            )),
+            _ => None,
+        };
+        if let Some(motivo) = motivo {
+            return Ok(Some(Rejeicao { data_version: novo.data_version, mae, mae_atual: atual, motivo }));
+        }
+        self.model = Some(novo);
+        self.refresh_items();
+        Ok(None)
+    }
+
     pub fn model_version(&self) -> Option<&str> {
         self.model.as_ref().map(|m| m.data_version.as_str())
     }
@@ -541,7 +612,7 @@ impl Core {
     /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
     /// change to the notas or settings, and by `refresh_items` after the catálogo or model.
     fn recompute(&mut self) {
-        self.half_life_days = self.half_life(&self.owner.notas);
+        self.half_life_days = self.half_life(self.model.as_ref(), &self.owner.notas);
         self.profile =
             self.model.as_ref().map(|m| m.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days));
         self.previstas = match (&self.model, &self.profile) {
@@ -619,7 +690,8 @@ impl Core {
     }
 
     /// Replaces what the owner said weighed in the movie's nota.
-    pub fn set_pesou(&mut self, tmdb_id: u32, aspectos: &[Aspecto]) {
+    pub fn set_pesou(&mut self, tmdb_id: u32, aspectos: &[Aspecto], at: i64) {
+        self.owner.stamp(sync::key("pesou", tmdb_id), at);
         if aspectos.is_empty() {
             self.owner.pesou.remove(&tmdb_id);
         } else {
@@ -634,11 +706,13 @@ impl Core {
     }
 
     /// Hides or brings back the o que pesou prompt.
-    pub fn set_pesou_oculto(&mut self, oculto: bool) {
+    pub fn set_pesou_oculto(&mut self, oculto: bool, at: i64) {
+        self.owner.stamp("settings/pesou_oculto".into(), at);
         self.owner.settings.pesou_oculto = oculto;
     }
 
-    pub fn set_fa(&mut self, person_id: u32, on: bool) {
+    pub fn set_fa(&mut self, person_id: u32, on: bool, at: i64) {
+        self.owner.stamp(sync::key("fas", person_id), at);
         if on {
             self.owner.fas.insert(person_id);
         } else {
@@ -677,11 +751,18 @@ impl Core {
         Pessoa { id, name, fa: self.owner.fas.contains(&id) }
     }
 
-    /// Marks or unmarks a movie; `at` (Unix seconds) starts agora não's few weeks.
+    /// Marks or unmarks a movie at `at` (Unix seconds), which also starts agora não's few weeks.
     pub fn marcar(&mut self, tmdb_id: u32, marca: Marca, on: bool, at: i64) {
         fn set(marks: &mut BTreeSet<u32>, id: u32, on: bool) {
             if on { marks.insert(id); } else { marks.remove(&id); }
         }
+        let field = match marca {
+            Marca::QueroAssistir => "quero_assistir",
+            Marca::JaVi => "ja_vi",
+            Marca::NaoMeInteressa => "nao_me_interessa",
+            Marca::AgoraNao => "agora_nao",
+        };
+        self.owner.stamp(sync::key(field, tmdb_id), at);
         match marca {
             Marca::QueroAssistir => set(&mut self.owner.quero_assistir, tmdb_id, on),
             Marca::JaVi => set(&mut self.owner.ja_vi, tmdb_id, on),
@@ -746,20 +827,22 @@ impl Core {
         self.owner.nao_vi.insert(tmdb_id);
     }
 
-    fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
-        match (self.owner.settings.decay, &self.model) {
+    fn half_life(&self, model: Option<&Model>, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
+        match (self.owner.settings.decay, model) {
             (Decay::Off, _) | (Decay::Auto, None) => None,
             (Decay::HalfLifeDays(days), _) => Some(days),
             (Decay::Auto, Some(model)) => recommender::calibrate(model, notas),
         }
     }
 
-    pub fn set_decay(&mut self, decay: Decay) {
+    pub fn set_decay(&mut self, decay: Decay, at: i64) {
+        self.owner.stamp("settings/decay".into(), at);
         self.owner.settings.decay = decay;
         self.recompute();
     }
 
-    pub fn set_display_mode(&mut self, mode: DisplayMode) {
+    pub fn set_display_mode(&mut self, mode: DisplayMode, at: i64) {
+        self.owner.stamp("settings/display_mode".into(), at);
         self.owner.settings.display_mode = mode;
     }
 
@@ -776,7 +859,8 @@ impl Core {
         self.owner.settings.servicos.iter().copied().collect()
     }
 
-    pub fn set_servicos(&mut self, ids: &[u32]) {
+    pub fn set_servicos(&mut self, ids: &[u32], at: i64) {
+        self.owner.stamp("settings/servicos".into(), at);
         self.owner.settings.servicos = ids.iter().copied().collect();
     }
 
@@ -810,7 +894,7 @@ impl Core {
                 summary.unmatched += 1;
             }
             for entry in nota.history {
-                self.add_nota(tmdb_id, entry);
+                self.owner.add_nota(tmdb_id, entry);
             }
         }
         self.owner.quero_assistir.extend(export.quero_assistir);
@@ -826,18 +910,9 @@ impl Core {
         }
         let card = self.index.get(&tmdb_id).map(|&i| self.card(i));
         let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
-        self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
+        self.owner.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
         Ok(revealed)
-    }
-
-    fn add_nota(&mut self, tmdb_id: u32, entry: NotaEntry) {
-        let history = self.owner.notas.entry(tmdb_id).or_default();
-        if !history.contains(&entry) {
-            history.push(entry);
-            // Stable: same-second notas keep the order they were given in.
-            history.sort_by_key(|e| e.at);
-        }
     }
 
     /// The movie page, or `None` if the movie is not in the catálogo.
@@ -955,10 +1030,13 @@ impl Core {
     /// Hides the `fraction` (0–1) of the owner's notas given most recently, folds in the rest
     /// and predicts the hidden ones. `None` without a model or when none of them can be predicted.
     pub fn accuracy(&self, fraction: f32) -> Option<Accuracy> {
-        let model = self.model.as_ref()?;
+        self.accuracy_with(self.model.as_ref()?, fraction)
+    }
+
+    fn accuracy_with(&self, model: &Model, fraction: f32) -> Option<Accuracy> {
         let (known, hidden) = recommender::hold_out(&self.owner.notas, fraction);
         // Calibrated on the notas left in, so the hidden ones never pick their own decay.
-        let errors = recommender::errors(model, &known, &hidden, self.half_life(&known));
+        let errors = recommender::errors(model, &known, &hidden, self.half_life(Some(model), &known));
         let movielens: Vec<f32> =
             errors.iter().filter_map(|(_, e)| Some((e.movielens_pred? as f32 - e.nota).abs())).collect();
         let errors: Vec<f32> = errors.iter().map(|(err, _)| *err).collect();

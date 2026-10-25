@@ -1,12 +1,14 @@
-//! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE]`
+//! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE] [--previous FILE --delta-dir DIR]`
 //!
 //! Reads the TMDB API Read Access Token from `TMDB_TOKEN` and the OMDb key from `OMDB_KEY`
 //! (without it, no critics' scores are fetched). `--extra-ids` is a file with one TMDB id per
 //! line (the training data); blank and non-numeric lines are ignored. `--omdb-cache` is a JSON
-//! file of what OMDb said in earlier runs, read if it exists and written back.
+//! file of what OMDb said in earlier runs, read if it exists and written back. `--previous` is
+//! the catálogo published before (gzipped); if it exists, the delta from it to the new one is
+//! written to `--delta-dir` as `catalog-delta-<its data version>.json.gz`.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::time::Duration;
 
 use cinelens_catalog::{build, Config};
@@ -79,11 +81,40 @@ fn run() -> Result<(), String> {
     if let Some(path) = cache_path {
         std::fs::write(path, serde_json::to_vec(&critica).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
     }
-    let file = std::fs::File::create(out).map_err(|e| format!("{out}: {e}"))?;
-    let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
-    serde_json::to_writer(&mut gz, &artifact).map_err(|e| e.to_string())?;
-    gz.finish().and_then(|mut f| f.flush()).map_err(|e| format!("{out}: {e}"))?;
+    let json = serde_json::to_vec(&artifact).map_err(|e| e.to_string())?;
+    write_gz(out, &json)?;
+    if let (Some(previous), Some(dir)) = (arg("--previous"), arg("--delta-dir")) {
+        write_delta(previous, dir, &json)?;
+    }
     Ok(())
+}
+
+fn write_gz(path: &str, bytes: &[u8]) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
+    gz.write_all(bytes).and_then(|_| gz.finish()).and_then(|mut f| f.flush()).map_err(|e| format!("{path}: {e}"))
+}
+
+/// The delta from the `previous` catálogo (gzipped; none on the first run) to `new`.
+fn write_delta(previous: &str, dir: &str, new: &[u8]) -> Result<(), String> {
+    let gz = match std::fs::read(previous) {
+        Ok(gz) => gz,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("{previous}: {e}")),
+    };
+    let mut old = Vec::new();
+    flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut old).map_err(|e| format!("{previous}: {e}"))?;
+    let delta = cinelens_core::catalog_delta(&old, new).map_err(|e| format!("{previous}: {e}"))?;
+    let version = |bytes: &[u8]| -> Option<String> {
+        Some(serde_json::from_slice::<Value>(bytes).ok()?.get("data_version")?.as_str()?.to_string())
+    };
+    let from = version(&old).ok_or_else(|| format!("{previous}: no data version"))?;
+    // A same-day re-run: a delta from today to today would send the app round in circles.
+    if Some(&from) == version(new).as_ref() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("{dir}: {e}"))?;
+    write_gz(&format!("{dir}/catalog-delta-{from}.json.gz"), &delta)
 }
 
 /// GET (`call`, named `request` in errors) with retries on rate limiting, server errors and

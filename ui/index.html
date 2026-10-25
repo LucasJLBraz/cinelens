@@ -301,6 +301,10 @@
     <div id="servicos" class="checks"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
+    <label>Sincronizar entre aparelhos</label>
+    <button id="google" class="pill">Entrar com Google</button>
+    <div id="google-hint" class="hint">Suas notas e marcas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</div>
+    <div id="modelo-hint" class="hint" hidden></div>
     <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   </section>
   <nav id="abas" hidden>
@@ -858,8 +862,31 @@
       statsEl.replaceChildren(...out);
     }
     const statsEl = document.getElementById('stats');
+    const googleEl = document.getElementById('google');
+    async function showGoogle() {
+      const conectado = await invoke('google_conectado');
+      googleEl.hidden = conectado;
+      if (conectado) document.getElementById('google-hint').textContent = 'Sincronizando com o seu Google Drive.';
+    }
+    googleEl.addEventListener('click', async () => {
+      googleEl.disabled = true;
+      try {
+        await invoke('google_entrar');
+        showGoogle();
+      } catch (e) {
+        document.getElementById('google-hint').textContent = `Não deu para entrar (${e}).`;
+      } finally {
+        googleEl.disabled = false;
+      }
+    });
     async function loadPerfil() {
       invoke('estatisticas').then(showStats, () => statsEl.replaceChildren());
+      showGoogle();
+      invoke('modelo_rejeitado').then(r => {
+        const el = document.getElementById('modelo-hint');
+        el.hidden = !r;
+        if (r) el.textContent = `Modelo de ${r.data_version} não instalado: ${r.motivo}. Continua o atual.`;
+      });
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
       perguntarPesouEl.checked = !(await invoke('pesou_oculto'));
@@ -993,6 +1020,15 @@
       loadInicio();
       const [, model] = await invoke('status');
       if (!model) invoke('download_model').then(() => { reloadGrid(); loadInicio(); }, () => {});
+    }
+
+    // Another device's changes (sync) or a new catálogo or model (background update).
+    for (const evento of ['sincronizado', 'atualizado']) {
+      listen(evento, () => {
+        if (aba === 'ajustes') loadPerfil();
+        reloadGrid();
+        loadInicio();
+      });
     }
 
     more.addEventListener('click', load);
