@@ -2,6 +2,8 @@
 name = "cinelens-train"
 version = "0.1.0"
 edition = "2021"
+# The Model workflow and the guides run `cargo run -p cinelens-train` for training.
+default-run = "cinelens-train"
 
 [dependencies]
 cinelens-core = { path = "../core" }
