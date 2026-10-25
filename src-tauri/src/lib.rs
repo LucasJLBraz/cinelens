@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Opcoes, Marca, MovieCard, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MovieCard, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -173,6 +173,11 @@ fn explorar(core: tauri::State<RwLock<Core>>, filtro: Filtro, page: usize) -> Ex
 }
 
 #[tauri::command]
+fn inicio(core: tauri::State<RwLock<Core>>) -> Inicio {
+    core.read().unwrap().inicio(now())
+}
+
+#[tauri::command]
 fn opcoes(core: tauri::State<RwLock<Core>>) -> Opcoes {
     core.read().unwrap().opcoes()
 }
@@ -325,6 +330,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             explorar,
+            inicio,
             opcoes,
             status,
             download_catalog,

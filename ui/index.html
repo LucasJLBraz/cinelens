@@ -40,7 +40,7 @@
     .garimpo { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
     .garimpo input { flex: 1; accent-color: var(--accent); }
     #vazio { padding: 24px 16px; color: var(--muted); text-align: center; }
-    #import-result { margin: 0 16px; color: var(--muted); font-size: 13px; }
+    #import-result { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
     .movie { cursor: pointer; }
     #filme { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #filme { position: relative; }
@@ -95,7 +95,22 @@
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
     #parecidos-mas { margin-bottom: 8px; }
-    footer { position: sticky; bottom: 0; background: var(--bg); padding: 6px 16px max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); text-align: center; }
+    footer { padding: 32px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
+    body:has(#abas:not([hidden])) { padding-bottom: 56px; }
+    #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); padding-bottom: env(safe-area-inset-bottom); }
+    #abas button { padding: 12px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; }
+    #abas button.on { color: var(--accent); font-weight: 600; }
+    #destaques { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+    .destaque { flex: none; width: 100%; scroll-snap-align: start; display: flex; gap: 16px; padding: 8px 16px; }
+    .destaque .poster { width: 120px; flex: none; }
+    .destaque h2 { margin: 0; }
+    .destaque .acoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .destaque .acoes .on { border-color: var(--accent); color: var(--accent); }
+    #atalhos { padding: 0 16px; }
+    #fileiras section { padding: 0 16px; }
+    #fileiras .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    #rodada { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    #rodada p { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -105,17 +120,23 @@
     <progress id="progress"></progress>
     <button id="retry" hidden>Tentar de novo</button>
   </section>
+  <section id="inicio" hidden>
+    <header><h1>Início</h1></header>
+    <div id="destaques"></div>
+    <div id="atalhos" class="linha"></div>
+    <div id="fileiras"></div>
+  </section>
+  <section id="rodada" hidden>
+    <h1>Rodada</h1>
+    <p>A rodada rápida chega em breve.</p>
+  </section>
   <div id="explorar" hidden>
     <header>
       <div>
         <h1>Explorar</h1>
-        <div class="original">Para você</div>
+        <div id="explorar-lista" class="original">Para você</div>
       </div>
-      <button id="import" class="pill">Importar do MovieLens</button>
-      <button id="open-ajustes" class="pill">Ajustes</button>
-      <input id="import-files" type="file" multiple hidden>
     </header>
-    <p id="import-result" hidden></p>
     <div id="filtros">
       <input id="busca" type="search" placeholder="Título, direção ou elenco" data-campo="busca">
       <div class="linha">
@@ -235,8 +256,10 @@
     <main id="pessoa-grid" class="grade"></main>
   </section>
   <section id="ajustes" hidden>
-    <button class="pill back">‹ Voltar</button>
-    <h1 style="margin-top: 12px">Ajustes</h1>
+    <h1>Perfil</h1>
+    <button id="import" class="pill" style="margin-top: 16px">Importar do MovieLens</button>
+    <input id="import-files" type="file" multiple hidden>
+    <p id="import-result" class="hint" hidden></p>
     <label for="decay">Notas antigas pesam menos</label>
     <select id="decay">
       <option value="Auto">Automático</option>
@@ -258,8 +281,14 @@
     <div id="servicos" class="checks"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
+    <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   </section>
-  <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
+  <nav id="abas" hidden>
+    <button data-aba="inicio">Início</button>
+    <button data-aba="explorar">Explorar</button>
+    <button data-aba="rodada">Rodada</button>
+    <button data-aba="ajustes">Perfil</button>
+  </nav>
   <script>
     const { invoke, convertFileSrc } = window.__TAURI__.core;
     const { listen } = window.__TAURI__.event;
@@ -343,9 +372,13 @@
     const generosEl = document.getElementById('generos');
     const duracaoEl = document.getElementById('duracao');
 
+    // A lista pronta's fields no control shows (faixa, classificação…), kept until filters are cleared.
+    let extras = {};
+    const controlados = new Set([...campos.map(el => el.dataset.campo), 'incluir', 'excluir', 'duracao_min', 'duracao_max', 'no_meu_streaming']);
+
     // Controls → filtro.
     function readFiltro() {
-      const f = { incluir: filtro.incluir || [], excluir: filtro.excluir || [] };
+      const f = { ...extras, incluir: filtro.incluir || [], excluir: filtro.excluir || [] };
       for (const el of campos) {
         const v = el.type === 'checkbox' ? el.checked : el.value;
         if (el.dataset.tipo === 'bool') f[el.dataset.campo] = Boolean(v);
@@ -381,9 +414,12 @@
       reloadGrid();
     }
 
-    // Opens Explorar with `preset` as the only filters (Início's rows and chips); {} clears them.
-    function abrirExplorar(preset) {
+    // Opens Explorar with `preset` as the only filters (Início's rows and chips, named `nome`);
+    // {} clears them.
+    function abrirExplorar(preset, nome) {
       filtro = { ...preset };
+      extras = Object.fromEntries(Object.entries(preset).filter(([k]) => !controlados.has(k)));
+      document.getElementById('explorar-lista').textContent = nome || 'Para você';
       showFiltro();
       reloadGrid();
     }
@@ -480,11 +516,28 @@
     }
 
     const pessoaEl = document.getElementById('pessoa');
-    const telas = [explorarEl, filmeEl, document.getElementById('ajustes'), pessoaEl];
+    const abasEl = document.getElementById('abas');
+    const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes') };
+    const telas = [...Object.values(abas), filmeEl, pessoaEl];
     function tela(el) {
       for (const t of telas) t.hidden = t !== el;
+      abasEl.hidden = !Object.values(abas).includes(el);
       window.scrollTo(0, 0);
     }
+    // The tab shown when no movie or person page is open.
+    let aba = 'inicio';
+    function abrirAba(nome) {
+      aba = nome;
+      for (const b of abasEl.children) b.classList.toggle('on', b.dataset.aba === nome);
+      if (nome === 'ajustes') loadPerfil();
+      tela(abas[nome]);
+      if (stale) {
+        stale = false;
+        reloadGrid();
+        loadInicio();
+      }
+    }
+    abasEl.addEventListener('click', e => e.target.dataset.aba && abrirAba(e.target.dataset.aba));
     // TMDB pages, the trailer and where to watch open in the system browser.
     const abrirUrl = url => invoke('plugin:opener|open_url', { url });
     const duracao = min => min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
@@ -634,12 +687,7 @@
     window.addEventListener('popstate', ({ state }) => {
       if (state?.filme) return openMovie(state.filme, false);
       if (state?.pessoa) return openPessoa(state.pessoa, false);
-      if (state?.ajustes) return tela(ajustesEl);
-      tela(explorarEl);
-      if (stale) {
-        stale = false;
-        reloadGrid();
-      }
+      abrirAba(aba);
     });
     document.getElementById('back').addEventListener('click', () => history.back());
     document.getElementById('dar-nota').addEventListener('click', () => {
@@ -659,7 +707,6 @@
       abrirUrl(`https://www.themoviedb.org/movie/${filmeEl.dataset.id}`);
     });
 
-    const ajustesEl = document.getElementById('ajustes');
     const decayEl = document.getElementById('decay');
     const halfLife = d => !d ? 'nenhum peso a menos' : d < 365 ? `pela metade a cada ${d / 30} meses` : d === 365 ? 'pela metade a cada ano' : `pela metade a cada ${d / 365} anos`;
     function showDecay(s) {
@@ -672,7 +719,7 @@
       await invoke('set_display_mode', { mode: displayModeEl.value });
       stale = true;
     });
-    document.getElementById('open-ajustes').addEventListener('click', async () => {
+    async function loadPerfil() {
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
       perguntarPesouEl.checked = !(await invoke('pesou_oculto'));
@@ -686,9 +733,7 @@
         label.append(box, p.name);
         return label;
       }));
-      tela(ajustesEl);
-      history.pushState({ ajustes: true }, '');
-    });
+    }
     const servicosEl = document.getElementById('servicos');
     servicosEl.addEventListener('change', async () => {
       const ids = [...servicosEl.querySelectorAll('input:checked')].map(b => Number(b.value));
@@ -697,7 +742,6 @@
     });
     const perguntarPesouEl = document.getElementById('perguntar-pesou');
     perguntarPesouEl.addEventListener('change', () => invoke('set_pesou_oculto', { oculto: !perguntarPesouEl.checked }));
-    ajustesEl.querySelector('.back').addEventListener('click', () => history.back());
     decayEl.addEventListener('change', async () => {
       const v = decayEl.value;
       showDecay(await invoke('set_decay', { decay: v === 'Auto' || v === 'Off' ? v : { HalfLifeDays: Number(v) } }));
@@ -735,21 +779,80 @@
       importResult.hidden = false;
       try {
         const s = await invoke('import_movielens', { files });
-        reloadGrid();
+        stale = true;
         importResult.textContent = `Importadas ${s.notas} notas: ${s.matched} encontradas no catálogo, ${s.unmatched} não encontradas. ${s.quero_assistir} filmes em quero assistir.`;
       } catch (e) {
         importResult.textContent = `Não deu para importar (${e}). Escolha os arquivos de notas e de logs do export do MovieLens.`;
       }
     });
 
+    const destaquesEl = document.getElementById('destaques');
+    function destaque(d) {
+      const el = document.createElement('article');
+      el.className = 'destaque';
+      const info = document.createElement('div');
+      const title = Object.assign(document.createElement('h2'), { textContent: d.title });
+      const original = Object.assign(document.createElement('div'), { className: 'original', textContent: d.year ? `${d.original_title} · ${d.year}` : d.original_title });
+      const exibicao = Object.assign(document.createElement('div'), { className: 'exibicao', textContent: exibicaoText(d.exibicao) });
+      const porque = Object.assign(document.createElement('div'), { className: 'meta', textContent: d.porque.length ? `Porque você amou ${d.porque.join(' e ')}` : '' });
+      const acoes = document.createElement('div');
+      acoes.className = 'acoes';
+      const acao = (text, onclick) => acoes.appendChild(Object.assign(document.createElement('button'), { className: 'chip', textContent: text, onclick }));
+      acao('Detalhes', () => openMovie(d.tmdb_id));
+      const quero = acao('Quero assistir', async () => {
+        await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'QueroAssistir', on: !quero.classList.contains('on') });
+        quero.classList.toggle('on');
+        stale = true;
+      });
+      quero.classList.toggle('on', d.quero_assistir);
+      acao('Parecidos', async () => {
+        await openMovie(d.tmdb_id);
+        document.getElementById('parecidos-titulo').scrollIntoView();
+      });
+      acao('Agora não', async () => {
+        await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'AgoraNao', on: true });
+        loadInicio();
+      });
+      info.append(title, original, exibicao, porque, acoes);
+      el.append(posterOf(d), info);
+      return el;
+    }
+
+    function verLista(f) {
+      abrirExplorar(f.filtro, f.nome);
+      abrirAba('explorar');
+    }
+
+    async function loadInicio() {
+      const inicio = await invoke('inicio');
+      destaquesEl.replaceChildren(...inicio.destaques.map(destaque));
+      const fileiras = inicio.fileiras.filter(f => f.movies.length);
+      document.getElementById('atalhos').replaceChildren(...fileiras.map(f =>
+        Object.assign(document.createElement('button'), { className: 'chip', textContent: f.nome, onclick: () => verLista(f) })));
+      document.getElementById('fileiras').replaceChildren(...fileiras.map(f => {
+        const section = document.createElement('section');
+        const cabeca = document.createElement('div');
+        cabeca.className = 'cabeca';
+        cabeca.append(
+          Object.assign(document.createElement('h2'), { textContent: f.nome }),
+          Object.assign(document.createElement('button'), { className: 'link', textContent: 'ver tudo ›', onclick: () => verLista(f) }));
+        const fileira = document.createElement('div');
+        fileira.className = 'fileira';
+        fileira.append(...f.movies.map(card));
+        section.append(cabeca, fileira);
+        return section;
+      }));
+    }
+
     // Explorar works in catálogo order until the model arrives; it is fetched in the
     // background, so the app never waits on it (and retries on the next launch if offline).
     async function start() {
-      document.getElementById('explorar').hidden = false;
+      abrirAba('inicio');
       loadOpcoes();
       load();
+      loadInicio();
       const [, model] = await invoke('status');
-      if (!model) invoke('download_model').then(reloadGrid, () => {});
+      if (!model) invoke('download_model').then(() => { reloadGrid(); loadInicio(); }, () => {});
     }
 
     more.addEventListener('click', load);

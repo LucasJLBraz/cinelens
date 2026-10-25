@@ -100,6 +100,8 @@ struct Movie {
     cast: Vec<Person>,
     trailer_youtube: Option<String>,
     watch: Option<Watch>,
+    /// The Brazilian age rating (L, 10, 12, 14, 16, 18).
+    certification: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -136,6 +138,25 @@ struct Details {
     videos: Videos,
     #[serde(rename = "watch/providers", default)]
     watch_providers: WatchProviders,
+    #[serde(default)]
+    release_dates: ReleaseDates,
+}
+
+#[derive(Deserialize, Default)]
+struct ReleaseDates {
+    results: Vec<CountryReleases>,
+}
+
+#[derive(Deserialize)]
+struct CountryReleases {
+    iso_3166_1: String,
+    release_dates: Vec<Release>,
+}
+
+#[derive(Deserialize)]
+struct Release {
+    #[serde(default)]
+    certification: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -268,7 +289,7 @@ fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<(Movie, Vec<Provider>)
             s.spawn(|| {
                 while let Some(&id) = ids.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let request = format!(
-                        "/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en"
+                        "/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en"
                     );
                     match fetch(&request).and_then(|body| match body {
                         None => Ok(None),
@@ -328,6 +349,14 @@ fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
         composers: crew("Original Music Composer"),
         cast: d.credits.cast.iter().take(CAST_SIZE).cloned().collect(),
         trailer_youtube: trailer("pt").or_else(|| trailer("en")),
+        certification: d
+            .release_dates
+            .results
+            .iter()
+            .filter(|c| c.iso_3166_1 == "BR")
+            .flat_map(|c| &c.release_dates)
+            .map(|r| r.certification.clone())
+            .find(|c| !c.is_empty()),
         year: d.release_date.get(..4).and_then(|y| y.parse().ok()),
         release_date: Some(d.release_date).filter(|r| !r.is_empty()),
         title: d.title,

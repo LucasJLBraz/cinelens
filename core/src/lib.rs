@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 mod display;
 mod filtro;
+mod listas;
 mod movielens;
 mod recommender;
 
@@ -40,6 +41,10 @@ const PESOU_BOOST: f32 = 2.0;
 /// forte and Boa chance) are pulled by o que pesou: an aspect never lifts a movie they would
 /// probably not like.
 const PESOU_TOP: f32 = 0.35;
+/// Destaques to swipe through on Início.
+const DESTAQUES: usize = 5;
+/// Movies in each Início row.
+const FILEIRA: usize = 12;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
 
@@ -74,6 +79,8 @@ struct CatalogArtifact {
     genres: Vec<Genero>,
     #[serde(default)]
     providers: Vec<Provedor>,
+    #[serde(default)]
+    trending: Vec<u32>,
     movies: Vec<Movie>,
 }
 
@@ -144,6 +151,15 @@ struct Movie {
     composers: Vec<Person>,
     #[serde(default)]
     trailer_youtube: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(default)]
+    release_date: Option<String>,
+    /// TMDB's public score, 0–10.
+    #[serde(default)]
+    vote_average: f32,
+    /// Brazilian age rating.
+    #[serde(default)]
+    certification: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -243,6 +259,32 @@ pub struct Accuracy {
     /// MovieLens's own error on those of the notas it logged a prediction for when each was
     /// given; `None` when none of them came from the importação.
     pub movielens_mae: Option<f32>,
+}
+
+/// Início's featured pick, one of a few to swipe through.
+#[derive(Debug, Serialize)]
+pub struct Destaque {
+    #[serde(flatten)]
+    pub card: MovieCard,
+    /// As on the movie page: "porque você amou X".
+    pub porque: Vec<String>,
+    pub quero_assistir: bool,
+}
+
+/// One of Início's rows: the first movies Explorar shows with a lista pronta's filtro.
+#[derive(Debug, Serialize)]
+pub struct Fileira {
+    pub nome: String,
+    /// What its chip and "ver tudo" open Explorar with.
+    pub filtro: Filtro,
+    pub movies: Vec<MovieCard>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Inicio {
+    pub destaques: Vec<Destaque>,
+    /// Every lista pronta, in order; some may have no movies.
+    pub fileiras: Vec<Fileira>,
 }
 
 /// Where to watch a movie in Brazil; shown credited to JustWatch.
@@ -410,6 +452,8 @@ pub struct Core {
     busca: Vec<String>,
     /// Aligned with `movies`: 0 (no votes) to 1 (the most voted), on a log scale.
     popularidade: Vec<f32>,
+    /// TMDB trending this week.
+    em_alta: HashSet<u32>,
     owner: OwnerData,
     model: Option<Model>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
@@ -451,6 +495,7 @@ impl Core {
         self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
         self.movies = artifact.movies;
         self.index = self.movies.iter().enumerate().map(|(i, m)| (m.tmdb_id, i)).collect();
+        self.em_alta = artifact.trending.into_iter().collect();
         self.generos = artifact.genres;
         self.provedores = artifact.providers;
         self.refresh_items();
@@ -636,11 +681,29 @@ impl Core {
     }
 
     /// The destaque, Início's featured pick: the top recomendação not set aside with agora não.
-    // ponytail: always the top one; rotate among the top few if the owner sees the same pick too often.
     pub fn destaque(&self, at: i64) -> Option<MovieCard> {
-        let set_aside = |i: usize| self.owner.agora_nao.get(&self.movies[i].tmdb_id).is_some_and(|&until| at < until);
-        let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| !set_aside(i))?;
-        Some(self.card(i))
+        self.destaques(at, 1).next().map(|i| self.card(i))
+    }
+
+    /// The top `n` recomendações not set aside with agora não, best first.
+    fn destaques(&self, at: i64, n: usize) -> impl Iterator<Item = usize> + '_ {
+        let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].tmdb_id).is_some_and(|&until| at < until);
+        self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
+    }
+
+    /// Início: the destaques to swipe through and a row per lista pronta; `at` is now (Unix seconds).
+    pub fn inicio(&self, at: i64) -> Inicio {
+        let destaques = self.destaques(at, DESTAQUES).map(|i| Destaque {
+            card: self.card(i),
+            porque: self.porque(i),
+            quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].tmdb_id),
+        });
+        let fileiras = listas::listas(at).into_iter().map(|(nome, filtro)| {
+            let mut movies = self.explorar(&filtro, 0).movies;
+            movies.truncate(FILEIRA);
+            Fileira { nome: nome.to_string(), filtro, movies }
+        });
+        Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
     }
 
     fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
@@ -873,11 +936,19 @@ impl Core {
         } else {
             self.para_voce.iter().copied().filter(passes).collect()
         };
+        // Já vi movies are no recomendações, so Para você leaves them in catálogo order; shown
+        // alone (Para rever) they rank by nota prevista too.
+        let so_ja_vi = filtro.ja_vi == Mostrar::So;
+        let ordenado = |i: usize| if so_ja_vi { self.previstas[i].is_some() } else { self.recomendavel(i) };
+        if so_ja_vi {
+            let key = |i: usize| if ordenado(i) { self.ranking(i) } else { f32::NEG_INFINITY };
+            found.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
+        }
         if filtro.garimpo != 0.0 {
             // ponytail: popularity is log TMDB votes, one star at either end of the slider; tune
             // the weight once the owner has used it.
             let score = |i: usize| self.ranking(i) - filtro.garimpo * self.popularidade[i];
-            let n = found.partition_point(|&i| self.recomendavel(i));
+            let n = found.partition_point(|&i| ordenado(i));
             found[..n].sort_by(|&a, &b| score(b).total_cmp(&score(a)));
         }
         let start = (page * PAGE_SIZE).min(found.len());

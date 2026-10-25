@@ -111,3 +111,12 @@ fn core_lists_where_to_watch_a_built_movie() {
     assert_eq!(names(core.provedores()), ["Apple TV", "Max", "Netflix"]);
     assert!(core.movie(13).unwrap().onde_assistir.is_none());
 }
+
+#[test]
+fn artifact_carries_the_brazilian_age_rating() {
+    let artifact: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
+
+    // The first non-empty Brazilian rating; other countries' are ignored.
+    assert_eq!(artifact["movies"][0]["certification"], "18");
+    assert_eq!(artifact["movies"][1]["certification"], Value::Null);
+}

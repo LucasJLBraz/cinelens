@@ -56,6 +56,10 @@ fn main() {
         assert!(!page.porque.is_empty());
     });
 
+    failed |= !budget("início: destaques and every row", Duration::from_millis(100), || {
+        assert!(!core.inicio(0).destaques.is_empty());
+    });
+
     if failed {
         std::process::exit(1);
     }

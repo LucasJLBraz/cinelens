@@ -14,7 +14,8 @@ pub enum DisplayMode {
     Oculto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+/// Best first.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Faixa {
     #[serde(rename = "Aposta forte")]
     ApostaForte,
@@ -45,10 +46,12 @@ pub(crate) fn exibicao(mode: DisplayMode, nota: f32, confianca: f32, ranked: &[f
         DisplayMode::Estrelas => {
             Some(Exibicao::Estrelas { nota, meia_estrela: (nota * 2.0).round() / 2.0, confianca })
         }
-        DisplayMode::Faixa => {
-            let above = ranked.partition_point(|&p| p > nota) as f32 / ranked.len().max(1) as f32;
-            let faixa = BANDS.iter().find(|(end, _)| above < *end).map_or(Faixa::ProvavelmenteNao, |b| b.1);
-            Some(Exibicao::Faixa { faixa, confianca })
-        }
+        DisplayMode::Faixa => Some(Exibicao::Faixa { faixa: faixa(nota, ranked), confianca }),
     }
+}
+
+/// The faixa of a nota prevista; `ranked` as in `exibicao`.
+pub(crate) fn faixa(nota: f32, ranked: &[f32]) -> Faixa {
+    let above = ranked.partition_point(|&p| p > nota) as f32 / ranked.len().max(1) as f32;
+    BANDS.iter().find(|(end, _)| above < *end).map_or(Faixa::ProvavelmenteNao, |b| b.1)
 }

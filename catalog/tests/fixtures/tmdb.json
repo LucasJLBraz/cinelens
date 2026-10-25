@@ -62,7 +62,7 @@
    }
   ]
  },
- "/movie/550?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
+ "/movie/550?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en": {
   "id": 550,
   "imdb_id": "tt0000550",
   "title": "Clube da Luta",
@@ -182,9 +182,35 @@
      ]
     }
    }
+  },
+  "release_dates": {
+   "results": [
+    {
+     "iso_3166_1": "US",
+     "release_dates": [
+      {
+       "certification": "R",
+       "type": 3
+      }
+     ]
+    },
+    {
+     "iso_3166_1": "BR",
+     "release_dates": [
+      {
+       "certification": "",
+       "type": 1
+      },
+      {
+       "certification": "18",
+       "type": 3
+      }
+     ]
+    }
+   ]
   }
  },
- "/movie/603?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
+ "/movie/603?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en": {
   "id": 603,
   "imdb_id": "tt0000603",
   "title": "Matrix",
@@ -272,7 +298,7 @@
    }
   }
  },
- "/movie/13?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
+ "/movie/13?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en": {
   "id": 13,
   "imdb_id": "tt0000013",
   "title": "Forrest Gump: O Contador de Histórias",
@@ -332,7 +358,7 @@
    "results": []
   }
  },
- "/movie/1311?language=pt-BR&append_to_response=credits,videos,watch/providers&include_video_language=pt,en": {
+ "/movie/1311?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en": {
   "id": 1311,
   "imdb_id": "tt0001311",
   "title": "Lançamento Recente",

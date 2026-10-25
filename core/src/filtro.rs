@@ -2,12 +2,12 @@
 
 use std::collections::HashSet;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{Core, Movie};
+use crate::{display, Core, Faixa, Movie};
 
 /// Hide, or show only, the movies with a mark.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum Mostrar {
     #[default]
     Todos,
@@ -16,7 +16,7 @@ pub enum Mostrar {
 }
 
 /// Explorar's filters; the default is no filter. Every set field must pass.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Filtro {
     /// Genre ids the movie must have: all of them, or any with `qualquer`.
@@ -35,6 +35,18 @@ pub struct Filtro {
     pub pais: Option<String>,
     pub nota_prevista_min: Option<f32>,
     pub confianca_min: Option<f32>,
+    /// A nota prevista in this faixa or a better one, whatever the display mode.
+    pub faixa_min: Option<Faixa>,
+    /// In TMDB trending this week.
+    pub em_alta: bool,
+    /// Released on this day (`YYYY-MM-DD`) or later.
+    pub lancado_desde: Option<String>,
+    /// At most this many TMDB votes: little seen.
+    pub votos_max: Option<u32>,
+    /// TMDB's public average, 0–10.
+    pub media_tmdb_min: Option<f32>,
+    /// Brazilian age ratings allowed (L, 10, 12…); empty is any, even none.
+    pub classificacao: Vec<String>,
     /// Movies the owner gave a nota.
     pub com_nota: Mostrar,
     pub ja_vi: Mostrar,
@@ -92,6 +104,12 @@ impl<'a> Matcher<'a> {
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
+            && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa(p, &core.ranked) <= min))
+            && (!f.em_alta || core.em_alta.contains(&m.tmdb_id))
+            && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
+            && f.votos_max.is_none_or(|max| m.vote_count <= max)
+            && f.media_tmdb_min.is_none_or(|min| m.vote_average >= min)
+            && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
             && shown(f.com_nota, rated)
             && shown(f.ja_vi, owner.ja_vi.contains(&m.tmdb_id))
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.tmdb_id))

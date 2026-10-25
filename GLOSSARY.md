@@ -65,7 +65,7 @@ A permanent mark hiding a movie from recomendações, counted as a weak negative
 _Avoid_: ocultar, agora não
 
 **Destaque** (Featured pick):
-The single movie shown at the top of Início: the best recomendação not set aside with agora não.
+The movie shown at the top of Início, one at a time: the best recomendação not set aside with agora não, swiping on to the next few.
 _Avoid_: top pick, hero
 
 **Agora não** (Not now):
