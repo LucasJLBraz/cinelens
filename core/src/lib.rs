@@ -22,6 +22,9 @@ const BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w780";
 const PARECIDOS: usize = 12;
 /// Notas at least this high count as loved for the reason line.
 const LOVED: f32 = 4.0;
+/// How alike (factor cosine) a loved movie must be to give the reason line.
+// ponytail: fixed cut; check against the published model's cosines and tune.
+const PORQUE_MIN_SIMILARITY: f32 = 0.3;
 /// Movies named in the reason line, at most.
 const PORQUE_MAX: usize = 2;
 /// Stars a movie with a person the owner is fã of gains in the ranking.
@@ -705,7 +708,7 @@ impl Core {
             .filter_map(|(id, _)| {
                 let j = *self.index.get(id)?;
                 let similarity = item.similarity(self.items[j].as_ref()?);
-                (j != i && similarity > 0.0).then_some((similarity, j))
+                (j != i && similarity >= PORQUE_MIN_SIMILARITY).then_some((similarity, j))
             })
             .collect();
         loved.sort_by(|a, b| b.0.total_cmp(&a.0));

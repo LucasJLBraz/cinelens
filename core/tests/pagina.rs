@@ -94,6 +94,8 @@ fn the_reason_line_names_movies_the_owner_rated_highly() {
     assert_eq!(core.movie(2).unwrap().porque, ["Interestelar"]);
     // The owner disliked the only drama they rated, so a drama has no reason to give.
     assert!(core.movie(6).unwrap().porque.is_empty());
+    // Barely alike is no reason either: Cidade de Deus shares almost nothing with Interestelar.
+    assert!(core.movie(7).unwrap().porque.is_empty());
 }
 
 #[test]
