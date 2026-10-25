@@ -52,6 +52,8 @@ jobs:
             unzip -q -o -d "$RUNNER_TEMP" "$RUNNER_TEMP/letterboxd_interactions.csv.zip"
           fi
           test -s "$RUNNER_TEMP/letterboxd_interactions.csv"
+          # The columns and a sample row, for when the dataset's layout changes.
+          head -3 "$RUNNER_TEMP/letterboxd_interactions.csv"
 
       # The content mapping is learned from the catálogo's genres, directors and cast, and
       # Letterboxd movies are joined to TMDB ids through its IMDb ids.

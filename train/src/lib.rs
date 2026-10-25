@@ -341,7 +341,7 @@ impl Ratings {
         let header = lines.next().ok_or("letterboxd: empty file")?.map_err(|e| e.to_string())?;
         let header = split_csv_line(&header);
         let column = |name: &str| {
-            header.iter().position(|h| h == name).ok_or_else(|| format!("letterboxd: no `{name}` column"))
+            header.iter().position(|h| h == name).ok_or_else(|| format!("letterboxd: no `{name}` column in {header:?}"))
         };
         let (user_col, rating_col, tconst_col, confidence_col) =
             (column("user_id")?, column("rating")?, column("tconst")?, column("confidence")?);
