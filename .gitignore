@@ -1,2 +1,4 @@
 .superpowers/
 movielens-*.csv
+/target/
+/node_modules/

@@ -1,0 +1,342 @@
+{
+ "format_version": 1,
+ "data_version": "fixture-2026-10-25",
+ "movies": [
+  {
+   "tmdb_id": 550,
+   "work_type": "movie",
+   "title": "Clube da Luta",
+   "original_title": "Fight Club",
+   "year": 1999,
+   "poster_path": "/mCICnh7QBH0gzYaTQChBDDVIKdm.jpg"
+  },
+  {
+   "tmdb_id": 603,
+   "work_type": "movie",
+   "title": "Matrix",
+   "original_title": "The Matrix",
+   "year": 1999,
+   "poster_path": "/lDqMDI3xpbB9UQRyeXfei0MXhqb.jpg"
+  },
+  {
+   "tmdb_id": 680,
+   "work_type": "movie",
+   "title": "Pulp Fiction: Tempo de Violência",
+   "original_title": "Pulp Fiction",
+   "year": 1994,
+   "poster_path": "/tptjnB2LDbuUWya9Cx5sQtv5hqb.jpg"
+  },
+  {
+   "tmdb_id": 238,
+   "work_type": "movie",
+   "title": "O Poderoso Chefão",
+   "original_title": "The Godfather",
+   "year": 1972,
+   "poster_path": "/wOMxE93W6KcZTuCeNUByNTSaLLt.jpg"
+  },
+  {
+   "tmdb_id": 240,
+   "work_type": "movie",
+   "title": "O Poderoso Chefão: Parte II",
+   "original_title": "The Godfather Part II",
+   "year": 1974,
+   "poster_path": "/3ViYPhSAPwH2avQjdMl49F8PklB.jpg"
+  },
+  {
+   "tmdb_id": 278,
+   "work_type": "movie",
+   "title": "Um Sonho de Liberdade",
+   "original_title": "The Shawshank Redemption",
+   "year": 1994,
+   "poster_path": "/umX3lBhHoTV7Lsci140Yr8VpXyN.jpg"
+  },
+  {
+   "tmdb_id": 155,
+   "work_type": "movie",
+   "title": "Batman: O Cavaleiro das Trevas",
+   "original_title": "The Dark Knight",
+   "year": 2008,
+   "poster_path": "/4lj1ikfsSmMZNyfdi8R8Tv5tsgb.jpg"
+  },
+  {
+   "tmdb_id": 13,
+   "work_type": "movie",
+   "title": "Forrest Gump: O Contador de Histórias",
+   "original_title": "Forrest Gump",
+   "year": 1994,
+   "poster_path": "/d74WpIsH8379TIL4wUxDneRCYv2.jpg"
+  },
+  {
+   "tmdb_id": 27205,
+   "work_type": "movie",
+   "title": "A Origem",
+   "original_title": "Inception",
+   "year": 2010,
+   "poster_path": "/9e3Dz7aCANy5aRUQF745IlNloJ1.jpg"
+  },
+  {
+   "tmdb_id": 157336,
+   "work_type": "movie",
+   "title": "Interestelar",
+   "original_title": "Interstellar",
+   "year": 2014,
+   "poster_path": "/tR1XVa5bxgdh2bRw2u0DzrgkO2l.jpg"
+  },
+  {
+   "tmdb_id": 496243,
+   "work_type": "movie",
+   "title": "Parasita",
+   "original_title": "기생충",
+   "year": 2019,
+   "poster_path": "/bNGW8zYA91VqTZfV3jnKHPEKKvB.jpg"
+  },
+  {
+   "tmdb_id": 129,
+   "work_type": "movie",
+   "title": "A Viagem de Chihiro",
+   "original_title": "千と千尋の神隠し",
+   "year": 2001,
+   "poster_path": "/hhoKhsyJ3hFaxEm5pMdZRiTu2lJ.jpg"
+  },
+  {
+   "tmdb_id": 598,
+   "work_type": "movie",
+   "title": "Cidade de Deus",
+   "original_title": "Cidade de Deus",
+   "year": 2002,
+   "poster_path": "/gfnXixcGC060QcG6JPxN6AMdVsq.jpg"
+  },
+  {
+   "tmdb_id": 666,
+   "work_type": "movie",
+   "title": "Central do Brasil",
+   "original_title": "Central do Brasil",
+   "year": 1998,
+   "poster_path": "/qfyWFhUhqeNRU9HmCaBDAxVKRZ9.jpg"
+  },
+  {
+   "tmdb_id": 11,
+   "work_type": "movie",
+   "title": "Guerra nas Estrelas",
+   "original_title": "Star Wars",
+   "year": 1977,
+   "poster_path": "/dw7X9YPjjAfIxKHW04V64Bb9TB0.jpg"
+  },
+  {
+   "tmdb_id": 105,
+   "work_type": "movie",
+   "title": "De Volta para o Futuro",
+   "original_title": "Back to the Future",
+   "year": 1985,
+   "poster_path": "/i996T0lI1fGtFEowiH3V6eZthL0.jpg"
+  },
+  {
+   "tmdb_id": 120,
+   "work_type": "movie",
+   "title": "O Senhor dos Anéis: A Sociedade do Anel",
+   "original_title": "The Lord of the Rings: The Fellowship of the Ring",
+   "year": 2001,
+   "poster_path": "/tlvsNCwWEIgwAM23aNzTmMIcPEZ.jpg"
+  },
+  {
+   "tmdb_id": 122,
+   "work_type": "movie",
+   "title": "O Senhor dos Anéis: O Retorno do Rei",
+   "original_title": "The Lord of the Rings: The Return of the King",
+   "year": 2003,
+   "poster_path": "/rU4oIKv5I4C59DpcXKmT7kNwGI0.jpg"
+  },
+  {
+   "tmdb_id": 424,
+   "work_type": "movie",
+   "title": "A Lista de Schindler",
+   "original_title": "Schindler's List",
+   "year": 1993,
+   "poster_path": "/lfJAj9OGsiSsbFxouRkGKqibHxf.jpg"
+  },
+  {
+   "tmdb_id": 389,
+   "work_type": "movie",
+   "title": "12 Homens e uma Sentença",
+   "original_title": "12 Angry Men",
+   "year": 1957,
+   "poster_path": "/aiHIhV8c45FzIlbqYlswrrNyQD6.jpg"
+  },
+  {
+   "tmdb_id": 429,
+   "work_type": "movie",
+   "title": "Três Homens em Conflito",
+   "original_title": "Il buono, il brutto, il cattivo",
+   "year": 1966,
+   "poster_path": "/16z08yn82sTmdSS7nsGvRNDIVnz.jpg"
+  },
+  {
+   "tmdb_id": 637,
+   "work_type": "movie",
+   "title": "A Vida é Bela",
+   "original_title": "La vita è bella",
+   "year": 1997,
+   "poster_path": "/dkK48wCY4aVpWFDdPpS6DxQ1bvB.jpg"
+  },
+  {
+   "tmdb_id": 769,
+   "work_type": "movie",
+   "title": "Os Bons Companheiros",
+   "original_title": "GoodFellas",
+   "year": 1990,
+   "poster_path": "/sTReXuaND1AjkXUfjl1gqRcuGfI.jpg"
+  },
+  {
+   "tmdb_id": 807,
+   "work_type": "movie",
+   "title": "Seven - Os Sete Crimes Capitais",
+   "original_title": "Se7en",
+   "year": 1995,
+   "poster_path": "/dZXYPSEaXCeigR2GEuZoukNmLTf.jpg"
+  },
+  {
+   "tmdb_id": 274,
+   "work_type": "movie",
+   "title": "O Silêncio dos Inocentes",
+   "original_title": "The Silence of the Lambs",
+   "year": 1991,
+   "poster_path": "/5fCrBDJLHxywiFr19o4aOWf92VN.jpg"
+  },
+  {
+   "tmdb_id": 1891,
+   "work_type": "movie",
+   "title": "Guerra nas Estrelas: O Império Contra-Ataca",
+   "original_title": "The Empire Strikes Back",
+   "year": 1980,
+   "poster_path": "/dLGT8b4Ut10z44uYLaip4QiwKta.jpg"
+  },
+  {
+   "tmdb_id": 862,
+   "work_type": "movie",
+   "title": "Toy Story: Um Mundo de Aventuras",
+   "original_title": "Toy Story",
+   "year": 1995,
+   "poster_path": "/686F0CEPmI4ZXjFbWtIHQOBwnfI.jpg"
+  },
+  {
+   "tmdb_id": 8587,
+   "work_type": "movie",
+   "title": "O Rei Leão",
+   "original_title": "The Lion King",
+   "year": 1994,
+   "poster_path": "/8aIvm8OaJISOpVTt7rMIh7X35G5.jpg"
+  },
+  {
+   "tmdb_id": 597,
+   "work_type": "movie",
+   "title": "Titanic",
+   "original_title": "Titanic",
+   "year": 1997,
+   "poster_path": "/As0zX43h3w6kD2NS4uVHu9HKdEh.jpg"
+  },
+  {
+   "tmdb_id": 329,
+   "work_type": "movie",
+   "title": "Jurassic Park: O Parque dos Dinossauros",
+   "original_title": "Jurassic Park",
+   "year": 1993,
+   "poster_path": "/mgjJ7FH4V3exsmoHwXrmsUhn0h1.jpg"
+  },
+  {
+   "tmdb_id": 77,
+   "work_type": "movie",
+   "title": "Amnésia",
+   "original_title": "Memento",
+   "year": 2000,
+   "poster_path": "/7leBWM27Q0TUnvmhw6WnFNgGn4G.jpg"
+  },
+  {
+   "tmdb_id": 194,
+   "work_type": "movie",
+   "title": "O Fabuloso Destino de Amélie Poulain",
+   "original_title": "Le Fabuleux Destin d'Amélie Poulain",
+   "year": 2001,
+   "poster_path": "/oAYKYALxamhAB1wKUGmOo05Vf92.jpg"
+  },
+  {
+   "tmdb_id": 4935,
+   "work_type": "movie",
+   "title": "O Castelo Animado",
+   "original_title": "ハウルの動く城",
+   "year": 2004,
+   "poster_path": "/1hTfaEWktMJPxCk5nZNtK7F86C9.jpg"
+  },
+  {
+   "tmdb_id": 128,
+   "work_type": "movie",
+   "title": "Princesa Mononoke",
+   "original_title": "もののけ姫",
+   "year": 1997,
+   "poster_path": "/7EadOwHmyQgOnlghRiWBygNtnjl.jpg"
+  },
+  {
+   "tmdb_id": 372058,
+   "work_type": "movie",
+   "title": "Your Name.",
+   "original_title": "君の名は。",
+   "year": 2016,
+   "poster_path": "/bMOKAjTU1TNUjRSF7icldbii06u.jpg"
+  },
+  {
+   "tmdb_id": 299534,
+   "work_type": "movie",
+   "title": "Vingadores: Ultimato",
+   "original_title": "Avengers: Endgame",
+   "year": 2019,
+   "poster_path": "/q6725aR8Zs4IwGMXzZT8aC8lh41.jpg"
+  },
+  {
+   "tmdb_id": 324857,
+   "work_type": "movie",
+   "title": "Homem-Aranha: No Aranhaverso",
+   "original_title": "Spider-Man: Into the Spider-Verse",
+   "year": 2018,
+   "poster_path": "/ybQSBSrINtjWsJQ6Ih8sva8HlEZ.jpg"
+  },
+  {
+   "tmdb_id": 545611,
+   "work_type": "movie",
+   "title": "Tudo em Todo o Lugar ao Mesmo Tempo",
+   "original_title": "Everything Everywhere All at Once",
+   "year": 2022,
+   "poster_path": "/2dSZQGwijlXvMSyuGe0FSgrXnv0.jpg"
+  },
+  {
+   "tmdb_id": 693134,
+   "work_type": "movie",
+   "title": "Duna: Parte Dois",
+   "original_title": "Dune: Part Two",
+   "year": 2024,
+   "poster_path": "/VMy4UGsI2u3f4fALGeCqCdsQBb.jpg"
+  },
+  {
+   "tmdb_id": 872585,
+   "work_type": "movie",
+   "title": "Oppenheimer",
+   "original_title": "Oppenheimer",
+   "year": 2023,
+   "poster_path": "/dUPQszWoRSE9FucJTbVp2bwEi9G.jpg"
+  },
+  {
+   "tmdb_id": 792307,
+   "work_type": "movie",
+   "title": "Pobres Criaturas",
+   "original_title": "Poor Things",
+   "year": 2023,
+   "poster_path": "/iOdcXYSVzBgmBJzNIlIMOZ6fz0F.jpg"
+  },
+  {
+   "tmdb_id": 1022789,
+   "work_type": "movie",
+   "title": "Divertida Mente 2",
+   "original_title": "Inside Out 2",
+   "year": 2024,
+   "poster_path": "/lHKNS35r4RTa9GO72vdadMLxoiV.jpg"
+  }
+ ]
+}

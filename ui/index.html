@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cinelens</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0f1115; --card: #1a1d24; --text: #e8e8ea; --muted: #8a8f9c; --accent: #f5c518; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 system-ui, sans-serif; }
+    header { padding: max(16px, env(safe-area-inset-top)) 16px 8px; }
+    h1 { margin: 0; font-size: 22px; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; padding: 8px 16px; }
+    .movie { min-width: 0; }
+    .poster { width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--card); object-fit: cover; display: block; }
+    .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .original { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #more { display: block; margin: 16px auto max(24px, env(safe-area-inset-bottom)); padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
+    #more[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <header><h1>Explorar</h1></header>
+  <main id="grid"></main>
+  <button id="more" hidden>Mais filmes</button>
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const grid = document.getElementById('grid');
+    const more = document.getElementById('more');
+    let page = 0;
+
+    function card(m) {
+      const el = document.createElement('article');
+      el.className = 'movie';
+      const poster = m.poster_url ? document.createElement('img') : document.createElement('div');
+      poster.className = 'poster';
+      if (m.poster_url) { poster.src = m.poster_url; poster.alt = m.title; poster.loading = 'lazy'; }
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = m.title;
+      const original = document.createElement('div');
+      original.className = 'original';
+      original.textContent = `${m.original_title} · ${m.year}`;
+      el.append(poster, title, original);
+      return el;
+    }
+
+    async function load() {
+      const result = await invoke('explorar', { page });
+      grid.append(...result.movies.map(card));
+      more.hidden = !result.has_more;
+      page += 1;
+    }
+
+    more.addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>
