@@ -16,6 +16,8 @@ use recommender::Model;
 pub const CATALOG_FORMAT_VERSION: u32 = 1;
 const PAGE_SIZE: usize = 30;
 const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
+/// How long agora não keeps a movie out of the destaque.
+const AGORA_NAO_SECS: i64 = 28 * 86_400;
 
 #[derive(Debug)]
 pub enum Error {
@@ -163,6 +165,20 @@ pub struct MoviePage {
     pub nota: Option<f32>,
     pub history: Vec<NotaEntry>,
     pub quero_assistir: bool,
+    pub ja_vi: bool,
+    pub nao_me_interessa: bool,
+}
+
+/// What the owner can mark a movie with, and unmark.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub enum Marca {
+    QueroAssistir,
+    /// Watched, no nota: out of the recomendações, teaches nothing about taste.
+    JaVi,
+    /// Hidden everywhere for good; a weak negative signal.
+    NaoMeInteressa,
+    /// Out of the destaque for a few weeks.
+    AgoraNao,
 }
 
 /// How much older notas weigh less in the fold-in.
@@ -196,6 +212,13 @@ struct OwnerData {
     notas: BTreeMap<u32, Vec<NotaEntry>>,
     quero_assistir: BTreeSet<u32>,
     #[serde(default)]
+    ja_vi: BTreeSet<u32>,
+    #[serde(default)]
+    nao_me_interessa: BTreeSet<u32>,
+    /// Movie → until when (Unix seconds) it stays out of the destaque.
+    #[serde(default)]
+    agora_nao: BTreeMap<u32, i64>,
+    #[serde(default)]
     settings: Settings,
 }
 
@@ -214,7 +237,8 @@ pub struct Core {
     items: Vec<Option<recommender::Item>>,
     /// Aligned with `movies`: (nota prevista, confiança).
     previstas: Vec<Option<(f32, f32)>>,
-    /// Explorar order: indexes into `movies`, highest nota prevista first.
+    /// Explorar order: indexes into `movies`, recomendações first (highest nota prevista
+    /// first), then the rest in catálogo order; não me interessa left out.
     para_voce: Vec<usize>,
     /// Every current nota prevista, highest first: what Faixa is relative to.
     ranked: Vec<f32>,
@@ -275,7 +299,7 @@ impl Core {
         self.previstas = match &self.model {
             None => vec![None; self.movies.len()],
             Some(model) => {
-                let profile = model.profile(&self.owner.notas, self.half_life_days);
+                let profile = model.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days);
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
                     if self.owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty()) {
                         None
@@ -287,13 +311,47 @@ impl Core {
                 previstas.collect()
             }
         };
-        self.para_voce = (0..self.movies.len()).collect();
-        // Stable: movies without a nota prevista keep catálogo order, after the others.
-        self.para_voce.sort_by(|&a, &b| {
-            let key = |i: usize| self.previstas[i].map_or(f32::NEG_INFINITY, |(p, _)| p);
+        let hidden = |i: usize| self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id);
+        let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !hidden(i)).collect();
+        // Stable: the rest keep catálogo order, after the recomendações.
+        para_voce.sort_by(|&a, &b| {
+            let key = |i: usize| self.recomendavel(i).then(|| self.previstas[i]).flatten().map_or(f32::NEG_INFINITY, |(p, _)| p);
             key(b).total_cmp(&key(a))
         });
-        self.ranked = self.para_voce.iter().map_while(|&i| self.previstas[i].map(|(p, _)| p)).collect();
+        self.para_voce = para_voce;
+        self.ranked = self.previstas.iter().flatten().map(|(p, _)| *p).collect();
+        self.ranked.sort_by(|a, b| b.total_cmp(a));
+    }
+
+    /// A recomendação: predicted, neither já vi nor não me interessa.
+    fn recomendavel(&self, i: usize) -> bool {
+        let id = self.movies[i].tmdb_id;
+        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.owner.nao_me_interessa.contains(&id)
+    }
+
+    /// Marks or unmarks a movie; `at` (Unix seconds) starts agora não's few weeks.
+    pub fn marcar(&mut self, tmdb_id: u32, marca: Marca, on: bool, at: i64) {
+        fn set(marks: &mut BTreeSet<u32>, id: u32, on: bool) {
+            if on { marks.insert(id); } else { marks.remove(&id); }
+        }
+        match marca {
+            Marca::QueroAssistir => set(&mut self.owner.quero_assistir, tmdb_id, on),
+            Marca::JaVi => set(&mut self.owner.ja_vi, tmdb_id, on),
+            Marca::NaoMeInteressa => set(&mut self.owner.nao_me_interessa, tmdb_id, on),
+            Marca::AgoraNao if on => _ = self.owner.agora_nao.insert(tmdb_id, at + AGORA_NAO_SECS),
+            Marca::AgoraNao => _ = self.owner.agora_nao.remove(&tmdb_id),
+        }
+        if matches!(marca, Marca::JaVi | Marca::NaoMeInteressa) {
+            self.recompute();
+        }
+    }
+
+    /// The featured pick of Início: the top recomendação not set aside with agora não.
+    // ponytail: always the top one; rotate among the top few if the owner sees the same pick too often.
+    pub fn destaque(&self, at: i64) -> Option<MovieCard> {
+        let set_aside = |i: usize| self.owner.agora_nao.get(&self.movies[i].tmdb_id).is_some_and(|&until| at < until);
+        let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| !set_aside(i))?;
+        Some(self.card(i))
     }
 
     fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
@@ -386,6 +444,8 @@ impl Core {
             nota: history.last().map(|e| e.nota),
             history,
             quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
+            ja_vi: self.owner.ja_vi.contains(&tmdb_id),
+            nao_me_interessa: self.owner.nao_me_interessa.contains(&tmdb_id),
         })
     }
 
@@ -417,11 +477,11 @@ impl Core {
 
     /// The catálogo "Para você": highest nota prevista first.
     pub fn explorar(&self, page: usize) -> ExplorarPage {
-        let start = (page * PAGE_SIZE).min(self.movies.len());
-        let end = (start + PAGE_SIZE).min(self.movies.len());
+        let start = (page * PAGE_SIZE).min(self.para_voce.len());
+        let end = (start + PAGE_SIZE).min(self.para_voce.len());
         ExplorarPage {
             movies: self.para_voce[start..end].iter().map(|&i| self.card(i)).collect(),
-            has_more: end < self.movies.len(),
+            has_more: end < self.para_voce.len(),
         }
     }
 

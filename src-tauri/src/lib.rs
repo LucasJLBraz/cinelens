@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, ImportSummary, Marca, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -65,11 +65,29 @@ fn rate(
     tmdb_id: u32,
     nota: f32,
 ) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let mut core = core.write().unwrap();
-    let revealed = core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;
+    let revealed = core.rate(tmdb_id, nota, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
+}
+
+/// Marks or unmarks the movie; returns its page after.
+#[tauri::command]
+fn marcar(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    tmdb_id: u32,
+    marca: Marca,
+    on: bool,
+) -> Result<Option<MoviePage>, String> {
+    let mut core = core.write().unwrap();
+    core.marcar(tmdb_id, marca, on, now());
+    save_owner(&app, &core)?;
+    Ok(core.movie(tmdb_id))
+}
+
+fn now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
 }
 
 #[tauri::command]
@@ -255,6 +273,7 @@ pub fn run() {
             import_movielens,
             movie,
             rate,
+            marcar,
             decay,
             set_decay,
             display_mode,

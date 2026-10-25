@@ -9,7 +9,7 @@
 //! directors, cast, language) through the mapping the training job learns, with a lower
 //! confiança.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::Deserialize;
 
@@ -54,6 +54,13 @@ const CONFIANCA_RATINGS: f32 = 100.0;
 /// The most a content-only prediction gets (all of the movie's features mapped), and the least
 /// a collaborative one does.
 const CONTENT_CONFIANCA: f32 = 0.3;
+
+/// A movie the owner marked não me interessa counts as a nota this far below what they usually
+/// give it (relative to their mean and its bias)...
+const NEGATIVE_OFFSET: f32 = 1.0;
+/// ...weighing this much of a nota: a weak signal.
+// ponytail: fixed offset and weight; tune against held-out notas if dismissals skew the ranking.
+const NEGATIVE_WEIGHT: f32 = 0.25;
 
 /// What the model knows of a movie: collaborative factors, or ones guessed from its content.
 #[derive(Clone)]
@@ -116,7 +123,8 @@ impl Model {
 
     /// Fold-in: the owner's factors given the fixed movie factors. With a half-life, a nota
     /// weighs half as much for every `half_life_days` it is older than the most recent one.
-    pub fn profile(&self, notas: &Notas, half_life_days: Option<u32>) -> Profile {
+    /// `negatives` (não me interessa) are weak low notas that leave the owner's mean alone.
+    pub fn profile(&self, notas: &Notas, negatives: &BTreeSet<u32>, half_life_days: Option<u32>) -> Profile {
         let current: Vec<(u32, &NotaEntry)> = notas.iter().filter_map(|(&id, h)| Some((id, h.last()?))).collect();
         let latest = current.iter().map(|(_, e)| e.at).max().unwrap_or(0);
         let weight = |e: &NotaEntry| match half_life_days {
@@ -133,6 +141,11 @@ impl Model {
             let item = self.movies.get(id)?;
             Some((item.factors.as_slice(), e.nota - mean - item.bias, weight(e)))
         });
+        let negatives = negatives.iter().filter(|id| !notas.contains_key(id)).filter_map(|id| {
+            let item = self.movies.get(id)?;
+            Some((item.factors.as_slice(), -NEGATIVE_OFFSET - item.bias, NEGATIVE_WEIGHT))
+        });
+        let rows = rows.chain(negatives);
         Profile { mean, factors: weighted_ridge(rows, self.dim, self.lambda) }
     }
 
@@ -189,7 +202,7 @@ pub(crate) fn errors<'a>(
     hidden: &'a [(u32, NotaEntry)],
     half_life_days: Option<u32>,
 ) -> Vec<(f32, &'a NotaEntry)> {
-    let profile = model.profile(known, half_life_days);
+    let profile = model.profile(known, &BTreeSet::new(), half_life_days);
     // ponytail: collaborative movies only; pass content features if held-out recent releases matter.
     let error = |id: u32, e: &NotaEntry| Some((model.predict(&profile, &model.item(id, &[])?) - e.nota).abs());
     hidden.iter().filter_map(|(id, e)| Some((error(*id, e)?, e))).collect()

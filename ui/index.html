@@ -35,6 +35,14 @@
     #notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
     #notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    #acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; align-items: flex-start; }
+    #acoes .on { border-color: var(--accent); color: var(--accent); }
+    .menu { position: relative; }
+    .menu summary { list-style: none; cursor: pointer; }
+    .menu summary::-webkit-details-marker { display: none; }
+    .menu-items { position: absolute; right: 0; z-index: 1; min-width: 200px; margin-top: 4px; padding: 4px 0; border-radius: 8px; background: var(--card); box-shadow: 0 4px 16px #0008; }
+    .menu-items button { display: block; width: 100%; padding: 10px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
+    .menu-items button.on { color: var(--accent); }
     #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
     #nota-history li { padding: 4px 0; }
     #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
@@ -74,8 +82,17 @@
       <div>
         <h1 id="filme-title"></h1>
         <div id="filme-original" class="original"></div>
-        <span id="filme-quero" class="badge" hidden>Quero assistir</span>
       </div>
+    </div>
+    <div id="acoes">
+      <button class="pill" data-marca="QueroAssistir">Quero assistir</button>
+      <button class="pill" data-marca="JaVi">Já vi</button>
+      <details class="menu">
+        <summary class="pill">⋯</summary>
+        <div class="menu-items">
+          <button data-marca="NaoMeInteressa">Não me interessa</button>
+        </div>
+      </details>
     </div>
     <div id="notas"></div>
     <p id="revelacao" hidden></p>
@@ -225,7 +242,8 @@
       document.getElementById('filme-poster').replaceChildren(posterOf(m));
       document.getElementById('filme-title').textContent = m.title;
       document.getElementById('filme-original').textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
-      document.getElementById('filme-quero').hidden = !m.quero_assistir;
+      const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, NaoMeInteressa: m.nao_me_interessa };
+      for (const b of filmeEl.querySelectorAll('[data-marca]')) b.classList.toggle('on', marcas[b.dataset.marca]);
       for (const b of notasEl.children) b.classList.toggle('on', Number(b.dataset.nota) === m.nota);
       // Previous notas only; MovieLens's prediction stays hidden so it never anchors the nota.
       document.getElementById('nota-history').replaceChildren(...m.history.slice(0, -1).reverse().map(e => {
@@ -285,6 +303,13 @@
       showDecay(await invoke('set_decay', { decay: v === 'Auto' || v === 'Off' ? v : { HalfLifeDays: Number(v) } }));
       stale = true;
     });
+
+    filmeEl.querySelectorAll('[data-marca]').forEach(b => b.addEventListener('click', async () => {
+      const m = await invoke('marcar', { tmdbId: Number(filmeEl.dataset.id), marca: b.dataset.marca, on: !b.classList.contains('on') });
+      filmeEl.querySelector('.menu').open = false;
+      stale = true;
+      if (m) showMovie(m);
+    }));
 
     notasEl.addEventListener('click', async e => {
       const nota = Number(e.target.dataset.nota);

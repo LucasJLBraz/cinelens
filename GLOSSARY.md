@@ -64,6 +64,10 @@ _Avoid_: assistido, visto
 A permanent mark hiding a movie from recomendações, counted as a weak negative signal.
 _Avoid_: ocultar, agora não
 
+**Agora não** (Not now):
+A mark that keeps a movie out of the featured pick of Início for a few weeks; it hides it nowhere else and teaches nothing about taste.
+_Avoid_: adiar, não me interessa
+
 **Para rever** (Rewatch list):
 A lista pronta of movies marked já vi whose nota prevista is high.
 _Avoid_: reassistir, revisitar
