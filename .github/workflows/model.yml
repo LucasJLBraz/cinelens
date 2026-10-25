@@ -46,6 +46,7 @@ jobs:
           fi
           echo "LETTERBOXD=1" >> "$GITHUB_ENV"
           pip install --quiet kaggle==2.2.5
+          kaggle datasets files tliocastro/letterboxd-sample-apr-2026
           kaggle datasets download tliocastro/letterboxd-sample-apr-2026 -f letterboxd_interactions.csv -p "$RUNNER_TEMP"
           # Kaggle may hand the file over zipped.
           if [ -f "$RUNNER_TEMP/letterboxd_interactions.csv.zip" ]; then
