@@ -160,6 +160,9 @@ struct Movie {
     /// Brazilian age rating.
     #[serde(default)]
     certification: Option<String>,
+    /// Critics' score (OMDb: Metacritic, else Rotten Tomatoes), 0–100.
+    #[serde(default)]
+    critic_score: Option<u8>,
 }
 
 #[derive(Deserialize)]
@@ -431,6 +434,9 @@ struct OwnerData {
     /// Movie → what weighed in its nota.
     #[serde(default)]
     pesou: BTreeMap<u32, BTreeSet<Aspecto>>,
+    /// Movies skipped in the rodada rápida as não vi: never asked again.
+    #[serde(default)]
+    nao_vi: BTreeSet<u32>,
     #[serde(default)]
     settings: Settings,
 }
@@ -454,8 +460,12 @@ pub struct Core {
     popularidade: Vec<f32>,
     /// TMDB trending this week.
     em_alta: HashSet<u32>,
+    /// Some movie has a critics' score.
+    tem_critica: bool,
     owner: OwnerData,
     model: Option<Model>,
+    /// The owner's side of the model, from the last fold-in.
+    profile: Option<recommender::Profile>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
     items: Vec<Option<recommender::Item>>,
     /// Aligned with `movies`: (nota prevista, confiança).
@@ -496,6 +506,7 @@ impl Core {
         self.movies = artifact.movies;
         self.index = self.movies.iter().enumerate().map(|(i, m)| (m.tmdb_id, i)).collect();
         self.em_alta = artifact.trending.into_iter().collect();
+        self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
         self.generos = artifact.genres;
         self.provedores = artifact.providers;
         self.refresh_items();
@@ -529,20 +540,21 @@ impl Core {
     /// change to the notas or settings, and by `refresh_items` after the catálogo or model.
     fn recompute(&mut self) {
         self.half_life_days = self.half_life(&self.owner.notas);
-        self.previstas = match &self.model {
-            None => vec![None; self.movies.len()],
-            Some(model) => {
-                let profile = model.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days);
+        self.profile =
+            self.model.as_ref().map(|m| m.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days));
+        self.previstas = match (&self.model, &self.profile) {
+            (Some(model), Some(profile)) => {
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
                     if self.rated(m.tmdb_id) {
                         None
                     } else {
                         item.as_ref()
-                            .map(|item| (model.predict(&profile, item), item.confianca))
+                            .map(|item| (model.predict(profile, item), item.confianca))
                     }
                 });
                 previstas.collect()
             }
+            _ => vec![None; self.movies.len()],
         };
         self.ranked = self.previstas.iter().flatten().map(|(p, _)| *p).collect();
         self.ranked.sort_by(|a, b| b.total_cmp(a));
@@ -698,12 +710,38 @@ impl Core {
             porque: self.porque(i),
             quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].tmdb_id),
         });
-        let fileiras = listas::listas(at).into_iter().map(|(nome, filtro)| {
+        let fileiras = listas::listas(at, self.tem_critica).into_iter().map(|(nome, filtro)| {
             let mut movies = self.explorar(&filtro, 0).movies;
             movies.truncate(FILEIRA);
             Fileira { nome: nome.to_string(), filtro, movies }
         });
         Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
+    }
+
+    /// The rodada rápida's next `n` movies, the most informative first: those whose nota would
+    /// move the owner's profile most, weighed by how likely the owner is to have seen them. Only
+    /// movies with collaborative factors (a nota on any other teaches the fold-in nothing), and
+    /// none rated, já vi, não me interessa or skipped as não vi.
+    // ponytail: TMDB votes stand in for the chance the owner has seen it; learn it from the não vi
+    // answers if the rodada asks about too many unseen movies.
+    pub fn rodada(&self, n: usize) -> Vec<MovieCard> {
+        let Some(profile) = &self.profile else { return Vec::new() };
+        let mut scored: Vec<(f32, usize)> = (0..self.movies.len())
+            .filter_map(|i| {
+                let item = self.items[i].as_ref().filter(|item| item.collaborative)?;
+                let id = self.movies[i].tmdb_id;
+                let asked = self.rated(id) || self.owner.ja_vi.contains(&id) || self.owner.nao_vi.contains(&id);
+                (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.popularidade[i], i))
+            })
+            .collect();
+        // Stable: ties keep catálogo order.
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+        scored.into_iter().take(n).map(|(_, i)| self.card(i)).collect()
+    }
+
+    /// Skips the movie in the rodada rápida for good; it teaches nothing about taste.
+    pub fn nao_vi(&mut self, tmdb_id: u32) {
+        self.owner.nao_vi.insert(tmdb_id);
     }
 
     fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {

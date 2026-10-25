@@ -1,7 +1,8 @@
 name: Catalog
 
 # Builds the full catálogo from TMDB every day and publishes it as the asset
-# `catalog.json.gz` of the release `catalog-v<format version>`. See docs/guides/tmdb.md.
+# `catalog.json.gz` of the release `catalog-v<format version>`. See docs/guides/tmdb.md and
+# docs/guides/omdb.md.
 on:
   schedule:
     - cron: "17 5 * * *"
@@ -36,9 +37,19 @@ jobs:
           echo "66a9e518c747d76b241d9a859b001a2619d3ed1672ceef599eb50daf73a7b4a3  $RUNNER_TEMP/ml-latest.zip" | sha256sum -c -
           unzip -p "$RUNNER_TEMP/ml-latest.zip" ml-latest/links.csv | tail -n +2 | cut -d, -f3 > training-ids.txt
 
+      # What OMDb said in earlier runs: its free key allows 1000 requests a day, so critics'
+      # scores fill in over many runs. Caches are immutable, so each run saves a new one and
+      # restores the latest.
+      - uses: actions/cache/restore@v4
+        with:
+          path: omdb-cache.json
+          key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: omdb-
+
       - name: Build catálogo
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+          OMDB_KEY: ${{ secrets.OMDB_KEY }}
         run: |
           test -n "$TMDB_TOKEN" || { echo "::error::TMDB_TOKEN secret missing, see docs/guides/tmdb.md"; exit 1; }
           TODAY=$(date -u +%F)
@@ -47,7 +58,13 @@ jobs:
             --out catalog.json.gz \
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)" \
-            --extra-ids training-ids.txt
+            --extra-ids training-ids.txt \
+            --omdb-cache omdb-cache.json
+
+      - uses: actions/cache/save@v4
+        with:
+          path: omdb-cache.json
+          key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Publish
         env:

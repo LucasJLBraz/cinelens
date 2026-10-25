@@ -67,8 +67,8 @@
     #filme h1 { font-size: 20px; }
     #filme .original { white-space: normal; margin-top: 4px; }
     #filme .badge { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent); }
-    #notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
-    #notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
+    #notas, #rodada-notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
+    #notas button, #rodada-notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
     #acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; align-items: flex-start; }
     #acoes .on { border-color: var(--accent); color: var(--accent); }
@@ -111,6 +111,11 @@
     #fileiras .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     #rodada { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #rodada p { color: var(--muted); }
+    #rodada-filme { max-width: 280px; margin: 16px auto 0; text-align: center; }
+    #rodada-filme .original { margin-top: 4px; }
+    #rodada-notas { max-width: 420px; margin: 16px auto 8px; }
+    #rodada-nao-vi { display: block; margin: 0 auto; }
+    #rodada-revelacao { text-align: center; font-size: 13px; min-height: 1.4em; }
   </style>
 </head>
 <body>
@@ -128,7 +133,12 @@
   </section>
   <section id="rodada" hidden>
     <h1>Rodada</h1>
-    <p>A rodada rápida chega em breve.</p>
+    <p>Dê nota aos filmes que você viu; os que não viu, pule. Cada resposta ensina o app sobre o seu gosto.</p>
+    <div id="rodada-filme"></div>
+    <div id="rodada-notas"></div>
+    <button id="rodada-nao-vi" class="chip">Não vi</button>
+    <p id="rodada-revelacao"></p>
+    <p id="rodada-vazio" hidden>Nenhum filme para a rodada agora. Volte depois que o modelo for baixado.</p>
   </section>
   <div id="explorar" hidden>
     <header>
@@ -508,12 +518,80 @@
     const filmeEl = document.getElementById('filme');
     const notasEl = document.getElementById('notas');
     const fmt = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1 });
-    for (let n = 0.5; n <= 5; n += 0.5) {
-      const b = document.createElement('button');
-      b.textContent = fmt(n);
-      b.dataset.nota = n;
-      notasEl.append(b);
+    function botoesNota(el) {
+      for (let n = 0.5; n <= 5; n += 0.5) {
+        const b = document.createElement('button');
+        b.textContent = fmt(n);
+        b.dataset.nota = n;
+        el.append(b);
+      }
     }
+    botoesNota(notasEl);
+
+    // Rodada rápida: the movie shown and the next ones, their posters already loaded.
+    const rodadaFilmeEl = document.getElementById('rodada-filme');
+    const rodadaNotasEl = document.getElementById('rodada-notas');
+    const rodadaNaoViEl = document.getElementById('rodada-nao-vi');
+    const rodadaRevelacaoEl = document.getElementById('rodada-revelacao');
+    let rodadaFila = [];
+    let rodadaPedidos = 0;
+    // Answered but maybe not saved yet, so a refill must not bring them back.
+    const rodadaRespondidos = new Set();
+    botoesNota(rodadaNotasEl);
+    function rodadaItem(m) {
+      const el = document.createElement('div');
+      const poster = posterOf(m);
+      poster.loading = 'eager';
+      const titulo = Object.assign(document.createElement('h2'), { textContent: m.title });
+      el.append(poster, titulo);
+      if (m.original_title !== m.title) el.append(Object.assign(document.createElement('div'), { className: 'original', textContent: m.original_title }));
+      return { m, el };
+    }
+    function mostrarRodada() {
+      const atual = rodadaFila[0];
+      rodadaFilmeEl.replaceChildren(...(atual ? [atual.el] : []));
+      rodadaNotasEl.hidden = rodadaNaoViEl.hidden = !atual;
+      document.getElementById('rodada-vazio').hidden = Boolean(atual) || rodadaPedidos > 0;
+    }
+    // Keeps the shown movie and the next two queued, so quick answers never wait on a refill.
+    async function encherRodada() {
+      rodadaPedidos += 1;
+      try {
+        const cards = await invoke('rodada', { n: 6 });
+        const na_fila = new Set([...rodadaFila.map(x => x.m.tmdb_id), ...rodadaRespondidos]);
+        for (const m of cards) if (rodadaFila.length < 3 && !na_fila.has(m.tmdb_id)) rodadaFila.push(rodadaItem(m));
+      } finally {
+        rodadaPedidos -= 1;
+      }
+      mostrarRodada();
+    }
+    // The next movie shows at once; the answer is saved and the queue refilled behind it.
+    async function responderRodada(responder) {
+      const atual = rodadaFila.shift();
+      if (!atual) return;
+      mostrarRodada();
+      rodadaRespondidos.add(atual.m.tmdb_id);
+      try {
+        await responder(atual.m);
+        stale = true;
+      } finally {
+        // An answer that failed to save leaves the movie unanswered: a later refill brings it back.
+        rodadaRespondidos.delete(atual.m.tmdb_id);
+        await encherRodada();
+      }
+    }
+    rodadaNotasEl.addEventListener('click', e => {
+      const nota = Number(e.target.dataset.nota);
+      if (!nota) return;
+      responderRodada(async m => {
+        const [, revealed] = await invoke('rate', { tmdbId: m.tmdb_id, nota });
+        rodadaRevelacaoEl.textContent = revealed ? `${m.title}: o app achava ${exibicaoText(revealed)}` : '';
+      });
+    });
+    rodadaNaoViEl.addEventListener('click', () => responderRodada(async m => {
+      await invoke('nao_vi', { tmdbId: m.tmdb_id });
+      rodadaRevelacaoEl.textContent = '';
+    }));
 
     const pessoaEl = document.getElementById('pessoa');
     const abasEl = document.getElementById('abas');
@@ -530,6 +608,7 @@
       aba = nome;
       for (const b of abasEl.children) b.classList.toggle('on', b.dataset.aba === nome);
       if (nome === 'ajustes') loadPerfil();
+      if (nome === 'rodada' && rodadaFila.length < 3) encherRodada();
       tela(abas[nome]);
       if (stale) {
         stale = false;

@@ -85,6 +85,19 @@ fn rate(
     Ok((core.movie(tmdb_id), revealed))
 }
 
+/// The rodada rápida's next `n` movies.
+#[tauri::command]
+fn rodada(core: tauri::State<RwLock<Core>>, n: usize) -> Vec<MovieCard> {
+    core.read().unwrap().rodada(n)
+}
+
+#[tauri::command]
+fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.nao_vi(tmdb_id);
+    save_owner(&app, &core)
+}
+
 #[tauri::command]
 fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
     core.read().unwrap().parecidos_mas(tmdb_id, direcao)
@@ -350,7 +363,9 @@ pub fn run() {
             parecidos_mas,
             set_pesou,
             pesou_oculto,
-            set_pesou_oculto
+            set_pesou_oculto,
+            rodada,
+            nao_vi
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

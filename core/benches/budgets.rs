@@ -60,6 +60,10 @@ fn main() {
         assert!(!core.inicio(0).destaques.is_empty());
     });
 
+    failed |= !budget("rodada: next movies after a nota", Duration::from_millis(100), || {
+        assert_eq!(core.rodada(2).len(), 2);
+    });
+
     if failed {
         std::process::exit(1);
     }

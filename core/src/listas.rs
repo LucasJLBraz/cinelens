@@ -11,12 +11,16 @@ const LANCAMENTO_DIAS: i64 = 182;
 // browsed the lists for a while.
 const POUCO_VISTO: u32 = 1_000;
 const BEM_AVALIADO: f32 = 7.5;
+/// Metacritic's "generally favorable" upper half; also Rotten Tomatoes's share.
+const ACLAMADO: u8 = 75;
 
-/// Every lista pronta in Início's order; `at` (Unix seconds) is today.
-pub(crate) fn listas(at: i64) -> Vec<(&'static str, Filtro)> {
+/// Every lista pronta in Início's order; `at` (Unix seconds) is today. Without any critics'
+/// scores in the catálogo, Aclamados pela crítica is the public's alone and named so.
+pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> {
     let nao_visto = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, ..Default::default() };
     vec![
         ("Em alta, do seu jeito", Filtro { em_alta: true, ..nao_visto.clone() }),
+        ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..nao_visto.clone() }),
         (
             "Lançamentos para você",
             Filtro { lancado_desde: Some(date(at - LANCAMENTO_DIAS * 86_400)), faixa_min: PREVISAO_ALTA, ..nao_visto.clone() },
@@ -37,7 +41,11 @@ pub(crate) fn listas(at: i64) -> Vec<(&'static str, Filtro)> {
         ),
         // "< 1h40", as Explorar's "Até 1h40" so the chip shows it.
         ("Cabe numa noite", Filtro { duracao_max: Some(100), ..nao_visto.clone() }),
-        ("Clássicos que você não viu", Filtro { ano_max: Some(1979), media_tmdb_min: Some(BEM_AVALIADO), ..nao_visto }),
+        ("Clássicos que você não viu", Filtro { ano_max: Some(1979), media_tmdb_min: Some(BEM_AVALIADO), ..nao_visto.clone() }),
+        (
+            if tem_critica { "Aclamados pela crítica" } else { "Aclamados pelo público" },
+            Filtro { critica_min: Some(ACLAMADO), ..nao_visto },
+        ),
         ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, ..Default::default() }),
     ]
 }

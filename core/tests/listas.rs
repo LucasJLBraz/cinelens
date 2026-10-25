@@ -6,14 +6,14 @@ use cinelens_core::{Core, Marca};
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "trending": [8, 6],
     "movies": [
     {"tmdb_id": 1, "title": "Aventura Livre", "original_title": "A", "year": 1985, "release_date": "1985-06-01", "runtime": 110, "genre_ids": [12], "certification": "L", "vote_count": 20000, "vote_average": 7.0, "poster_path": null},
-    {"tmdb_id": 2, "title": "Comédia Pesada", "original_title": "B", "year": 1995, "release_date": "1995-06-01", "runtime": 105, "genre_ids": [35], "certification": "16", "vote_count": 15000, "vote_average": 6.8, "poster_path": null},
+    {"tmdb_id": 2, "title": "Comédia Pesada", "original_title": "B", "year": 1995, "release_date": "1995-06-01", "runtime": 105, "genre_ids": [35], "certification": "16", "vote_count": 15000, "vote_average": 6.8, "poster_path": null, "watch": {"flatrate": [8]}},
     {"tmdb_id": 3, "title": "Família Nova", "original_title": "C", "year": 2015, "release_date": "2015-06-01", "runtime": 101, "genre_ids": [10751], "certification": "L", "vote_count": 12000, "vote_average": 7.1, "poster_path": null},
     {"tmdb_id": 4, "title": "Clássico Aclamado", "original_title": "D", "year": 1957, "release_date": "1957-04-10", "runtime": 120, "genre_ids": [18], "vote_count": 3000, "vote_average": 8.5, "poster_path": null},
-    {"tmdb_id": 5, "title": "Clássico Morno", "original_title": "E", "year": 1975, "release_date": "1975-04-10", "runtime": 115, "genre_ids": [18], "vote_count": 2000, "vote_average": 6.0, "poster_path": null},
-    {"tmdb_id": 6, "title": "Joia", "original_title": "F", "year": 2020, "release_date": "2020-03-01", "runtime": 95, "genre_ids": [878], "vote_count": 300, "vote_average": 7.4, "poster_path": null},
-    {"tmdb_id": 7, "title": "Lançamento", "original_title": "G", "year": 2026, "release_date": "2026-08-01", "runtime": 150, "genre_ids": [878], "vote_count": 10, "vote_average": 7.0, "poster_path": null},
-    {"tmdb_id": 8, "title": "Popular Fraco", "original_title": "H", "year": 2010, "release_date": "2010-06-01", "runtime": 90, "genre_ids": [18], "vote_count": 50000, "vote_average": 6.5, "poster_path": null},
-    {"tmdb_id": 9, "title": "Comédia Doze", "original_title": "I", "year": 2000, "release_date": "2000-06-01", "runtime": 104, "genre_ids": [35], "certification": "12", "vote_count": 900, "vote_average": 6.9, "poster_path": null}
+    {"tmdb_id": 5, "title": "Clássico Morno", "original_title": "E", "year": 1975, "release_date": "1975-04-10", "runtime": 115, "genre_ids": [18], "vote_count": 2000, "vote_average": 6.0, "critic_score": 85, "poster_path": null},
+    {"tmdb_id": 6, "title": "Joia", "original_title": "F", "year": 2020, "release_date": "2020-03-01", "runtime": 95, "genre_ids": [878], "vote_count": 300, "vote_average": 7.4, "critic_score": 60, "poster_path": null},
+    {"tmdb_id": 7, "title": "Lançamento", "original_title": "G", "year": 2026, "release_date": "2026-08-01", "runtime": 150, "genre_ids": [878], "vote_count": 10, "vote_average": 8.0, "poster_path": null},
+    {"tmdb_id": 8, "title": "Popular Fraco", "original_title": "H", "year": 2010, "release_date": "2010-06-01", "runtime": 90, "genre_ids": [18], "vote_count": 50000, "vote_average": 6.5, "critic_score": 80, "poster_path": null},
+    {"tmdb_id": 9, "title": "Comédia Doze", "original_title": "I", "year": 2000, "release_date": "2000-06-01", "runtime": 104, "genre_ids": [35], "certification": "12", "vote_count": 900, "vote_average": 6.9, "poster_path": null, "watch": {"flatrate": [337], "rent": [8]}}
 ]}"#;
 
 /// No notas: each nota prevista is 3.5 + bias, so Para você is 6, 7, 2, 1, 3, 4, 5, 9, 8; Boa
@@ -57,11 +57,13 @@ fn every_row_is_explorar_with_its_listas_filtro() {
         nomes,
         [
             "Em alta, do seu jeito",
+            "No seu streaming hoje",
             "Lançamentos para você",
             "Joias escondidas",
             "Sessão da Tarde",
             "Cabe numa noite",
             "Clássicos que você não viu",
+            "Aclamados pela crítica",
             "Para rever",
         ]
     );
@@ -140,4 +142,29 @@ fn rows_leave_out_movies_already_rated_or_seen() {
     core.marcar(8, Marca::JaVi, true, NOW);
     assert!(fileira(&core, "Em alta, do seu jeito").is_empty());
     assert!(fileira(&core, "Cabe numa noite").is_empty());
+}
+
+#[test]
+fn no_seu_streaming_hoje_is_on_a_service_the_owner_subscribes_to() {
+    let mut core = core();
+    assert!(fileira(&core, "No seu streaming hoje").is_empty());
+    // 9 is only for rent on Netflix (8): not something to watch right now.
+    core.set_servicos(&[8]);
+    assert_eq!(fileira(&core, "No seu streaming hoje"), [2]);
+}
+
+#[test]
+fn aclamados_pela_critica_use_critic_scores_and_the_public_where_critics_are_missing() {
+    // 5 and 8 by critics despite the public; 4 has no critic score but the public loves it; 6 is
+    // panned by critics; 7 is loved by too few people to count.
+    assert_eq!(fileira(&core(), "Aclamados pela crítica"), [4, 5, 8]);
+}
+
+#[test]
+fn without_any_critic_scores_the_list_is_aclamados_pelo_publico() {
+    let mut core = Core::open(CATALOG.replace("critic_score", "unknown").as_bytes()).unwrap();
+    core.load_model(MODEL.as_bytes()).unwrap();
+    let nomes: Vec<String> = core.inicio(NOW).fileiras.into_iter().map(|f| f.nome).collect();
+    assert!(!nomes.iter().any(|n| n == "Aclamados pela crítica"));
+    assert_eq!(fileira(&core, "Aclamados pelo público"), [4]);
 }

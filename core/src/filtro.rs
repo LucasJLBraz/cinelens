@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{display, Core, Faixa, Movie};
 
+/// Votes a TMDB average needs to stand in for a missing critics' score.
+// ponytail: fixed cut; tune once Aclamados pela crítica has been browsed.
+const PUBLICO_MIN_VOTOS: u32 = 500;
+
 /// Hide, or show only, the movies with a mark.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum Mostrar {
@@ -45,6 +49,9 @@ pub struct Filtro {
     pub votos_max: Option<u32>,
     /// TMDB's public average, 0–10.
     pub media_tmdb_min: Option<f32>,
+    /// Critics' score (0–100) at least this; a movie without one passes on the public instead:
+    /// a TMDB average at least a tenth of it, from enough votes to mean something.
+    pub critica_min: Option<u8>,
     /// Brazilian age ratings allowed (L, 10, 12…); empty is any, even none.
     pub classificacao: Vec<String>,
     /// Movies the owner gave a nota.
@@ -109,6 +116,10 @@ impl<'a> Matcher<'a> {
             && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
             && f.votos_max.is_none_or(|max| m.vote_count <= max)
             && f.media_tmdb_min.is_none_or(|min| m.vote_average >= min)
+            && f.critica_min.is_none_or(|min| match m.critic_score {
+                Some(score) => score >= min,
+                None => m.vote_count >= PUBLICO_MIN_VOTOS && m.vote_average >= f32::from(min) / 10.0,
+            })
             && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
             && shown(f.com_nota, rated)
             && shown(f.ja_vi, owner.ja_vi.contains(&m.tmdb_id))

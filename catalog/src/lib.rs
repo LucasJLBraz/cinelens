@@ -1,7 +1,7 @@
-//! The daily catalog job: builds the catálogo artifact from TMDB.
+//! The daily catalog job: builds the catálogo artifact from TMDB, with critics' scores from OMDb.
 //!
-//! `build` only sees TMDB through `fetch`, so the same code runs against the real API
-//! (see `main.rs`) and against a fixture in tests.
+//! `build` only sees TMDB and OMDb through `fetch` and `omdb`, so the same code runs against the
+//! real APIs (see `main.rs`) and against fixtures in tests.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,6 +26,16 @@ const DETAIL_WORKERS: usize = 8;
 pub trait Fetch: Fn(&str) -> Result<Option<Value>, String> + Sync {}
 impl<F: Fn(&str) -> Result<Option<Value>, String> + Sync> Fetch for F {}
 
+/// What OMDb said of a movie on one day; kept between runs by IMDb id, as OMDb allows only
+/// 1000 requests a day.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Critica {
+    /// Metacritic, else Rotten Tomatoes, 0–100; `None` when OMDb has neither.
+    pub score: Option<u8>,
+    /// `YYYY-MM-DD`.
+    pub fetched: String,
+}
+
 pub struct Config<'a> {
     /// `YYYY-MM-DD`; also the artifact's data version.
     pub today: &'a str,
@@ -33,6 +43,8 @@ pub struct Config<'a> {
     pub recent_since: &'a str,
     /// Movies that must be in the catálogo whatever their votes (the training data).
     pub extra_ids: &'a [u32],
+    /// OMDb requests a day; what earlier runs today asked counts against it.
+    pub omdb_budget: usize,
 }
 
 #[derive(Serialize)]
@@ -102,6 +114,8 @@ struct Movie {
     watch: Option<Watch>,
     /// The Brazilian age rating (L, 10, 12, 14, 16, 18).
     certification: Option<String>,
+    /// Critics' score (`Critica::score`).
+    critic_score: Option<u8>,
 }
 
 #[derive(Deserialize)]
@@ -213,7 +227,14 @@ struct Video {
     iso_639_1: String,
 }
 
-pub fn build(fetch: &impl Fetch, config: &Config) -> Result<Artifact, String> {
+/// `omdb` is asked for an IMDb id. `critica` is what earlier runs learned from OMDb; this run
+/// adds to and refreshes it.
+pub fn build(
+    fetch: &impl Fetch,
+    omdb: &impl Fetch,
+    critica: &mut BTreeMap<String, Critica>,
+    config: &Config,
+) -> Result<Artifact, String> {
     let genres: GenreList = get(fetch, "/genre/movie/list?language=pt-BR")?;
     let trending: Vec<u32> = get::<Page>(fetch, "/trending/movie/week?language=pt-BR")?
         .results
@@ -233,6 +254,10 @@ pub fn build(fetch: &impl Fetch, config: &Config) -> Result<Artifact, String> {
     let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
         details(fetch, &ids.into_iter().collect::<Vec<_>>())?.into_iter().unzip();
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
+    critic_scores(omdb, critica, &movies, config);
+    for m in &mut movies {
+        m.critic_score = m.imdb_id.as_ref().and_then(|i| critica.get(i)?.score);
+    }
     let providers: BTreeMap<u32, Provider> = providers.into_iter().flatten().map(|p| (p.id, p)).collect();
     let mut providers: Vec<Provider> = providers.into_values().collect();
     providers.sort_by(|a, b| a.name.cmp(&b.name));
@@ -245,6 +270,43 @@ pub fn build(fetch: &impl Fetch, config: &Config) -> Result<Artifact, String> {
         providers,
         movies,
     })
+}
+
+/// Spends the day's OMDb budget: movies never asked first, most voted first, then the stalest.
+/// Trouble with OMDb (its daily limit, a bad key, the network) stops asking and is only warned
+/// about: the catálogo goes out with the scores already known.
+fn critic_scores(omdb: &impl Fetch, critica: &mut BTreeMap<String, Critica>, movies: &[Movie], config: &Config) {
+    let mut ids: Vec<&String> = movies.iter().filter_map(|m| m.imdb_id.as_ref()).collect();
+    // Stable: most voted first among the never asked and among the same day.
+    ids.sort_by_key(|&i| critica.get(i).map(|c| c.fetched.clone()));
+    let stale = ids.iter().filter(|&&i| critica.get(i).is_none_or(|c| c.fetched.as_str() < config.today));
+    let asked_today = critica.values().filter(|c| c.fetched == config.today).count();
+    let ids: Vec<String> = stale.take(config.omdb_budget.saturating_sub(asked_today)).map(|&i| i.clone()).collect();
+    for imdb_id in ids {
+        match omdb(&imdb_id).and_then(|body| omdb_score(&body.unwrap_or_default())) {
+            Ok(score) => _ = critica.insert(imdb_id, Critica { score, fetched: config.today.to_string() }),
+            Err(e) => {
+                eprintln!("::warning::OMDb {imdb_id}: {e}; no more critics' scores this run");
+                return;
+            }
+        }
+    }
+}
+
+/// The score in an OMDb answer. A movie OMDb does not know has none; any other refusal is an error.
+fn omdb_score(body: &Value) -> Result<Option<u8>, String> {
+    if body["Response"] != "True" {
+        let error = body["Error"].as_str().unwrap_or("no answer");
+        return if error.contains("not found") || error.starts_with("Incorrect IMDb ID") { Ok(None) } else { Err(error.to_string()) };
+    }
+    // ponytail: Rotten Tomatoes is the share of positive reviews, not an average like Metacritic,
+    // and clears the same cut more easily; give it its own cut if it lets weak movies in.
+    let metascore = body["Metascore"].as_str().and_then(|s| s.parse().ok());
+    let ratings = body["Ratings"].as_array().into_iter().flatten();
+    let rotten = ratings
+        .filter(|r| r["Source"] == "Rotten Tomatoes")
+        .find_map(|r| r["Value"].as_str()?.strip_suffix('%')?.parse().ok());
+    Ok(metascore.or(rotten).filter(|&s: &u8| s <= 100))
 }
 
 #[derive(Deserialize)]
@@ -373,5 +435,6 @@ fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
         vote_average: d.vote_average,
         popularity: d.popularity,
         watch,
+        critic_score: None,
     }
 }

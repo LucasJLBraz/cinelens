@@ -143,6 +143,25 @@ pub(crate) struct Model {
 pub(crate) struct Profile {
     mean: f32,
     factors: Vec<f32>,
+    /// Lower Cholesky factor of the fold-in's normal matrix; `None` before any nota.
+    cholesky: Option<Vec<f64>>,
+}
+
+impl Profile {
+    /// How unsure the fold-in is of the owner's side of this movie's prediction: the ridge
+    /// posterior variance `xᵀA⁻¹x`, up to a constant. A nota on a movie with a high one moves the
+    /// profile most.
+    pub fn uncertainty(&self, item: &Item) -> f32 {
+        let x = &item.factors;
+        let Some(l) = &self.cholesky else { return x.iter().map(|v| v * v).sum() };
+        let dim = x.len();
+        // |L⁻¹x|², by forward substitution.
+        let mut y = vec![0f64; dim];
+        for i in 0..dim {
+            y[i] = (x[i] as f64 - (0..i).map(|k| l[i * dim + k] * y[k]).sum::<f64>()) / l[i * dim + i];
+        }
+        y.iter().map(|v| v * v).sum::<f64>() as f32
+    }
 }
 
 impl Model {
@@ -216,7 +235,8 @@ impl Model {
             Some((item.factors.as_slice(), -NEGATIVE_OFFSET, NEGATIVE_WEIGHT))
         });
         let rows = rows.chain(negatives);
-        Profile { mean, factors: weighted_ridge(rows, self.dim, self.lambda) }
+        let (factors, cholesky) = weighted_ridge(rows, self.dim, self.lambda);
+        Profile { mean, factors, cholesky }
     }
 
     /// The movie's collaborative factors, else the mean of its mapped content features';
@@ -309,11 +329,16 @@ pub(crate) fn calibrate(model: &Model, notas: &Notas) -> Option<u32> {
 /// Minimizes `Σ (y − w·x)² + λ·n·|w|²` over the `n` rows `(x, y)`, each `x` of length `dim`
 /// (ALS-WR regularization). Shared with the training job.
 pub fn ridge<'a>(rows: impl IntoIterator<Item = (&'a [f32], f32)>, dim: usize, lambda: f32) -> Vec<f32> {
-    weighted_ridge(rows.into_iter().map(|(x, y)| (x, y, 1.0)), dim, lambda)
+    weighted_ridge(rows.into_iter().map(|(x, y)| (x, y, 1.0)), dim, lambda).0
 }
 
-/// `ridge` with a weight `c` per row: minimizes `Σ c·(y − w·x)² + λ·Σc·|w|²`.
-fn weighted_ridge<'a>(rows: impl IntoIterator<Item = (&'a [f32], f32, f32)>, dim: usize, lambda: f32) -> Vec<f32> {
+/// `ridge` with a weight `c` per row: minimizes `Σ c·(y − w·x)² + λ·Σc·|w|²`. Also returns the
+/// lower Cholesky factor of the normal matrix, `None` without rows.
+fn weighted_ridge<'a>(
+    rows: impl IntoIterator<Item = (&'a [f32], f32, f32)>,
+    dim: usize,
+    lambda: f32,
+) -> (Vec<f32>, Option<Vec<f64>>) {
     let mut a = vec![0f64; dim * dim];
     let mut b = vec![0f64; dim];
     let mut n = 0f64;
@@ -329,7 +354,7 @@ fn weighted_ridge<'a>(rows: impl IntoIterator<Item = (&'a [f32], f32, f32)>, dim
         }
     }
     if n == 0.0 {
-        return vec![0.0; dim];
+        return (vec![0.0; dim], None);
     }
     for i in 0..dim {
         a[i * dim + i] += lambda as f64 * n;
@@ -349,5 +374,5 @@ fn weighted_ridge<'a>(rows: impl IntoIterator<Item = (&'a [f32], f32, f32)>, dim
     for i in (0..dim).rev() {
         b[i] = (b[i] - (i + 1..dim).map(|k| a[k * dim + i] * b[k]).sum::<f64>()) / a[i * dim + i];
     }
-    b.into_iter().map(|w| w as f32).collect()
+    (b.into_iter().map(|w| w as f32).collect(), Some(a))
 }
