@@ -10,7 +10,7 @@
     body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 system-ui, sans-serif; }
     header { padding: max(16px, env(safe-area-inset-top)) 16px 8px; }
     h1 { margin: 0; font-size: 22px; }
-    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; padding: 8px 16px; }
+    #grid, #pessoa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; padding: 8px 16px; }
     .movie { min-width: 0; }
     .poster { width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--card); object-fit: cover; display: block; }
     .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -43,7 +43,26 @@
     #import-result { margin: 0 16px; color: var(--muted); font-size: 13px; }
     .movie { cursor: pointer; }
     #filme { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
-    #filme .top { display: flex; gap: 16px; margin-top: 12px; }
+    #filme { position: relative; }
+    #filme .top { display: flex; gap: 16px; margin-top: 12px; position: relative; }
+    #back { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; z-index: 1; background: #000a; }
+    #filme-fundo img { display: block; width: calc(100% + 32px); margin: calc(-1 * max(16px, env(safe-area-inset-top))) -16px -48px; aspect-ratio: 16 / 9; object-fit: cover; mask-image: linear-gradient(#000 50%, transparent); }
+    #filme-fundo:empty { height: 48px; }
+    .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
+    #previsao { margin-top: 8px; }
+    #sinopse { margin: 16px 0 0; line-height: 1.5; }
+    .fileira { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; }
+    .fileira .movie { flex: none; width: 104px; }
+    .pessoas { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pessoas button { padding: 8px 12px; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; text-align: left; }
+    .pessoas button small { display: block; color: var(--muted); }
+    .pessoas button.fa { border-color: var(--accent); }
+    #trailer { margin-top: 24px; }
+    .link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; }
+    #pessoa { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    #pessoa .cabeca { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+    #pessoa #pessoa-grid { padding: 8px 0; }
+    #sou-fa.on { border-color: var(--accent); color: var(--accent); }
     #filme .poster { width: 120px; flex: none; }
     #filme h1 { font-size: 20px; }
     #filme .original { white-space: normal; margin-top: 4px; }
@@ -137,32 +156,60 @@
     <button id="more" hidden>Mais filmes</button>
   </div>
   <section id="filme" hidden>
+    <div id="filme-fundo"></div>
     <button id="back" class="pill">‹ Voltar</button>
     <div class="top">
       <div id="filme-poster"></div>
       <div>
         <h1 id="filme-title"></h1>
         <div id="filme-original" class="original"></div>
+        <div id="filme-meta" class="meta"></div>
+        <div id="previsao">
+          <div id="filme-exibicao" class="exibicao"></div>
+          <div id="porque" class="meta"></div>
+        </div>
       </div>
     </div>
+    <section id="onde" hidden>
+      <h2>Onde assistir</h2>
+      <div id="onde-lista"></div>
+      <div class="credito">Dados de onde assistir: JustWatch · <button id="onde-link" class="link">ver ofertas</button></div>
+    </section>
     <div id="acoes">
+      <button id="dar-nota" class="pill">Dar nota</button>
       <button class="pill" data-marca="QueroAssistir">Quero assistir</button>
       <button class="pill" data-marca="JaVi">Já vi</button>
       <details class="menu">
         <summary class="pill">⋯</summary>
         <div class="menu-items">
           <button data-marca="NaoMeInteressa">Não me interessa</button>
+          <button id="ver-historico">Histórico de notas</button>
+          <button id="abrir-tmdb">Abrir no TMDB</button>
         </div>
       </details>
     </div>
-    <section id="onde" hidden>
-      <h2>Onde assistir</h2>
-      <div id="onde-lista"></div>
-      <div class="credito">Dados de onde assistir: JustWatch</div>
-    </section>
-    <div id="notas"></div>
-    <p id="revelacao" hidden></p>
-    <ul id="nota-history"></ul>
+    <div id="avaliar" hidden>
+      <div id="notas"></div>
+      <p id="revelacao" hidden></p>
+    </div>
+    <ul id="nota-history" hidden></ul>
+    <p id="sinopse"></p>
+    <h2 id="parecidos-titulo">Parecidos</h2>
+    <div id="parecidos" class="fileira"></div>
+    <h2 id="direcao-titulo">Direção</h2>
+    <div id="direcao" class="pessoas"></div>
+    <h2 id="elenco-titulo">Elenco</h2>
+    <div id="elenco" class="pessoas"></div>
+    <button id="trailer" class="pill">▶ Trailer</button>
+  </section>
+  <section id="pessoa" hidden>
+    <button class="pill back">‹ Voltar</button>
+    <div class="cabeca">
+      <h1 id="pessoa-nome"></h1>
+      <button id="sou-fa" class="pill">Sou fã</button>
+    </div>
+    <div class="original">Do que você deve gostar mais para o que menos</div>
+    <main id="pessoa-grid" class="grade"></main>
   </section>
   <section id="ajustes" hidden>
     <button class="pill back">‹ Voltar</button>
@@ -405,11 +452,50 @@
       notasEl.append(b);
     }
 
+    const pessoaEl = document.getElementById('pessoa');
+    const telas = [explorarEl, filmeEl, document.getElementById('ajustes'), pessoaEl];
+    function tela(el) {
+      for (const t of telas) t.hidden = t !== el;
+      window.scrollTo(0, 0);
+    }
+    // TMDB pages, the trailer and where to watch open in the system browser.
+    const abrirUrl = url => invoke('plugin:opener|open_url', { url });
+    const duracao = min => min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
+    const idiomaNome = code => { try { return new Intl.DisplayNames(['pt-BR'], { type: 'language' }).of(code); } catch { return code; } };
+
+    function pessoas(list, role) {
+      return list.map(p => {
+        const b = document.createElement('button');
+        b.className = p.fa ? 'fa' : '';
+        b.textContent = p.name;
+        if (role) {
+          const small = document.createElement('small');
+          small.textContent = role;
+          b.append(small);
+        }
+        b.addEventListener('click', () => openPessoa(p.id));
+        return b;
+      });
+    }
+
     function showMovie(m) {
       filmeEl.dataset.id = m.tmdb_id;
+      const fundo = document.getElementById('filme-fundo');
+      fundo.replaceChildren();
+      if (m.backdrop_url) {
+        const img = document.createElement('img');
+        img.src = m.backdrop_url;
+        img.alt = '';
+        img.onerror = () => img.remove();
+        fundo.append(img);
+      }
       document.getElementById('filme-poster').replaceChildren(posterOf(m));
       document.getElementById('filme-title').textContent = m.title;
-      document.getElementById('filme-original').textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
+      document.getElementById('filme-original').textContent = m.original_title;
+      const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
+      document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
+      document.getElementById('filme-exibicao').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : exibicaoText(m.exibicao);
+      document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
       document.getElementById('onde').hidden = !onde;
       if (onde) {
@@ -421,41 +507,95 @@
           row.append(label, p.map(x => x.name).join(', '));
           return row;
         }));
+        document.getElementById('onde-link').hidden = !onde.link;
+        document.getElementById('onde-link').onclick = () => abrirUrl(onde.link);
       }
       const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, NaoMeInteressa: m.nao_me_interessa };
       for (const b of filmeEl.querySelectorAll('[data-marca]')) b.classList.toggle('on', marcas[b.dataset.marca]);
       for (const b of notasEl.children) b.classList.toggle('on', Number(b.dataset.nota) === m.nota);
-      // Previous notas only; MovieLens's prediction stays hidden so it never anchors the nota.
-      document.getElementById('nota-history').replaceChildren(...m.history.slice(0, -1).reverse().map(e => {
+      // MovieLens's prediction stays hidden so it never anchors the nota.
+      document.getElementById('nota-history').replaceChildren(...[...m.history].reverse().map((e, i) => {
         const li = document.createElement('li');
-        li.textContent = `Antes: ${fmt(e.nota)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
+        li.textContent = `${i ? 'Antes' : 'Atual'}: ${fmt(e.nota)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
         return li;
       }));
+      document.getElementById('sinopse').textContent = m.sinopse;
+      document.getElementById('parecidos-titulo').hidden = !m.parecidos.length;
+      document.getElementById('parecidos').replaceChildren(...m.parecidos.map(card));
+      document.getElementById('direcao-titulo').hidden = !m.direcao.length && !m.trilha.length;
+      document.getElementById('direcao').replaceChildren(...pessoas(m.direcao), ...pessoas(m.trilha, 'Trilha sonora'));
+      document.getElementById('elenco-titulo').hidden = !m.elenco.length;
+      document.getElementById('elenco').replaceChildren(...pessoas(m.elenco));
+      const trailer = document.getElementById('trailer');
+      trailer.hidden = !m.trailer_youtube;
+      trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${m.trailer_youtube}`);
     }
 
-    async function openMovie(id) {
+    function closeRating() {
+      document.getElementById('avaliar').hidden = true;
+      document.getElementById('revelacao').hidden = true;
+      document.getElementById('previsao').hidden = false;
+    }
+
+    async function openMovie(id, push = true) {
       const m = await invoke('movie', { tmdbId: id });
       if (!m) return;
-      // The rating screen never shows the prediction, so it cannot anchor the nota.
-      document.getElementById('revelacao').hidden = true;
+      closeRating();
+      document.getElementById('nota-history').hidden = true;
       showMovie(m);
-      explorarEl.hidden = true;
-      filmeEl.hidden = false;
-      window.scrollTo(0, 0);
+      tela(filmeEl);
       // Lets Android's back gesture close the page.
-      history.pushState({ filme: id }, '');
+      if (push) history.pushState({ filme: id }, '');
     }
 
-    window.addEventListener('popstate', () => {
-      filmeEl.hidden = true;
-      ajustesEl.hidden = true;
-      explorarEl.hidden = false;
+    async function showPessoa(p) {
+      pessoaEl.dataset.id = p.id;
+      document.getElementById('pessoa-nome').textContent = p.name;
+      document.getElementById('sou-fa').classList.toggle('on', p.fa);
+      document.getElementById('pessoa-grid').replaceChildren(...p.movies.map(card));
+    }
+
+    async function openPessoa(id, push = true) {
+      const p = await invoke('pessoa', { personId: id });
+      if (!p) return;
+      showPessoa(p);
+      tela(pessoaEl);
+      if (push) history.pushState({ pessoa: id }, '');
+    }
+
+    document.getElementById('sou-fa').addEventListener('click', async e => {
+      showPessoa(await invoke('set_fa', { personId: Number(pessoaEl.dataset.id), on: !e.target.classList.contains('on') }));
+      stale = true;
+    });
+    pessoaEl.querySelector('.back').addEventListener('click', () => history.back());
+
+    window.addEventListener('popstate', ({ state }) => {
+      if (state?.filme) return openMovie(state.filme, false);
+      if (state?.pessoa) return openPessoa(state.pessoa, false);
+      if (state?.ajustes) return tela(ajustesEl);
+      tela(explorarEl);
       if (stale) {
         stale = false;
         reloadGrid();
       }
     });
     document.getElementById('back').addEventListener('click', () => history.back());
+    document.getElementById('dar-nota').addEventListener('click', () => {
+      // The rating screen never shows the prediction, so it cannot anchor the nota.
+      const avaliar = document.getElementById('avaliar');
+      avaliar.hidden = !avaliar.hidden;
+      document.getElementById('previsao').hidden = !avaliar.hidden;
+    });
+    document.getElementById('ver-historico').addEventListener('click', () => {
+      const historico = document.getElementById('nota-history');
+      if (!historico.children.length) historico.append(Object.assign(document.createElement('li'), { textContent: 'Nenhuma nota ainda.' }));
+      historico.hidden = false;
+      filmeEl.querySelector('.menu').open = false;
+    });
+    document.getElementById('abrir-tmdb').addEventListener('click', () => {
+      filmeEl.querySelector('.menu').open = false;
+      abrirUrl(`https://www.themoviedb.org/movie/${filmeEl.dataset.id}`);
+    });
 
     const ajustesEl = document.getElementById('ajustes');
     const decayEl = document.getElementById('decay');
@@ -483,8 +623,7 @@
         label.append(box, p.name);
         return label;
       }));
-      explorarEl.hidden = true;
-      ajustesEl.hidden = false;
+      tela(ajustesEl);
       history.pushState({ ajustes: true }, '');
     });
     const servicosEl = document.getElementById('servicos');
@@ -513,6 +652,7 @@
       const [m, revealed] = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
       stale = true;
       if (m) showMovie(m);
+      document.getElementById('previsao').hidden = false;
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
       if (revealed) revelacao.textContent = `O app achava: ${exibicaoText(revealed)}`;

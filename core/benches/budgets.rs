@@ -48,6 +48,14 @@ fn main() {
         assert_eq!(core.explorar(&filtro, 0).movies.len(), 30);
     });
 
+    let mut id = 0;
+    failed |= !budget("movie page: open", Duration::from_millis(100), || {
+        id += 1_001;
+        let page = core.movie(id).unwrap();
+        assert_eq!(page.parecidos.len(), 12);
+        assert!(!page.porque.is_empty());
+    });
+
     if failed {
         std::process::exit(1);
     }

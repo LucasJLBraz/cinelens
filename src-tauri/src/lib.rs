@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filtro, ImportSummary, Opcoes, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Opcoes, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -55,6 +55,20 @@ fn import_movielens(
 #[tauri::command]
 fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Option<MoviePage> {
     core.read().unwrap().movie(tmdb_id)
+}
+
+#[tauri::command]
+fn pessoa(core: tauri::State<RwLock<Core>>, person_id: u32) -> Option<Filmografia> {
+    core.read().unwrap().pessoa(person_id)
+}
+
+/// Marks or unmarks the owner as fã of the person; returns their filmography after.
+#[tauri::command]
+fn set_fa(app: AppHandle, core: tauri::State<RwLock<Core>>, person_id: u32, on: bool) -> Result<Option<Filmografia>, String> {
+    let mut core = core.write().unwrap();
+    core.set_fa(person_id, on);
+    save_owner(&app, &core)?;
+    Ok(core.pessoa(person_id))
 }
 
 /// The movie page after the nota, and what the app had predicted for it (the reveal).
@@ -260,6 +274,7 @@ fn poster(app: &AppHandle, name: &str) -> Response<Vec<u8>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let mut core = Core::default();
             // A missing or unreadable catálogo means the UI downloads it again.
@@ -294,6 +309,8 @@ pub fn run() {
             movie,
             rate,
             marcar,
+            pessoa,
+            set_fa,
             decay,
             set_decay,
             display_mode,

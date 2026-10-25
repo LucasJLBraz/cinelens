@@ -1,6 +1,6 @@
 //! Cinelens core: the single facade the UI talks to.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,15 @@ use recommender::Model;
 pub const CATALOG_FORMAT_VERSION: u32 = 1;
 const PAGE_SIZE: usize = 30;
 const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
+const BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w780";
+const PARECIDOS: usize = 12;
+/// Notas at least this high count as loved for the reason line.
+const LOVED: f32 = 4.0;
+/// Movies named in the reason line, at most.
+const PORQUE: usize = 2;
+/// Stars a movie with a person the owner is fã of gains in the ranking.
+// ponytail: flat boost whatever the person's role; weigh director above cast if it feels off.
+const FA_BOOST: f32 = 1.0;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
 
@@ -114,6 +123,14 @@ struct Movie {
     countries: Vec<String>,
     #[serde(default)]
     vote_count: u32,
+    #[serde(default)]
+    overview: String,
+    #[serde(default)]
+    backdrop_path: Option<String>,
+    #[serde(default)]
+    composers: Vec<Person>,
+    #[serde(default)]
+    trailer_youtube: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -220,10 +237,42 @@ pub struct OndeAssistir {
     pub compra: Vec<Provedor>,
 }
 
+/// A director, actor or composer.
+#[derive(Debug, Serialize)]
+pub struct Pessoa {
+    pub id: u32,
+    pub name: String,
+    /// The owner is fã: their movies rank higher.
+    pub fa: bool,
+}
+
+/// A person's movies, the ones the owner would like most first.
+#[derive(Debug, Serialize)]
+pub struct Filmografia {
+    #[serde(flatten)]
+    pub pessoa: Pessoa,
+    pub movies: Vec<MovieCard>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MoviePage {
     #[serde(flatten)]
     pub card: MovieCard,
+    pub backdrop_url: Option<String>,
+    /// Minutes.
+    pub runtime: Option<u32>,
+    pub generos: Vec<String>,
+    /// Original language, ISO 639-1.
+    pub idioma: Option<String>,
+    pub sinopse: String,
+    pub trailer_youtube: Option<String>,
+    pub direcao: Vec<Pessoa>,
+    pub elenco: Vec<Pessoa>,
+    pub trilha: Vec<Pessoa>,
+    /// Titles of movies the owner loved that are most like this one: "porque você amou X".
+    pub porque: Vec<String>,
+    /// People who liked this movie also liked these, most alike first.
+    pub parecidos: Vec<MovieCard>,
     pub nota: Option<f32>,
     pub history: Vec<NotaEntry>,
     pub quero_assistir: bool,
@@ -284,6 +333,9 @@ struct OwnerData {
     /// Movie → until when (Unix seconds) it stays out of the destaque.
     #[serde(default)]
     agora_nao: BTreeMap<u32, i64>,
+    /// Person ids the owner is fã of.
+    #[serde(default)]
+    fas: BTreeSet<u32>,
     #[serde(default)]
     settings: Settings,
 }
@@ -297,6 +349,8 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 pub struct Core {
     data_version: Option<String>,
     movies: Vec<Movie>,
+    /// tmdb_id → index into `movies`.
+    index: HashMap<u32, usize>,
     generos: Vec<Genero>,
     provedores: Vec<Provedor>,
     /// Aligned with `movies`: what search matches against.
@@ -341,6 +395,7 @@ impl Core {
         let most = artifact.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
         self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
         self.movies = artifact.movies;
+        self.index = self.movies.iter().enumerate().map(|(i, m)| (m.tmdb_id, i)).collect();
         self.generos = artifact.genres;
         self.provedores = artifact.providers;
         self.refresh_items();
@@ -393,7 +448,7 @@ impl Core {
         let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !hidden(i)).collect();
         // Stable: the rest keep catálogo order, after the recomendações.
         para_voce.sort_by(|&a, &b| {
-            let key = |i: usize| self.recomendavel(i).then(|| self.previstas[i]).flatten().map_or(f32::NEG_INFINITY, |(p, _)| p);
+            let key = |i: usize| if self.recomendavel(i) { self.ranking(i) } else { f32::NEG_INFINITY };
             key(b).total_cmp(&key(a))
         });
         self.para_voce = para_voce;
@@ -405,6 +460,51 @@ impl Core {
     fn recomendavel(&self, i: usize) -> bool {
         let id = self.movies[i].tmdb_id;
         self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.owner.nao_me_interessa.contains(&id)
+    }
+
+    /// What recomendações are ranked by: the nota prevista, plus a boost for a person the owner
+    /// is fã of. Only for movies with a nota prevista.
+    fn ranking(&self, i: usize) -> f32 {
+        let m = &self.movies[i];
+        let fa = m.directors.iter().chain(&m.cast).chain(&m.composers).any(|p| self.owner.fas.contains(&p.id));
+        self.previstas[i].map_or(0.0, |(p, _)| p) + if fa { FA_BOOST } else { 0.0 }
+    }
+
+    pub fn set_fa(&mut self, person_id: u32, on: bool) {
+        if on {
+            self.owner.fas.insert(person_id);
+        } else {
+            self.owner.fas.remove(&person_id);
+        }
+        self.recompute();
+    }
+
+    /// The person's movies, highest nota prevista first (the owner's own nota for those rated),
+    /// then those without either; not those marked não me interessa. `None` for no one in the
+    /// catálogo.
+    pub fn pessoa(&self, person_id: u32) -> Option<Filmografia> {
+        let mut name = None;
+        let mut found: Vec<usize> = (0..self.movies.len())
+            .filter(|&i| {
+                let m = &self.movies[i];
+                let person = m.directors.iter().chain(&m.cast).chain(&m.composers).find(|p| p.id == person_id);
+                name = name.take().or(person.map(|p| p.name.clone()));
+                person.is_some() && !self.owner.nao_me_interessa.contains(&m.tmdb_id)
+            })
+            .collect();
+        let key = |i: usize| {
+            let nota = self.owner.notas.get(&self.movies[i].tmdb_id).and_then(|h| h.last()).map(|e| e.nota);
+            self.previstas[i].map(|(p, _)| p).or(nota).unwrap_or(f32::NEG_INFINITY)
+        };
+        found.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
+        Some(Filmografia {
+            pessoa: self.pessoa_card(person_id, name?),
+            movies: found.into_iter().map(|i| self.card(i)).collect(),
+        })
+    }
+
+    fn pessoa_card(&self, id: u32, name: String) -> Pessoa {
+        Pessoa { id, name, fa: self.owner.fas.contains(&id) }
     }
 
     /// Marks or unmarks a movie; `at` (Unix seconds) starts agora não's few weeks.
@@ -510,7 +610,7 @@ impl Core {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
-        let card = self.movies.iter().position(|m| m.tmdb_id == tmdb_id).map(|i| self.card(i));
+        let card = self.index.get(&tmdb_id).map(|&i| self.card(i));
         let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
         self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
@@ -528,10 +628,24 @@ impl Core {
 
     /// The movie page, or `None` if the movie is not in the catálogo.
     pub fn movie(&self, tmdb_id: u32) -> Option<MoviePage> {
-        let i = self.movies.iter().position(|m| m.tmdb_id == tmdb_id)?;
+        let i = *self.index.get(&tmdb_id)?;
+        let m = &self.movies[i];
         let history = self.owner.notas.get(&tmdb_id).cloned().unwrap_or_default();
+        let people = |list: &[Person]| list.iter().map(|p| self.pessoa_card(p.id, p.name.clone())).collect();
+        let genre = |id: &u32| self.generos.iter().find(|g| g.id == *id).map(|g| g.name.clone());
         Some(MoviePage {
             card: self.card(i),
+            backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),
+            runtime: m.runtime,
+            generos: m.genre_ids.iter().filter_map(genre).collect(),
+            idioma: m.original_language.clone(),
+            sinopse: m.overview.clone(),
+            trailer_youtube: m.trailer_youtube.clone(),
+            direcao: people(&m.directors),
+            elenco: people(&m.cast),
+            trilha: people(&m.composers),
+            porque: self.porque(i),
+            parecidos: self.parecidos(i),
             nota: history.last().map(|e| e.nota),
             history,
             quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
@@ -542,6 +656,45 @@ impl Core {
                 OndeAssistir { link: w.link.clone(), assinatura: named(&w.flatrate), aluguel: named(&w.rent), compra: named(&w.buy) }
             }),
         })
+    }
+
+    /// Item-item: the movies whose factors are most like this one's, weighed by confiança so
+    /// sparsely rated movies do not crowd the top. Not those marked não me interessa.
+    fn parecidos(&self, i: usize) -> Vec<MovieCard> {
+        let Some(item) = &self.items[i] else { return Vec::new() };
+        let mut scored: Vec<(f32, usize)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|&(j, _)| j != i && !self.owner.nao_me_interessa.contains(&self.movies[j].tmdb_id))
+            .filter_map(|(j, other)| Some((item.similarity(other.as_ref()?) * other.as_ref()?.confianca, j)))
+            .collect();
+        let n = PARECIDOS.min(scored.len());
+        if n == 0 {
+            return Vec::new();
+        }
+        scored.select_nth_unstable_by(n - 1, |a, b| b.0.total_cmp(&a.0));
+        scored.truncate(n);
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+        scored.into_iter().map(|(_, j)| self.card(j)).collect()
+    }
+
+    /// Titles of the loved movies most like this one.
+    fn porque(&self, i: usize) -> Vec<String> {
+        let Some(item) = &self.items[i] else { return Vec::new() };
+        let mut loved: Vec<(f32, usize)> = self
+            .owner
+            .notas
+            .iter()
+            .filter(|(_, h)| h.last().is_some_and(|e| e.nota >= LOVED))
+            .filter_map(|(id, _)| {
+                let j = *self.index.get(id)?;
+                let similarity = item.similarity(self.items[j].as_ref()?);
+                (j != i && similarity > 0.0).then_some((similarity, j))
+            })
+            .collect();
+        loved.sort_by(|a, b| b.0.total_cmp(&a.0));
+        loved.into_iter().take(PORQUE).map(|(_, j)| self.movies[j].title.clone()).collect()
     }
 
     pub fn owner_data(&self) -> Vec<u8> {
@@ -584,7 +737,7 @@ impl Core {
         if filtro.garimpo != 0.0 {
             // ponytail: popularity is log TMDB votes, one star at either end of the slider; tune
             // the weight once the owner has used it.
-            let score = |i: usize| self.previstas[i].map_or(0.0, |(p, _)| p) - filtro.garimpo * self.popularidade[i];
+            let score = |i: usize| self.ranking(i) - filtro.garimpo * self.popularidade[i];
             let n = found.partition_point(|&i| self.recomendavel(i));
             found[..n].sort_by(|&a, &b| score(b).total_cmp(&score(a)));
         }

@@ -71,6 +71,14 @@ pub(crate) struct Item {
 }
 
 impl Item {
+    /// How alike two movies are in who liked them: the cosine of their factors.
+    pub fn similarity(&self, other: &Item) -> f32 {
+        let dot: f32 = self.factors.iter().zip(&other.factors).map(|(a, b)| a * b).sum();
+        let norm = |f: &[f32]| f.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norms = norm(&self.factors) * norm(&other.factors);
+        if norms > 0.0 { dot / norms } else { 0.0 }
+    }
+
     fn collaborative(m: MovieFactors) -> Item {
         let n = m.ratings as f32;
         let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
