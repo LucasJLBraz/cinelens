@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{display, Core, Faixa, Movie};
 
-/// Votes a TMDB average needs to stand in for a missing critics' score.
-// ponytail: fixed cut; tune once Aclamados pela crítica has been browsed.
-const PUBLICO_MIN_VOTOS: u32 = 500;
+/// Votes a TMDB average needs to count as the public's opinion: to stand in for a missing
+/// critics' score, and in Perfil's comparisons with the public.
+// ponytail: fixed cut; tune once Aclamados pela crítica and Perfil's disagreements have been browsed.
+pub(crate) const PUBLICO_MIN_VOTOS: u32 = 500;
 
 /// Hide, or show only, the movies with a mark.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]

@@ -5,12 +5,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 mod display;
+mod estatisticas;
 mod filtro;
 mod listas;
 mod movielens;
 mod recommender;
 
 pub use display::{DisplayMode, Faixa, Exibicao};
+pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, Mudanca};
 pub use filtro::{Filtro, Mostrar};
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 use recommender::Model;

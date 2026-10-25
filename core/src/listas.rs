@@ -50,8 +50,14 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
     ]
 }
 
-/// `YYYY-MM-DD` (UTC) of a Unix time: Howard Hinnant's civil_from_days.
+/// `YYYY-MM-DD` (UTC) of a Unix time.
 fn date(secs: i64) -> String {
+    let (y, m, d) = civil(secs);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Year, month and day (UTC) of a Unix time: Howard Hinnant's civil_from_days.
+pub(crate) fn civil(secs: i64) -> (i64, i64, i64) {
     let z = secs.div_euclid(86_400) + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -60,6 +66,5 @@ fn date(secs: i64) -> String {
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
 }

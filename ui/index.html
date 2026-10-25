@@ -91,6 +91,15 @@
     #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
+    #stats h2 { margin-top: 20px; }
+    #stats .linha { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 13px; }
+    #stats .linha > :first-child { flex: 0 0 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #stats .linha .barra { height: 8px; border-radius: 4px; background: var(--accent); }
+    #stats .linha > :last-child { margin-left: auto; color: var(--muted); white-space: nowrap; }
+    #stats .colunas { display: flex; gap: 2px; align-items: flex-end; height: 80px; }
+    #stats .colunas div { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--accent); }
+    #stats .eixo { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+    #stats .link { display: block; margin-top: 4px; font-size: 13px; text-align: left; }
     #pesou { margin-top: 12px; }
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
@@ -267,6 +276,7 @@
   </section>
   <section id="ajustes" hidden>
     <h1>Perfil</h1>
+    <div id="stats"></div>
     <button id="import" class="pill" style="margin-top: 16px">Importar do MovieLens</button>
     <input id="import-files" type="file" multiple hidden>
     <p id="import-result" class="hint" hidden></p>
@@ -798,7 +808,58 @@
       await invoke('set_display_mode', { mode: displayModeEl.value });
       stale = true;
     });
+    const estrelas = n => n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    function showStats(e) {
+      const el = (tag, props = {}, ...kids) => { const x = Object.assign(document.createElement(tag), props); x.append(...kids); return x; };
+      const out = [];
+      const titulo = t => out.push(el('h2', { textContent: t }));
+      const hint = t => out.push(el('div', { className: 'hint', textContent: t }));
+      const colunas = (valores, de, ate) => {
+        const max = Math.max(1, ...valores);
+        out.push(el('div', { className: 'colunas' }, ...valores.map(v => el('div', { style: `height: ${v / max * 100}%`, title: String(v) }))));
+        out.push(el('div', { className: 'eixo' }, el('span', { textContent: de }), el('span', { textContent: ate })));
+      };
+      // A bar per group, as long as its mean nota.
+      const linhas = (grupos, nome = g => g.nome) => grupos.forEach(g => out.push(el('div', { className: 'linha' },
+        el('span', { textContent: nome(g) }), el('div', { className: 'barra', style: `width: ${g.media / 5 * 40}%` }),
+        el('span', { textContent: `${estrelas(g.media)} ★ · ${g.notas}` }))));
+      const filme = (card, texto) => out.push(el('button', { className: 'link', textContent: `${card.title}: ${texto}`, onclick: () => openMovie(card.tmdb_id) }));
+      const total = e.distribuicao.reduce((a, b) => a + b, 0);
+      if (!total) return statsEl.replaceChildren();
+      titulo(total === 1 ? 'Sua primeira nota' : `Suas ${total} notas`);
+      colunas(e.distribuicao, '½', '5 ★');
+      if (e.vs_publico !== null) {
+        const d = e.vs_publico;
+        hint(Math.abs(d) < 0.05 ? 'Você dá as mesmas notas que o público, em média.'
+          : `Você dá ${estrelas(Math.abs(d))} estrela a ${d < 0 ? 'menos' : 'mais'} que o público (TMDB), em média: ${d < 0 ? 'mais exigente' : 'menos exigente'}.`);
+      }
+      if (e.acerto) hint(`O app erra por ${estrelas(e.acerto.mae)} estrela em média nas ${e.acerto.notas} notas que você deu aqui, comparando com a previsão de antes da nota.`);
+      if (e.por_mes.length) {
+        const meses = e.por_mes.slice(-24);
+        titulo(meses.length < e.por_mes.length ? 'Filmes avaliados por mês (últimos 24)' : 'Filmes avaliados por mês');
+        colunas(meses.map(m => m[1]), meses[0][0], meses[meses.length - 1][0]);
+      }
+      titulo(e.por_genero.length > 8 ? 'Por gênero (os 8 com mais notas)' : 'Por gênero');
+      linhas(e.por_genero.slice(0, 8));
+      titulo('Por década');
+      linhas(e.por_decada, g => `Anos ${g.nome}`);
+      titulo(e.por_direcao.length > 8 ? 'Por direção (os 8 com mais notas)' : 'Por direção');
+      linhas(e.por_direcao.slice(0, 8));
+      if (e.discordancias.length) {
+        titulo('Onde você mais discorda do público');
+        e.discordancias.forEach(d => filme(d.card, `você ${estrelas(d.nota)} ★, público ${estrelas(d.publico)} ★`));
+      }
+      titulo('Seu gosto ao longo do tempo');
+      linhas(e.por_ano, a => String(a.ano));
+      if (e.mudancas.length) {
+        hint('Notas que você mudou:');
+        e.mudancas.forEach(m => filme(m.card, `${estrelas(m.de)} → ${estrelas(m.para)} ★`));
+      }
+      statsEl.replaceChildren(...out);
+    }
+    const statsEl = document.getElementById('stats');
     async function loadPerfil() {
+      invoke('estatisticas').then(showStats, () => statsEl.replaceChildren());
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
       perguntarPesouEl.checked = !(await invoke('pesou_oculto'));

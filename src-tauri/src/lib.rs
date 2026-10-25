@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MovieCard, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MovieCard, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -191,6 +191,11 @@ fn inicio(core: tauri::State<RwLock<Core>>) -> Inicio {
 }
 
 #[tauri::command]
+fn estatisticas(core: tauri::State<RwLock<Core>>) -> Estatisticas {
+    core.read().unwrap().estatisticas()
+}
+
+#[tauri::command]
 fn opcoes(core: tauri::State<RwLock<Core>>) -> Opcoes {
     core.read().unwrap().opcoes()
 }
@@ -365,7 +370,8 @@ pub fn run() {
             pesou_oculto,
             set_pesou_oculto,
             rodada,
-            nao_vi
+            nao_vi,
+            estatisticas
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

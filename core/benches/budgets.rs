@@ -64,6 +64,10 @@ fn main() {
         assert_eq!(core.rodada(2).len(), 2);
     });
 
+    failed |= !budget("perfil: every statistic", Duration::from_millis(100), || {
+        assert!(core.estatisticas().acerto.is_some());
+    });
+
     if failed {
         std::process::exit(1);
     }
