@@ -1,0 +1,3 @@
+# Local-first app with a split recommender model
+
+All data (catalog, ratings, model) lives on each device and syncs through the owner's Google Drive; there is no backend server. The recommender is split: movie factors are trained periodically in a scheduled CI job from the public MovieLens dataset plus the owner's ratings and published as a downloadable file, while the owner's taste profile is recomputed on-device after every rating. We chose this because MovieLens's main pain is latency, which local data removes, and because a single user does not justify running a server; full on-device training on 33M ratings is too heavy for a phone, and PC-only training would depend on the owner remembering to run it.
