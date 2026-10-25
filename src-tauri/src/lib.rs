@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -69,6 +69,19 @@ fn rate(
     core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok(core.movie(tmdb_id))
+}
+
+#[tauri::command]
+fn decay(core: tauri::State<RwLock<Core>>) -> DecayStatus {
+    core.read().unwrap().decay()
+}
+
+#[tauri::command]
+fn set_decay(app: AppHandle, core: tauri::State<RwLock<Core>>, decay: Decay) -> Result<DecayStatus, String> {
+    let mut core = core.write().unwrap();
+    core.set_decay(decay);
+    save_owner(&app, &core)?;
+    Ok(core.decay())
 }
 
 #[tauri::command]
@@ -228,7 +241,9 @@ pub fn run() {
             download_model,
             import_movielens,
             movie,
-            rate
+            rate,
+            decay,
+            set_decay
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

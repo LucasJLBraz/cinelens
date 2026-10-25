@@ -37,6 +37,10 @@
     #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
     #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
     #nota-history li { padding: 4px 0; }
+    #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
+    #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
+    #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
     footer { position: sticky; bottom: 0; background: var(--bg); padding: 6px 16px max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); text-align: center; }
   </style>
 </head>
@@ -54,6 +58,7 @@
         <div class="original">Para você</div>
       </div>
       <button id="import" class="pill">Importar do MovieLens</button>
+      <button id="open-ajustes" class="pill">Ajustes</button>
       <input id="import-files" type="file" multiple hidden>
     </header>
     <p id="import-result" hidden></p>
@@ -72,6 +77,21 @@
     </div>
     <div id="notas"></div>
     <ul id="nota-history"></ul>
+  </section>
+  <section id="ajustes" hidden>
+    <button class="pill back">‹ Voltar</button>
+    <h1 style="margin-top: 12px">Ajustes</h1>
+    <label for="decay">Notas antigas pesam menos</label>
+    <select id="decay">
+      <option value="Auto">Automático</option>
+      <option value="Off">Não: todas pesam igual</option>
+      <option value="90">Pela metade a cada 3 meses</option>
+      <option value="180">Pela metade a cada 6 meses</option>
+      <option value="365">Pela metade a cada ano</option>
+      <option value="730">Pela metade a cada 2 anos</option>
+      <option value="1460">Pela metade a cada 4 anos</option>
+    </select>
+    <div id="decay-hint" class="hint"></div>
   </section>
   <footer>Dados e imagens de filmes: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
@@ -204,6 +224,7 @@
 
     window.addEventListener('popstate', () => {
       filmeEl.hidden = true;
+      ajustesEl.hidden = true;
       explorarEl.hidden = false;
       if (stale) {
         stale = false;
@@ -211,6 +232,27 @@
       }
     });
     document.getElementById('back').addEventListener('click', () => history.back());
+
+    const ajustesEl = document.getElementById('ajustes');
+    const decayEl = document.getElementById('decay');
+    const halfLife = d => !d ? 'nenhum peso a menos' : d < 365 ? `pela metade a cada ${d / 30} meses` : d === 365 ? 'pela metade a cada ano' : `pela metade a cada ${d / 365} anos`;
+    function showDecay(s) {
+      decayEl.value = typeof s.setting === 'string' ? s.setting : String(s.setting.HalfLifeDays);
+      document.getElementById('decay-hint').textContent = s.setting === 'Auto'
+        ? `Calibrado nas suas notas: ${halfLife(s.half_life_days)}.` : '';
+    }
+    document.getElementById('open-ajustes').addEventListener('click', async () => {
+      showDecay(await invoke('decay'));
+      explorarEl.hidden = true;
+      ajustesEl.hidden = false;
+      history.pushState({ ajustes: true }, '');
+    });
+    ajustesEl.querySelector('.back').addEventListener('click', () => history.back());
+    decayEl.addEventListener('change', async () => {
+      const v = decayEl.value;
+      showDecay(await invoke('set_decay', { decay: v === 'Auto' || v === 'Off' ? v : { HalfLifeDays: Number(v) } }));
+      stale = true;
+    });
 
     notasEl.addEventListener('click', async e => {
       const nota = Number(e.target.dataset.nota);

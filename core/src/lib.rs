@@ -113,11 +113,35 @@ pub struct MoviePage {
     pub quero_assistir: bool,
 }
 
+/// How much older notas weigh less in the fold-in.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum Decay {
+    /// The half-life that best predicts the owner's most recent notas.
+    #[default]
+    Auto,
+    Off,
+    HalfLifeDays(u32),
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DecayStatus {
+    pub setting: Decay,
+    /// The half-life in effect; `None` is no decay.
+    pub half_life_days: Option<u32>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Settings {
+    decay: Decay,
+}
+
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
 #[derive(Default, Serialize, Deserialize)]
 struct OwnerData {
     notas: BTreeMap<u32, Vec<NotaEntry>>,
     quero_assistir: BTreeSet<u32>,
+    #[serde(default)]
+    settings: Settings,
 }
 
 pub(crate) fn is_valid_nota(nota: f32) -> bool {
@@ -135,6 +159,8 @@ pub struct Core {
     previstas: Vec<Option<f32>>,
     /// Explorar order: indexes into `movies`, highest nota prevista first.
     para_voce: Vec<usize>,
+    /// In effect in the last fold-in.
+    half_life_days: Option<u32>,
 }
 
 impl Core {
@@ -174,10 +200,11 @@ impl Core {
     /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
     /// change to the catálogo, the model or the notas.
     fn recompute(&mut self) {
+        self.half_life_days = self.half_life(&self.owner.notas);
         self.previstas = match &self.model {
             None => vec![None; self.movies.len()],
             Some(model) => {
-                let profile = model.profile(&self.owner.notas);
+                let profile = model.profile(&self.owner.notas, self.half_life_days);
                 let previstas = self.movies.iter().map(|m| {
                     if self.owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty()) {
                         None
@@ -194,6 +221,23 @@ impl Core {
             let key = |i: usize| self.previstas[i].unwrap_or(f32::NEG_INFINITY);
             key(b).total_cmp(&key(a))
         });
+    }
+
+    fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
+        match (self.owner.settings.decay, &self.model) {
+            (Decay::Off, _) | (Decay::Auto, None) => None,
+            (Decay::HalfLifeDays(days), _) => Some(days),
+            (Decay::Auto, Some(model)) => recommender::calibrate(model, notas),
+        }
+    }
+
+    pub fn set_decay(&mut self, decay: Decay) {
+        self.owner.settings.decay = decay;
+        self.recompute();
+    }
+
+    pub fn decay(&self) -> DecayStatus {
+        DecayStatus { setting: self.owner.settings.decay, half_life_days: self.half_life_days }
     }
 
     pub fn data_version(&self) -> Option<&str> {
@@ -277,27 +321,14 @@ impl Core {
     /// and predicts the hidden ones. `None` without a model or when none of them can be predicted.
     pub fn accuracy(&self, fraction: f32) -> Option<Accuracy> {
         let model = self.model.as_ref()?;
-        let mut by_recency: Vec<(&u32, &NotaEntry)> =
-            self.owner.notas.iter().filter_map(|(id, h)| Some((id, h.last()?))).collect();
-        // Stable: same-second notas are held out in tmdb_id order.
-        by_recency.sort_by_key(|(_, e)| std::cmp::Reverse(e.at));
-        let held_out = ((by_recency.len() as f32 * fraction).round() as usize).min(by_recency.len());
-        let (hidden, _) = by_recency.split_at(held_out);
-        let mut known = self.owner.notas.clone();
-        known.retain(|id, _| !hidden.iter().any(|(h, _)| *h == id));
-        let profile = model.profile(&known);
-
-        let (mut errors, mut movielens_errors) = (Vec::new(), Vec::new());
-        for (&id, entry) in hidden {
-            if let Some(prevista) = model.predict(&profile, id) {
-                errors.push((prevista - entry.nota).abs());
-                if let Some(pred) = entry.movielens_pred {
-                    movielens_errors.push((pred as f32 - entry.nota).abs());
-                }
-            }
-        }
+        let (known, hidden) = recommender::hold_out(&self.owner.notas, fraction);
+        // Calibrated on the notas left in, so the hidden ones never pick their own decay.
+        let errors = recommender::errors(model, &known, &hidden, self.half_life(&known));
+        let movielens: Vec<f32> =
+            errors.iter().filter_map(|(_, e)| Some((e.movielens_pred? as f32 - e.nota).abs())).collect();
+        let errors: Vec<f32> = errors.iter().map(|(err, _)| *err).collect();
         let mean = |e: &[f32]| (!e.is_empty()).then(|| e.iter().sum::<f32>() / e.len() as f32);
-        Some(Accuracy { held_out, notas: errors.len(), mae: mean(&errors)?, movielens_mae: mean(&movielens_errors) })
+        Some(Accuracy { held_out: hidden.len(), notas: errors.len(), mae: mean(&errors)?, movielens_mae: mean(&movielens) })
     }
 
     /// The catálogo "Para você": highest nota prevista first.
