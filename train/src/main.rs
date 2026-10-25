@@ -1,8 +1,10 @@
 //! `cinelens-train --ratings ratings.csv --links links.csv --out model.json.gz --data-version YYYY-MM-DD
-//!  [--catalog catalog.json.gz [--letterboxd letterboxd_interactions.csv]]`
+//!  [--catalog catalog.json.gz [--letterboxd letterboxd_interactions.csv]]
+//!  [--genome-tags genome-tags.csv --genome-scores genome-scores.csv]`
 //!
 //! Reads MovieLens `ml-latest` (and the Letterboxd sample, joined through the catálogo's IMDb
-//! ids) and writes the gzipped model artifact. The catálogo also gives the content mapping.
+//! ids) and writes the gzipped model artifact. The catálogo also gives the content mapping; the
+//! tag genome gives the subset "parecidos, mas…" and o que pesou read.
 
 use std::fs::File;
 use std::io::{BufReader, Write};
@@ -36,13 +38,17 @@ fn run() -> Result<(), String> {
             })
         }
     };
-    let model = cinelens_train::train(
+    let mut model = cinelens_train::train(
         open(required("--ratings")?)?,
         open(required("--links")?)?,
         letterboxd,
         &content,
         required("--data-version")?,
     )?;
+    if let Some(tags) = optional("--genome-tags") {
+        let scores = required("--genome-scores")?;
+        cinelens_train::add_genome(&mut model, open(tags)?, open(scores)?, open(required("--links")?)?)?;
+    }
     let file = File::create(out).map_err(|e| format!("{out}: {e}"))?;
     let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
     serde_json::to_writer(&mut gz, &model).map_err(|e| e.to_string())?;

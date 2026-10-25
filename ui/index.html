@@ -91,6 +91,10 @@
     #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
+    #pesou { margin-top: 12px; }
+    #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
+    #pesou .link { margin-top: 10px; font-size: 13px; }
+    #parecidos-mas { margin-bottom: 8px; }
     footer { position: sticky; bottom: 0; background: var(--bg); padding: 6px 16px max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); text-align: center; }
   </style>
 </head>
@@ -191,10 +195,29 @@
     <div id="painel-nota" hidden>
       <div id="notas"></div>
       <p id="revelacao" hidden></p>
+      <div id="pesou" hidden>
+        <div class="meta">O que pesou? (opcional)</div>
+        <div class="chips">
+          <button class="chip" data-aspecto="Fotografia">Fotografia</button>
+          <button class="chip" data-aspecto="Atuacoes">Atuações</button>
+          <button class="chip" data-aspecto="Roteiro">Roteiro</button>
+          <button class="chip" data-aspecto="Trilha">Trilha</button>
+          <button class="chip" data-aspecto="Ritmo">Ritmo</button>
+          <button class="chip" data-aspecto="Dialogos">Diálogos</button>
+        </div>
+        <button id="pesou-ocultar" class="link">Não perguntar mais</button>
+      </div>
     </div>
     <ul id="nota-history" hidden></ul>
     <p id="sinopse"></p>
     <h2 id="parecidos-titulo">Parecidos</h2>
+    <div id="parecidos-mas" class="linha">
+      <span class="meta">Parecidos, mas…</span>
+      <button class="chip" data-direcao="MaisLeve">mais leve</button>
+      <button class="chip" data-direcao="MaisCurto">mais curto</button>
+      <button class="chip" data-direcao="MaisRecente">mais recente</button>
+      <button class="chip" data-direcao="MelhorFotografia">melhor fotografia</button>
+    </div>
     <div id="parecidos" class="fileira"></div>
     <h2 id="direcao-titulo">Direção</h2>
     <div id="direcao" class="pessoas"></div>
@@ -234,6 +257,7 @@
     <label>Serviços que você assina</label>
     <div id="servicos" class="checks"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
+    <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
   </section>
   <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
@@ -524,7 +548,10 @@
       }));
       document.getElementById('sinopse').textContent = m.sinopse;
       document.getElementById('parecidos-titulo').hidden = !m.parecidos.length;
-      document.getElementById('parecidos').replaceChildren(...m.parecidos.map(card));
+      document.getElementById('parecidos-mas').hidden = !m.parecidos.length;
+      parecidos = m.parecidos;
+      showParecidos(m.parecidos);
+      for (const b of pesouEl.querySelectorAll('[data-aspecto]')) b.classList.toggle('on', m.pesou.includes(b.dataset.aspecto));
       document.getElementById('direcao-titulo').hidden = !m.direcao.length && !m.trilha.length;
       document.getElementById('direcao').replaceChildren(...pessoas(m.direcao), ...pessoas(m.trilha, 'Trilha sonora'));
       document.getElementById('elenco-titulo').hidden = !m.elenco.length;
@@ -534,9 +561,41 @@
       trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
     }
 
+    // The page's own parecidos, shown again when the "parecidos, mas…" chip is cleared.
+    let parecidos = [];
+    const parecidosMasEl = document.getElementById('parecidos-mas');
+    function showParecidos(list) {
+      for (const b of parecidosMasEl.querySelectorAll('.chip')) b.classList.remove('on');
+      document.getElementById('parecidos').replaceChildren(...list.map(card));
+    }
+    parecidosMasEl.addEventListener('click', async e => {
+      const b = e.target.closest('[data-direcao]');
+      if (!b) return;
+      if (b.classList.contains('on')) return showParecidos(parecidos);
+      const list = await invoke('parecidos_mas', { tmdbId: Number(filmeEl.dataset.id), direcao: b.dataset.direcao });
+      showParecidos(list);
+      b.classList.add('on');
+      if (!list.length) document.getElementById('parecidos').append(Object.assign(document.createElement('p'), { className: 'meta', textContent: 'Nenhum parecido nessa direção.' }));
+    });
+
+    const pesouEl = document.getElementById('pesou');
+    pesouEl.querySelector('.chips').addEventListener('click', async e => {
+      const b = e.target.closest('[data-aspecto]');
+      if (!b) return;
+      b.classList.toggle('on');
+      const aspectos = [...pesouEl.querySelectorAll('[data-aspecto].on')].map(x => x.dataset.aspecto);
+      await invoke('set_pesou', { tmdbId: Number(filmeEl.dataset.id), aspectos });
+      stale = true;
+    });
+    document.getElementById('pesou-ocultar').addEventListener('click', async () => {
+      await invoke('set_pesou_oculto', { oculto: true });
+      pesouEl.hidden = true;
+    });
+
     function closeRating() {
       document.getElementById('painel-nota').hidden = true;
       document.getElementById('revelacao').hidden = true;
+      pesouEl.hidden = true;
       document.getElementById('nota-prevista').hidden = false;
     }
 
@@ -616,6 +675,7 @@
     document.getElementById('open-ajustes').addEventListener('click', async () => {
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
+      perguntarPesouEl.checked = !(await invoke('pesou_oculto'));
       const [provedores, meus] = await invoke('servicos');
       servicosEl.replaceChildren(...provedores.map(p => {
         const label = document.createElement('label');
@@ -635,6 +695,8 @@
       await invoke('set_servicos', { ids });
       stale = true;
     });
+    const perguntarPesouEl = document.getElementById('perguntar-pesou');
+    perguntarPesouEl.addEventListener('change', () => invoke('set_pesou_oculto', { oculto: !perguntarPesouEl.checked }));
     ajustesEl.querySelector('.back').addEventListener('click', () => history.back());
     decayEl.addEventListener('change', async () => {
       const v = decayEl.value;
@@ -659,6 +721,8 @@
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
       if (revealed) revelacao.textContent = `O app achava: ${exibicaoText(revealed)}`;
+      // Asked only once the nota is given, so it never slows the rating down.
+      pesouEl.hidden = await invoke('pesou_oculto');
     });
 
     const importFiles = document.getElementById('import-files');

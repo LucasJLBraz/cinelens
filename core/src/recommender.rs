@@ -29,7 +29,38 @@ struct ModelArtifact {
     lambda: f32,
     movies: Vec<MovieFactors>,
     content: Vec<ContentFactors>,
+    #[serde(default)]
+    genome: Option<GenomeArtifact>,
 }
+
+/// The tag genome subset: each movie's `GENOME_ASPECTS` scores, named in `aspects`.
+#[derive(Deserialize)]
+struct GenomeArtifact {
+    aspects: Vec<String>,
+    movies: Vec<GenomeScores>,
+}
+
+#[derive(Deserialize)]
+struct GenomeScores {
+    tmdb_id: u32,
+    scores: Vec<f32>,
+}
+
+/// What the model artifact keeps of MovieLens's tag genome: per aspect, the genome tags whose
+/// relevance (0–1) it averages, a negative sign for those that count against it. "leve" steers
+/// "parecidos, mas…"; the rest are the o que pesou aspects, in `crate::Aspecto` order.
+// ponytail: hand-picked tags, ritmo read as fast paced; swap tags if an aspect steers oddly.
+pub const GENOME_ASPECTS: [(&str, &[(&str, f32)]); 7] = [
+    ("leve", &[("feel-good", 1.0), ("light", 1.0), ("heartwarming", 1.0), ("funny", 1.0), ("dark", -1.0), ("bleak", -1.0), ("depressing", -1.0)]),
+    ("fotografia", &[("cinematography", 1.0), ("great cinematography", 1.0), ("beautifully filmed", 1.0), ("visually stunning", 1.0)]),
+    ("atuacoes", &[("great acting", 1.0), ("exceptional acting", 1.0), ("good acting", 1.0)]),
+    ("roteiro", &[("excellent script", 1.0), ("original plot", 1.0), ("storytelling", 1.0), ("good story", 1.0)]),
+    ("trilha", &[("great soundtrack", 1.0), ("awesome soundtrack", 1.0), ("good soundtrack", 1.0), ("notable soundtrack", 1.0)]),
+    ("ritmo", &[("fast paced", 1.0), ("slow paced", -1.0)]),
+    ("dialogos", &[("great dialogue", 1.0), ("good dialogue", 1.0), ("highly quotable", 1.0)]),
+];
+/// `GENOME_ASPECTS` index of "leve".
+pub(crate) const LEVE: usize = 0;
 
 #[derive(Deserialize)]
 struct MovieFactors {
@@ -70,6 +101,8 @@ pub(crate) struct Item {
     pub confianca: f32,
     /// Factors learned from who rated it, not guessed from its content.
     pub collaborative: bool,
+    /// `GENOME_ASPECTS` scores, NaN for an aspect the artifact lacks; `None` outside the genome.
+    pub genome: Option<Vec<f32>>,
 }
 
 impl Item {
@@ -81,10 +114,15 @@ impl Item {
         if norms > 0.0 { dot / norms } else { 0.0 }
     }
 
+    /// Its score in the `GENOME_ASPECTS` aspect `a`, if the genome has one.
+    pub fn genome_score(&self, a: usize) -> Option<f32> {
+        self.genome.as_ref().map(|g| g[a]).filter(|s| !s.is_nan())
+    }
+
     fn collaborative(m: MovieFactors) -> Item {
         let n = m.ratings as f32;
         let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
-        Item { bias: m.bias, factors: m.factors, confianca, collaborative: true }
+        Item { bias: m.bias, factors: m.factors, confianca, collaborative: true, genome: None }
     }
 }
 
@@ -97,6 +135,8 @@ pub(crate) struct Model {
     movies: HashMap<u32, Item>,
     /// Content feature → (bias, factors).
     content: HashMap<String, (f32, Vec<f32>)>,
+    /// Per `GENOME_ASPECTS` aspect, its mean over the movies with a score; 0 when none has one.
+    pub genome_means: Vec<f32>,
 }
 
 /// The owner's side of the prediction, recomputed after every change to the notas.
@@ -121,13 +161,33 @@ impl Model {
         if artifact.lambda.is_nan() || artifact.lambda <= 0.0 {
             return Err(invalid(format!("lambda {} is not positive", artifact.lambda)));
         }
+        let mut movies: HashMap<u32, Item> =
+            artifact.movies.into_iter().map(|m| (m.tmdb_id, Item::collaborative(m))).collect();
+        if let Some(genome) = artifact.genome {
+            // Matched by name, so an artifact with fewer or reordered aspects still loads.
+            let columns: Vec<Option<usize>> =
+                GENOME_ASPECTS.iter().map(|(name, _)| genome.aspects.iter().position(|a| a == name)).collect();
+            for row in genome.movies {
+                if let Some(item) = movies.get_mut(&row.tmdb_id) {
+                    let score = |c: &Option<usize>| c.and_then(|c| row.scores.get(c).copied()).unwrap_or(f32::NAN);
+                    item.genome = Some(columns.iter().map(score).collect());
+                }
+            }
+        }
+        let genome_means = (0..GENOME_ASPECTS.len())
+            .map(|a| {
+                let scores: Vec<f32> = movies.values().filter_map(|m| m.genome_score(a)).collect();
+                if scores.is_empty() { 0.0 } else { scores.iter().sum::<f32>() / scores.len() as f32 }
+            })
+            .collect();
         Ok(Model {
             data_version: artifact.data_version,
             global_mean: artifact.global_mean,
             lambda: artifact.lambda,
             dim,
-            movies: artifact.movies.into_iter().map(|m| (m.tmdb_id, Item::collaborative(m))).collect(),
+            movies,
             content: artifact.content.into_iter().map(|c| (c.feature, (c.bias, c.factors))).collect(),
+            genome_means,
         })
     }
 
@@ -181,6 +241,7 @@ impl Model {
             factors,
             confianca: CONTENT_CONFIANCA * k / features.len() as f32,
             collaborative: false,
+            genome: None,
         })
     }
 

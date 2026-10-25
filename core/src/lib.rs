@@ -11,7 +11,7 @@ mod recommender;
 
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use filtro::{Filtro, Mostrar};
-pub use recommender::{ridge, MODEL_FORMAT_VERSION};
+pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 use recommender::Model;
 
 /// The catálogo artifact format this core reads; the catalog job writes the same.
@@ -20,6 +20,8 @@ const PAGE_SIZE: usize = 30;
 const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
 const BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w780";
 const PARECIDOS: usize = 12;
+/// The most alike movies "parecidos, mas…" picks its parecidos from.
+const PARECIDOS_MAS_POOL: usize = 100;
 /// Notas at least this high count as loved for the reason line.
 const LOVED: f32 = 4.0;
 /// How alike (factor cosine) a loved movie must be to give the reason line.
@@ -30,6 +32,10 @@ const PORQUE_MAX: usize = 2;
 /// Stars a movie with a person the owner is fã of gains in the ranking.
 // ponytail: flat boost whatever the person's role; weigh director above cast if it feels off.
 const FA_BOOST: f32 = 1.0;
+/// Stars a movie gains in the ranking per unit its genome score is above the mean, in the
+/// aspects the owner said weighed in their notas (each aspect by its share of all those marked).
+// ponytail: fixed weight; tune once the owner has tagged a few dozen notas.
+const PESOU_BOOST: f32 = 2.0;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
 
@@ -287,6 +293,8 @@ pub struct MoviePage {
     pub ja_vi: bool,
     pub nao_me_interessa: bool,
     pub onde_assistir: Option<OndeAssistir>,
+    /// What the owner said weighed in their nota.
+    pub pesou: Vec<Aspecto>,
 }
 
 /// What the owner can mark a movie with, and unmark.
@@ -299,6 +307,33 @@ pub enum Marca {
     NaoMeInteressa,
     /// Out of the destaque for a few weeks.
     AgoraNao,
+}
+
+/// What can weigh in a nota (o que pesou), in `GENOME_ASPECTS` order after "leve".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Aspecto {
+    Fotografia,
+    Atuacoes,
+    Roteiro,
+    Trilha,
+    Ritmo,
+    Dialogos,
+}
+
+impl Aspecto {
+    /// Its `GENOME_ASPECTS` index.
+    fn genome(self) -> usize {
+        self as usize + 1
+    }
+}
+
+/// The ways "parecidos, mas…" refines parecidos.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub enum Direcao {
+    MaisLeve,
+    MaisCurto,
+    MaisRecente,
+    MelhorFotografia,
 }
 
 /// How much older notas weigh less in the fold-in.
@@ -327,6 +362,9 @@ struct Settings {
     /// Provider ids of the services the owner subscribes to.
     #[serde(default)]
     servicos: BTreeSet<u32>,
+    /// The owner never wants to be asked o que pesou.
+    #[serde(default)]
+    pesou_oculto: bool,
 }
 
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
@@ -344,6 +382,9 @@ struct OwnerData {
     /// Person ids the owner is fã of.
     #[serde(default)]
     fas: BTreeSet<u32>,
+    /// Movie → what weighed in its nota.
+    #[serde(default)]
+    pesou: BTreeMap<u32, BTreeSet<Aspecto>>,
     #[serde(default)]
     settings: Settings,
 }
@@ -371,6 +412,8 @@ pub struct Core {
     items: Vec<Option<recommender::Item>>,
     /// Aligned with `movies`: (nota prevista, confiança).
     previstas: Vec<Option<(f32, f32)>>,
+    /// Aligned with `movies`: what sou fã and o que pesou add to the nota prevista in the ranking.
+    boost: Vec<f32>,
     /// Explorar order: indexes into `movies`, recomendações first (highest nota prevista
     /// first), then the rest in catálogo order; não me interessa left out.
     para_voce: Vec<usize>,
@@ -452,6 +495,8 @@ impl Core {
                 previstas.collect()
             }
         };
+        let pesos = self.pesos();
+        self.boost = (0..self.movies.len()).map(|i| self.fa_boost(i) + self.pesou_boost(i, &pesos)).collect();
         let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !self.dispensado(i)).collect();
         // Stable: the rest keep catálogo order, after the recomendações.
         para_voce.sort_by(|&a, &b| {
@@ -478,12 +523,51 @@ impl Core {
         self.owner.notas.get(&tmdb_id).is_some_and(|h| !h.is_empty())
     }
 
-    /// What recomendações are ranked by: the nota prevista, plus a boost for a person the owner
-    /// is fã of. Only for movies with a nota prevista.
+    /// What recomendações are ranked by: the nota prevista plus `boost`. Only for movies with a
+    /// nota prevista.
     fn ranking(&self, i: usize) -> f32 {
-        let m = &self.movies[i];
-        let fa = m.people().any(|p| self.owner.fas.contains(&p.id));
-        self.previstas[i].map_or(0.0, |(p, _)| p) + if fa { FA_BOOST } else { 0.0 }
+        self.previstas[i].map_or(0.0, |(p, _)| p) + self.boost[i]
+    }
+
+    /// `FA_BOOST` for a movie with a person the owner is fã of.
+    fn fa_boost(&self, i: usize) -> f32 {
+        let fa = self.movies[i].people().any(|p| self.owner.fas.contains(&p.id));
+        if fa { FA_BOOST } else { 0.0 }
+    }
+
+    /// Per `GENOME_ASPECTS` aspect, its share of all the aspects the owner said weighed.
+    fn pesos(&self) -> Vec<f32> {
+        let mut pesos = vec![0f32; GENOME_ASPECTS.len()];
+        let marked: Vec<usize> = self.owner.pesou.values().flatten().map(|a| a.genome()).collect();
+        marked.iter().for_each(|&a| pesos[a] += 1.0 / marked.len() as f32);
+        pesos
+    }
+
+    /// Movies without genome scores (the genome stops in 2023) get none: a weaker effect.
+    fn pesou_boost(&self, i: usize, pesos: &[f32]) -> f32 {
+        let (Some(model), Some(item)) = (&self.model, &self.items[i]) else { return 0.0 };
+        let shift = |(a, peso): (usize, &f32)| Some(peso * (item.genome_score(a)? - model.genome_means[a]));
+        PESOU_BOOST * pesos.iter().enumerate().filter_map(shift).sum::<f32>()
+    }
+
+    /// Replaces what the owner said weighed in the movie's nota.
+    pub fn set_pesou(&mut self, tmdb_id: u32, aspectos: &[Aspecto]) {
+        if aspectos.is_empty() {
+            self.owner.pesou.remove(&tmdb_id);
+        } else {
+            self.owner.pesou.insert(tmdb_id, aspectos.iter().copied().collect());
+        }
+        self.recompute();
+    }
+
+    /// The owner hid the o que pesou prompt for good.
+    pub fn pesou_oculto(&self) -> bool {
+        self.owner.settings.pesou_oculto
+    }
+
+    /// Hides or brings back the o que pesou prompt.
+    pub fn set_pesou_oculto(&mut self, oculto: bool) {
+        self.owner.settings.pesou_oculto = oculto;
     }
 
     pub fn set_fa(&mut self, person_id: u32, on: bool) {
@@ -673,12 +757,41 @@ impl Core {
                 let named = |ids: &[u32]| ids.iter().filter_map(|id| self.provedores.iter().find(|p| p.id == *id).cloned()).collect();
                 OndeAssistir { link: w.link.clone(), assinatura: named(&w.flatrate), aluguel: named(&w.rent), compra: named(&w.buy) }
             }),
+            pesou: self.owner.pesou.get(&tmdb_id).map_or_else(Vec::new, |a| a.iter().copied().collect()),
         })
     }
 
-    /// Item-item among movies with collaborative factors: those most like this one's, weighed by confiança so
-    /// sparsely rated movies do not crowd the top. Not those marked não me interessa.
     fn parecidos(&self, i: usize) -> Vec<MovieCard> {
+        self.alike(i, PARECIDOS).into_iter().map(|j| self.card(j)).collect()
+    }
+
+    /// "Parecidos, mas…": of the movies most alike to this one, those further in `direcao` than
+    /// it, most alike first. A movie with no value to compare (no genome scores, no runtime)
+    /// compares against its parecidos' median; parecidos without one are left out.
+    pub fn parecidos_mas(&self, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
+        let Some(&i) = self.index.get(&tmdb_id) else { return Vec::new() };
+        let genome = |j: usize, a: usize| self.items[j].as_ref()?.genome_score(a);
+        let value = |j: usize| match direcao {
+            Direcao::MaisLeve => genome(j, recommender::LEVE),
+            Direcao::MelhorFotografia => genome(j, Aspecto::Fotografia.genome()),
+            Direcao::MaisCurto => self.movies[j].runtime.map(|r| -(r as f32)),
+            Direcao::MaisRecente => self.movies[j].year.map(f32::from),
+        };
+        let pool: Vec<(usize, f32)> =
+            self.alike(i, PARECIDOS_MAS_POOL).into_iter().filter_map(|j| Some((j, value(j)?))).collect();
+        let base = value(i).or_else(|| {
+            let mut values: Vec<f32> = pool.iter().map(|&(_, v)| v).collect();
+            values.sort_by(f32::total_cmp);
+            values.get(values.len() / 2).copied()
+        });
+        let Some(base) = base else { return Vec::new() };
+        pool.into_iter().filter(|&(_, v)| v > base).take(PARECIDOS).map(|(j, _)| self.card(j)).collect()
+    }
+
+    /// Item-item among movies with collaborative factors: the `n` most like this one's, weighed
+    /// by confiança so sparsely rated movies do not crowd the top, most alike first. Not those
+    /// marked não me interessa.
+    fn alike(&self, i: usize, n: usize) -> Vec<usize> {
         let Some(item) = self.items[i].as_ref().filter(|item| item.collaborative) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = self
             .items
@@ -687,14 +800,14 @@ impl Core {
             .filter(|&(j, _)| j != i && !self.dispensado(j))
             .filter_map(|(j, other)| other.as_ref().filter(|o| o.collaborative).map(|o| (item.similarity(o) * o.confianca, j)))
             .collect();
-        let n = PARECIDOS.min(scored.len());
+        let n = n.min(scored.len());
         if n == 0 {
             return Vec::new();
         }
         scored.select_nth_unstable_by(n - 1, |a, b| b.0.total_cmp(&a.0));
         scored.truncate(n);
         scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-        scored.into_iter().map(|(_, j)| self.card(j)).collect()
+        scored.into_iter().map(|(_, j)| j).collect()
     }
 
     /// Titles of the loved movies most like this one.

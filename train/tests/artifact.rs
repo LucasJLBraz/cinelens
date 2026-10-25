@@ -1,8 +1,8 @@
 //! Seam 2: the training job, run on a tiny ratings fixture, produces a model the core loads
 //! and predicts with.
 
-use cinelens_core::{content_features, Core, Filtro};
-use cinelens_train::{catalog_imdb_ids, train, Letterboxd};
+use cinelens_core::{content_features, Core, Direcao, Filtro};
+use cinelens_train::{add_genome, catalog_imdb_ids, train, Letterboxd};
 
 /// MovieLens ids 1–4 are sci-fi, 5–8 drama; 30 users, half loving each side and disliking the
 /// other. Movie 9 has too few ratings to be published; movie 10 has no TMDB id.
@@ -169,4 +169,33 @@ fn malformed_letterboxd_fails_the_job() {
     let bad = "user_id,film_slug,film_name,film_year,rating,liked,tconst,match_rule,confidence\nu_00001,s,n,2025,abc,false,tt0000001,R1,1.0\n";
     let letterboxd = Letterboxd { interactions: Box::new(bad.as_bytes()), imdb_to_tmdb: Default::default() };
     assert!(train(ratings_csv().as_bytes(), LINKS.as_bytes(), Some(letterboxd), &[], "x").is_err());
+}
+
+/// Genome tags 1 and 2 feed fotografia; tag 3 feeds no aspect; 4–9 one tag of every other aspect.
+/// Only the sci-fi movies are in the genome, 103 and 104 better filmed than 101.
+const GENOME_TAGS: &str = "tagId,tag\n1,cinematography\n2,beautifully filmed\n3,\"zombies, lots of\"\n\
+    4,dark\n5,great acting\n6,storytelling\n7,great soundtrack\n8,fast paced\n9,great dialogue\n";
+const GENOME_SCORES: &str = "movieId,tagId,relevance\n\
+    1,1,0.5\n1,2,0.5\n1,3,0.1\n2,1,0.2\n2,2,0.2\n3,1,0.9\n3,2,0.9\n4,1,0.8\n4,2,0.7\n";
+
+#[test]
+fn the_genome_subset_steers_parecidos_mas() {
+    let content = content_features(&catalog()).unwrap();
+    let mut model = train(ratings_csv().as_bytes(), LINKS.as_bytes(), None, &content, "2026-10-25").unwrap();
+    add_genome(&mut model, GENOME_TAGS.as_bytes(), GENOME_SCORES.as_bytes(), LINKS.as_bytes()).unwrap();
+    let mut core = Core::open(&catalog()).unwrap();
+    core.load_model(&serde_json::to_vec(&model).unwrap()).unwrap();
+
+    let mut better: Vec<u32> = core.parecidos_mas(101, Direcao::MelhorFotografia).iter().map(|m| m.tmdb_id).collect();
+    better.sort();
+    assert_eq!(better, [103, 104]);
+}
+
+#[test]
+fn malformed_genome_fails_the_job() {
+    let mut model = train(ratings_csv().as_bytes(), LINKS.as_bytes(), None, &[], "x").unwrap();
+    let bad = "movieId,tagId,relevance\n1,1,abc\n";
+    assert!(add_genome(&mut model, GENOME_TAGS.as_bytes(), bad.as_bytes(), LINKS.as_bytes()).is_err());
+    let renamed = GENOME_TAGS.replace("great dialogue", "dialogues");
+    assert!(add_genome(&mut model, renamed.as_bytes(), GENOME_SCORES.as_bytes(), LINKS.as_bytes()).is_err());
 }

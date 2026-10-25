@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Opcoes, Marca, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Opcoes, Marca, MovieCard, MoviePage, Provedor, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -83,6 +83,30 @@ fn rate(
     let revealed = core.rate(tmdb_id, nota, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
+}
+
+#[tauri::command]
+fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
+    core.read().unwrap().parecidos_mas(tmdb_id, direcao)
+}
+
+#[tauri::command]
+fn set_pesou(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32, aspectos: Vec<Aspecto>) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.set_pesou(tmdb_id, &aspectos);
+    save_owner(&app, &core)
+}
+
+#[tauri::command]
+fn pesou_oculto(core: tauri::State<RwLock<Core>>) -> bool {
+    core.read().unwrap().pesou_oculto()
+}
+
+#[tauri::command]
+fn set_pesou_oculto(app: AppHandle, core: tauri::State<RwLock<Core>>, oculto: bool) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.set_pesou_oculto(oculto);
+    save_owner(&app, &core)
 }
 
 /// Marks or unmarks the movie; returns its page after.
@@ -316,7 +340,11 @@ pub fn run() {
             display_mode,
             set_display_mode,
             servicos,
-            set_servicos
+            set_servicos,
+            parecidos_mas,
+            set_pesou,
+            pesou_oculto,
+            set_pesou_oculto
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

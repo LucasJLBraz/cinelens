@@ -9,11 +9,14 @@
 //!
 //! The content mapping (feature → bias and factors) is learned from the published movies'
 //! factors, for the movies the training data lacks.
+//!
+//! The tag genome subset (`add_genome`) keeps, per published movie, only the
+//! `cinelens_core::GENOME_ASPECTS` scores: "parecidos, mas…" and o que pesou read them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 
-use cinelens_core::{ridge, MODEL_FORMAT_VERSION};
+use cinelens_core::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 use serde::{Deserialize, Serialize};
 
 const FACTORS: usize = 32;
@@ -43,6 +46,20 @@ pub struct Model {
     lambda: f32,
     movies: Vec<MovieFactors>,
     content: Vec<ContentFactors>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    genome: Option<Genome>,
+}
+
+#[derive(Serialize)]
+struct Genome {
+    aspects: Vec<String>,
+    movies: Vec<GenomeScores>,
+}
+
+#[derive(Serialize)]
+struct GenomeScores {
+    tmdb_id: u32,
+    scores: Vec<f32>,
 }
 
 #[derive(Serialize)]
@@ -184,7 +201,63 @@ pub fn train(
         lambda: LAMBDA,
         movies: published,
         content,
+        genome: None,
     })
+}
+
+/// Adds the tag genome subset from ml-latest's `genome-tags.csv` (`tagId,tag`) and
+/// `genome-scores.csv` (`movieId,tagId,relevance`), joined through `links.csv`. Fails when the
+/// genome has none of an aspect's tags, so a renamed tag never ships an empty aspect.
+pub fn add_genome(model: &mut Model, tags: impl BufRead, scores: impl BufRead, links: impl BufRead) -> Result<(), String> {
+    let links = read_links(links)?;
+    let mut tag_ids: HashMap<String, u32> = HashMap::new();
+    for line in tags.lines().skip(1) {
+        let line = line.map_err(|e| e.to_string())?;
+        let fields = split_csv_line(&line);
+        let id = fields.first().and_then(|id| id.parse().ok()).ok_or_else(|| format!("genome tags: `{line}`"))?;
+        tag_ids.insert(fields.get(1).cloned().unwrap_or_default(), id);
+    }
+    // Aspect kept → its (tag id, sign) pairs.
+    let aspects: Vec<(&str, Vec<(u32, f32)>)> = GENOME_ASPECTS
+        .iter()
+        .map(|(name, tags)| {
+            let found: Vec<(u32, f32)> = tags.iter().filter_map(|(t, sign)| Some((*tag_ids.get(*t)?, *sign))).collect();
+            if found.is_empty() { Err(format!("genome tags: none of aspect {name}'s")) } else { Ok((*name, found)) }
+        })
+        .collect::<Result<_, _>>()?;
+    let wanted: HashSet<u32> = aspects.iter().flat_map(|(_, t)| t.iter().map(|&(id, _)| id)).collect();
+    let published: HashSet<u32> = model.movies.iter().map(|m| m.tmdb_id).collect();
+    // TMDB id → tag id → relevance, only for wanted tags of published movies.
+    let mut relevance: HashMap<u32, HashMap<u32, f32>> = HashMap::new();
+    for (n, line) in scores.lines().enumerate().skip(1) {
+        let line = line.map_err(|e| e.to_string())?;
+        let bad = || format!("genome scores line {}: `{line}`", n + 1);
+        let mut fields = line.split(',');
+        let mut next = || fields.next().ok_or_else(bad);
+        let (movie, tag, score) = (next()?, next()?, next()?);
+        let movie: u32 = movie.parse().map_err(|_| bad())?;
+        let tag: u32 = tag.parse().map_err(|_| bad())?;
+        let score: f32 = score.parse().map_err(|_| bad())?;
+        let Some(&tmdb) = links.tmdb.get(&movie) else { continue };
+        if wanted.contains(&tag) && published.contains(&tmdb) {
+            relevance.entry(tmdb).or_default().insert(tag, score);
+        }
+    }
+    let mut movies: Vec<GenomeScores> = relevance
+        .into_iter()
+        .map(|(tmdb_id, r)| {
+            let scores = aspects.iter().map(|(_, tags)| {
+                let found: Vec<f32> = tags.iter().filter_map(|(t, sign)| Some(sign * r.get(t)?)).collect();
+                let mean = if found.is_empty() { 0.0 } else { found.iter().sum::<f32>() / found.len() as f32 };
+                // Three decimals keep the artifact small.
+                (mean * 1000.0).round() / 1000.0
+            });
+            GenomeScores { tmdb_id, scores: scores.collect() }
+        })
+        .collect();
+    movies.sort_by_key(|m| m.tmdb_id);
+    model.genome = Some(Genome { aspects: aspects.iter().map(|(name, _)| name.to_string()).collect(), movies });
+    Ok(())
 }
 
 /// Each content feature's shrunk mean bias and factors over the published movies that have it.
