@@ -52,28 +52,37 @@ jobs:
           fi
           test -s "$RUNNER_TEMP/letterboxd_interactions.csv"
 
-      # Letterboxd movies are joined to TMDB ids through the catálogo's IMDb ids, which cover the
-      # releases ml-latest lacks.
+      # The content mapping is learned from the catálogo's genres, directors and cast, and
+      # Letterboxd movies are joined to TMDB ids through its IMDb ids.
       - name: Download catálogo
-        if: env.LETTERBOXD == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
-          gh release download "catalog-v$FORMAT" -p catalog.json.gz -D "$RUNNER_TEMP"
+          if gh release download "catalog-v$FORMAT" -p catalog.json.gz -D "$RUNNER_TEMP"; then
+            echo "CATALOG=1" >> "$GITHUB_ENV"
+          elif [ "$LETTERBOXD" = 1 ]; then
+            echo "::error::no published catálogo to join Letterboxd with; run the Catalog workflow first"
+            exit 1
+          else
+            echo "::warning::no published catálogo: the model has no content mapping"
+          fi
 
       - name: Train
         run: |
           TODAY=$(date -u +%F)
           echo "TODAY=$TODAY" >> "$GITHUB_ENV"
-          LETTERBOXD_ARGS=()
+          EXTRA=()
+          if [ "$CATALOG" = 1 ]; then
+            EXTRA+=(--catalog "$RUNNER_TEMP/catalog.json.gz")
+          fi
           if [ "$LETTERBOXD" = 1 ]; then
-            LETTERBOXD_ARGS=(--letterboxd "$RUNNER_TEMP/letterboxd_interactions.csv" --catalog "$RUNNER_TEMP/catalog.json.gz")
+            EXTRA+=(--letterboxd "$RUNNER_TEMP/letterboxd_interactions.csv")
           fi
           cargo run --release -p cinelens-train -- \
             --ratings "$RUNNER_TEMP/ml-latest/ratings.csv" \
             --links "$RUNNER_TEMP/ml-latest/links.csv" \
-            "${LETTERBOXD_ARGS[@]}" \
+            "${EXTRA[@]}" \
             --out model.json.gz \
             --data-version "$TODAY"
 

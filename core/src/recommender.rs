@@ -4,6 +4,10 @@
 //! to the owner's own mean (design §6.4) means high notas are never read as generosity. The
 //! training job fits every MovieLens user the same way, so fold-in solves the very problem the
 //! movie factors were trained against.
+//!
+//! A movie the training data lacks gets its bias and factors from its content (genres,
+//! directors, cast, language) through the mapping the training job learns, with a lower
+//! confiança.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -21,6 +25,8 @@ struct ModelArtifact {
     global_mean: f32,
     lambda: f32,
     movies: Vec<MovieFactors>,
+    #[serde(default)]
+    content: Vec<ContentFactors>,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +34,32 @@ struct MovieFactors {
     tmdb_id: u32,
     bias: f32,
     factors: Vec<f32>,
+    /// Training ratings behind the factors; the confiança grows with them.
+    #[serde(default)]
+    ratings: u32,
+}
+
+/// One content feature (`crate::content_features`) mapped into the factor space.
+#[derive(Deserialize)]
+struct ContentFactors {
+    feature: String,
+    bias: f32,
+    factors: Vec<f32>,
+}
+
+/// Training ratings at which a collaborative movie's confiança is half way from
+/// `CONTENT_CONFIANCA` to 1.
+const CONFIANCA_RATINGS: f32 = 100.0;
+/// The most a content-only prediction gets (all of the movie's features mapped), and the least
+/// a collaborative one does.
+const CONTENT_CONFIANCA: f32 = 0.3;
+
+/// What the model knows of a movie: collaborative factors, or ones guessed from its content.
+#[derive(Clone)]
+pub(crate) struct Item {
+    bias: f32,
+    factors: Vec<f32>,
+    pub confianca: f32,
 }
 
 pub(crate) struct Model {
@@ -36,8 +68,10 @@ pub(crate) struct Model {
     global_mean: f32,
     lambda: f32,
     dim: usize,
-    /// `tmdb_id` → (bias, factors).
-    movies: HashMap<u32, (f32, Vec<f32>)>,
+    /// `tmdb_id` → (bias, factors, training ratings).
+    movies: HashMap<u32, (f32, Vec<f32>, u32)>,
+    /// Content feature → (bias, factors).
+    content: HashMap<String, (f32, Vec<f32>)>,
 }
 
 /// The owner's side of the prediction, recomputed after every change to the notas.
@@ -54,7 +88,8 @@ impl Model {
             return Err(invalid(format!("unknown format version {}", artifact.format_version)));
         }
         let dim = artifact.movies.first().map_or(0, |m| m.factors.len());
-        if artifact.movies.iter().any(|m| m.factors.len() != dim) {
+        let content = artifact.content.iter().map(|c| &c.factors);
+        if artifact.movies.iter().map(|m| &m.factors).chain(content).any(|f| f.len() != dim) {
             return Err(invalid("movies with different factor counts".into()));
         }
         // Fold-in needs a positive λ to stay solvable.
@@ -66,7 +101,8 @@ impl Model {
             global_mean: artifact.global_mean,
             lambda: artifact.lambda,
             dim,
-            movies: artifact.movies.into_iter().map(|m| (m.tmdb_id, (m.bias, m.factors))).collect(),
+            movies: artifact.movies.into_iter().map(|m| (m.tmdb_id, (m.bias, m.factors, m.ratings))).collect(),
+            content: artifact.content.into_iter().map(|c| (c.feature, (c.bias, c.factors))).collect(),
         })
     }
 
@@ -86,16 +122,41 @@ impl Model {
             current.iter().map(|(_, e)| weight(e) * e.nota).sum::<f32>() / total
         };
         let rows = current.iter().filter_map(|(id, e)| {
-            let (bias, factors) = self.movies.get(id)?;
+            let (bias, factors, _) = self.movies.get(id)?;
             Some((factors.as_slice(), e.nota - mean - bias, weight(e)))
         });
         Profile { mean, factors: weighted_ridge(rows, self.dim, self.lambda) }
     }
 
-    pub fn predict(&self, profile: &Profile, tmdb_id: u32) -> Option<f32> {
-        let (bias, factors) = self.movies.get(&tmdb_id)?;
-        let dot: f32 = profile.factors.iter().zip(factors).map(|(p, q)| p * q).sum();
-        Some((profile.mean + bias + dot).clamp(0.5, 5.0))
+    /// The movie's collaborative factors, else the mean of its mapped content features';
+    /// `None` when neither is known.
+    pub fn item(&self, tmdb_id: u32, features: &[String]) -> Option<Item> {
+        if let Some((bias, factors, ratings)) = self.movies.get(&tmdb_id) {
+            let n = *ratings as f32;
+            let confianca = CONTENT_CONFIANCA + (1.0 - CONTENT_CONFIANCA) * n / (n + CONFIANCA_RATINGS);
+            return Some(Item { bias: *bias, factors: factors.clone(), confianca });
+        }
+        // ponytail: plain mean of feature centroids; a learned weight per feature kind (genre vs
+        // director) if content-only predictions turn out poor.
+        let mapped: Vec<&(f32, Vec<f32>)> = features.iter().filter_map(|f| self.content.get(f)).collect();
+        if mapped.is_empty() {
+            return None;
+        }
+        let k = mapped.len() as f32;
+        let mut factors = vec![0f32; self.dim];
+        for (_, f) in &mapped {
+            factors.iter_mut().zip(f).for_each(|(a, b)| *a += b / k);
+        }
+        Some(Item {
+            bias: mapped.iter().map(|(b, _)| b).sum::<f32>() / k,
+            factors,
+            confianca: CONTENT_CONFIANCA * k / features.len() as f32,
+        })
+    }
+
+    pub fn predict(&self, profile: &Profile, item: &Item) -> f32 {
+        let dot: f32 = profile.factors.iter().zip(&item.factors).map(|(p, q)| p * q).sum();
+        (profile.mean + item.bias + dot).clamp(0.5, 5.0)
     }
 }
 
@@ -123,7 +184,9 @@ pub(crate) fn errors<'a>(
     half_life_days: Option<u32>,
 ) -> Vec<(f32, &'a NotaEntry)> {
     let profile = model.profile(known, half_life_days);
-    hidden.iter().filter_map(|(id, e)| Some(((model.predict(&profile, *id)? - e.nota).abs(), e))).collect()
+    // ponytail: collaborative movies only; pass content features if held-out recent releases matter.
+    let error = |id: u32, e: &NotaEntry| Some((model.predict(&profile, &model.item(id, &[])?) - e.nota).abs());
+    hidden.iter().filter_map(|(id, e)| Some((error(*id, e)?, e))).collect()
 }
 
 /// Half-lives tried by the calibration, in days; `None` is no decay.

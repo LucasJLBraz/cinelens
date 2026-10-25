@@ -1,8 +1,8 @@
 //! `cinelens-train --ratings ratings.csv --links links.csv --out model.json.gz --data-version YYYY-MM-DD
-//!  [--letterboxd letterboxd_interactions.csv --catalog catalog.json.gz]`
+//!  [--catalog catalog.json.gz [--letterboxd letterboxd_interactions.csv]]`
 //!
 //! Reads MovieLens `ml-latest` (and the Letterboxd sample, joined through the catálogo's IMDb
-//! ids) and writes the gzipped model artifact.
+//! ids) and writes the gzipped model artifact. The catálogo also gives the content mapping.
 
 use std::fs::File;
 use std::io::{BufReader, Write};
@@ -21,14 +21,18 @@ fn run() -> Result<(), String> {
     let open = |path: &str| File::open(path).map(BufReader::new).map_err(|e| format!("{path}: {e}"));
     let out = required("--out")?;
 
+    let catalog = optional("--catalog").map(cinelens_train::read_maybe_gzipped).transpose()?;
+    let content = match &catalog {
+        Some(catalog) => cinelens_core::content_features(catalog).map_err(|e| e.to_string())?,
+        None => Vec::new(),
+    };
     let letterboxd = match optional("--letterboxd") {
         None => None,
         Some(path) => {
-            let catalog = required("--catalog")?;
-            let catalog = cinelens_train::read_maybe_gzipped(catalog)?;
+            let catalog = catalog.as_deref().ok_or("--letterboxd needs --catalog")?;
             Some(cinelens_train::Letterboxd {
                 interactions: Box::new(open(path)?),
-                imdb_to_tmdb: cinelens_train::catalog_imdb_ids(&catalog)?,
+                imdb_to_tmdb: cinelens_train::catalog_imdb_ids(catalog)?,
             })
         }
     };
@@ -36,6 +40,7 @@ fn run() -> Result<(), String> {
         open(required("--ratings")?)?,
         open(required("--links")?)?,
         letterboxd,
+        &content,
         required("--data-version")?,
     )?;
     let file = File::create(out).map_err(|e| format!("{out}: {e}"))?;

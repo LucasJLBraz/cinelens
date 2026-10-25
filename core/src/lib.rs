@@ -52,6 +52,47 @@ struct Movie {
     original_title: String,
     year: Option<u16>,
     poster_path: Option<String>,
+    #[serde(default)]
+    genre_ids: Vec<u32>,
+    #[serde(default)]
+    directors: Vec<Person>,
+    #[serde(default)]
+    cast: Vec<Person>,
+    #[serde(default)]
+    original_language: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Person {
+    id: u32,
+}
+
+impl Movie {
+    /// `g<genre id>`, `d<director id>`, `c<cast member id>`, `l<original language>`: the keys of
+    /// the content mapping in the model.
+    fn content_features(&self) -> Vec<String> {
+        let genres = self.genre_ids.iter().map(|g| format!("g{g}"));
+        let directors = self.directors.iter().map(|p| format!("d{}", p.id));
+        let cast = self.cast.iter().map(|p| format!("c{}", p.id));
+        let language = self.original_language.iter().map(|l| format!("l{l}"));
+        genres
+            .chain(directors)
+            .chain(cast)
+            .chain(language)
+            .collect()
+    }
+}
+
+/// Every catálogo movie's content features, as the core reads them; the training job learns
+/// the content mapping from the same.
+pub fn content_features(catalog_artifact: &[u8]) -> Result<Vec<(u32, Vec<String>)>, Error> {
+    let artifact: CatalogArtifact = serde_json::from_slice(catalog_artifact)
+        .map_err(|e| Error::InvalidArtifact(e.to_string()))?;
+    Ok(artifact
+        .movies
+        .iter()
+        .map(|m| (m.tmdb_id, m.content_features()))
+        .collect())
 }
 
 #[derive(Debug, Serialize)]
@@ -63,6 +104,8 @@ pub struct MovieCard {
     pub poster_url: Option<String>,
     /// `None` for a movie the owner rated or one the model does not know.
     pub nota_prevista: Option<f32>,
+    /// 0–1, alongside every nota prevista; content-only predictions stay low.
+    pub confianca: Option<f32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -155,8 +198,10 @@ pub struct Core {
     movies: Vec<Movie>,
     owner: OwnerData,
     model: Option<Model>,
-    /// Aligned with `movies`.
-    previstas: Vec<Option<f32>>,
+    /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
+    items: Vec<Option<recommender::Item>>,
+    /// Aligned with `movies`: (nota prevista, confiança).
+    previstas: Vec<Option<(f32, f32)>>,
     /// Explorar order: indexes into `movies`, highest nota prevista first.
     para_voce: Vec<usize>,
     /// In effect in the last fold-in.
@@ -182,19 +227,31 @@ impl Core {
         }
         self.data_version = Some(artifact.data_version);
         self.movies = artifact.movies;
-        self.recompute();
+        self.refresh_items();
         Ok(())
     }
 
     /// Replaces the model. On error the current one stays in place.
     pub fn load_model(&mut self, model_artifact: &[u8]) -> Result<(), Error> {
         self.model = Some(Model::parse(model_artifact)?);
-        self.recompute();
+        self.refresh_items();
         Ok(())
     }
 
     pub fn model_version(&self) -> Option<&str> {
         self.model.as_ref().map(|m| m.data_version.as_str())
+    }
+
+    fn refresh_items(&mut self) {
+        self.items = match &self.model {
+            None => vec![None; self.movies.len()],
+            Some(model) => self
+                .movies
+                .iter()
+                .map(|m| model.item(m.tmdb_id, &m.content_features()))
+                .collect(),
+        };
+        self.recompute();
     }
 
     /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
@@ -205,11 +262,12 @@ impl Core {
             None => vec![None; self.movies.len()],
             Some(model) => {
                 let profile = model.profile(&self.owner.notas, self.half_life_days);
-                let previstas = self.movies.iter().map(|m| {
+                let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
                     if self.owner.notas.get(&m.tmdb_id).is_some_and(|h| !h.is_empty()) {
                         None
                     } else {
-                        model.predict(&profile, m.tmdb_id)
+                        item.as_ref()
+                            .map(|item| (model.predict(&profile, item), item.confianca))
                     }
                 });
                 previstas.collect()
@@ -218,7 +276,7 @@ impl Core {
         self.para_voce = (0..self.movies.len()).collect();
         // Stable: movies without a nota prevista keep catálogo order, after the others.
         self.para_voce.sort_by(|&a, &b| {
-            let key = |i: usize| self.previstas[i].unwrap_or(f32::NEG_INFINITY);
+            let key = |i: usize| self.previstas[i].map_or(f32::NEG_INFINITY, |(p, _)| p);
             key(b).total_cmp(&key(a))
         });
     }
@@ -349,7 +407,8 @@ impl Core {
             original_title: m.original_title.clone(),
             year: m.year,
             poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),
-            nota_prevista: self.previstas[i],
+            nota_prevista: self.previstas[i].map(|(p, _)| p),
+            confianca: self.previstas[i].map(|(_, c)| c),
         }
     }
 }

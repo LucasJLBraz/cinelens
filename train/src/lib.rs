@@ -6,6 +6,9 @@
 //! Letterboxd users also get a bias term against MovieLens's: the owner is folded in like a
 //! MovieLens user, so a shift particular to the Letterboxd population must not leak into the
 //! movie biases the app uses.
+//!
+//! The content mapping (feature → bias and factors) is learned from the published movies'
+//! factors, for the movies the training data lacks.
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -22,6 +25,11 @@ const MIN_RATINGS: usize = 10;
 /// IMDb votes the matched title holds among the candidates).
 // ponytail: one fixed cut; tune it with cinelens-accuracy if many recent movies fall below it.
 const MIN_MATCH_CONFIDENCE: f32 = 0.9;
+/// Content features on fewer published movies are left out.
+const MIN_CONTENT_MOVIES: usize = 3;
+/// A feature's factors are the sum over its movies divided by their count plus this, so rare
+/// features stay near zero.
+const CONTENT_SHRINK: f32 = 5.0;
 /// Movie keys at or above this are MovieLens movies without a TMDB id; below it, TMDB ids.
 const NO_TMDB: u64 = 1 << 32;
 const MOVIELENS: u8 = 0;
@@ -34,11 +42,20 @@ pub struct Model {
     global_mean: f32,
     lambda: f32,
     movies: Vec<MovieFactors>,
+    content: Vec<ContentFactors>,
 }
 
 #[derive(Serialize)]
 struct MovieFactors {
     tmdb_id: u32,
+    bias: f32,
+    factors: Vec<f32>,
+    ratings: u32,
+}
+
+#[derive(Serialize)]
+struct ContentFactors {
+    feature: String,
     bias: f32,
     factors: Vec<f32>,
 }
@@ -75,11 +92,13 @@ fn parse_imdb(id: &str) -> Option<u32> {
 }
 
 /// `ratings` is ml-latest's `ratings.csv` (`userId,movieId,rating,timestamp`), `links` its
-/// `links.csv` (`movieId,imdbId,tmdbId`).
+/// `links.csv` (`movieId,imdbId,tmdbId`), `content` the catálogo's
+/// (`cinelens_core::content_features`); without it the model has no content mapping.
 pub fn train(
     ratings: impl BufRead,
     links: impl BufRead,
     letterboxd: Option<Letterboxd>,
+    content: &[(u32, Vec<String>)],
     data_version: &str,
 ) -> Result<Model, String> {
     let links = read_links(links)?;
@@ -147,10 +166,16 @@ pub fn train(
         .filter(|&m| by_movie[m].len() >= MIN_RATINGS && r.movie_keys[m] < NO_TMDB)
         .map(|m| {
             let row = &movies[m * W..][..W];
-            MovieFactors { tmdb_id: r.movie_keys[m] as u32, bias: row[0], factors: row[1..].to_vec() }
+            MovieFactors {
+                tmdb_id: r.movie_keys[m] as u32,
+                bias: row[0],
+                factors: row[1..].to_vec(),
+                ratings: by_movie[m].len() as u32,
+            }
         })
         .collect();
     published.sort_by_key(|m| m.tmdb_id);
+    let content = content_mapping(&published, content);
 
     Ok(Model {
         format_version: MODEL_FORMAT_VERSION,
@@ -158,7 +183,33 @@ pub fn train(
         global_mean: r.rating.iter().map(|&x| x as f64).sum::<f64>() as f32 / r.rating.len().max(1) as f32,
         lambda: LAMBDA,
         movies: published,
+        content,
     })
+}
+
+/// Each content feature's shrunk mean bias and factors over the published movies that have it.
+fn content_mapping(published: &[MovieFactors], content: &[(u32, Vec<String>)]) -> Vec<ContentFactors> {
+    let by_id: HashMap<u32, &MovieFactors> = published.iter().map(|m| (m.tmdb_id, m)).collect();
+    let mut sums: HashMap<&str, (usize, f32, Vec<f32>)> = HashMap::new();
+    for (id, features) in content {
+        let Some(m) = by_id.get(id) else { continue };
+        for f in features {
+            let (n, bias, factors) = sums.entry(f).or_insert_with(|| (0, 0.0, vec![0.0; FACTORS]));
+            *n += 1;
+            *bias += m.bias;
+            factors.iter_mut().zip(&m.factors).for_each(|(a, b)| *a += b);
+        }
+    }
+    let mut mapping: Vec<ContentFactors> = sums
+        .into_iter()
+        .filter(|(_, (n, _, _))| *n >= MIN_CONTENT_MOVIES)
+        .map(|(feature, (n, bias, factors))| {
+            let d = n as f32 + CONTENT_SHRINK;
+            ContentFactors { feature: feature.to_string(), bias: bias / d, factors: factors.iter().map(|f| f / d).collect() }
+        })
+        .collect();
+    mapping.sort_by(|a, b| a.feature.cmp(&b.feature));
+    mapping
 }
 
 #[derive(Default)]
