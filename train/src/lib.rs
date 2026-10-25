@@ -1,20 +1,31 @@
-//! The monthly training job: movie factors from MovieLens `ml-latest`, by alternating least
-//! squares.
+//! The monthly training job: movie factors from MovieLens `ml-latest` plus, optionally, the
+//! Letterboxd April 2026 sample, by alternating least squares.
 //!
 //! Every user is fitted as the app fits the owner (`cinelens_core::ridge` on notas relative to
-//! the user's own mean), so the movie factors are trained against the fold-in the device runs.
+//! the user's own mean), so the movie factors are trained against the fold-in the app runs.
+//! Letterboxd users also get a bias term against MovieLens's: the owner is folded in like a
+//! MovieLens user, so a shift particular to the Letterboxd population must not leak into the
+//! movie biases the app uses.
 
 use std::collections::HashMap;
 use std::io::BufRead;
 
 use cinelens_core::{ridge, MODEL_FORMAT_VERSION};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const FACTORS: usize = 32;
 const ITERATIONS: usize = 10;
 const LAMBDA: f32 = 0.05;
 /// Movies with fewer ratings are left out of the artifact: their factors are mostly noise.
 const MIN_RATINGS: usize = 10;
+/// Letterboxd rows whose IMDb match is less certain are left out (`confidence` is the share of
+/// IMDb votes the matched title holds among the candidates).
+// ponytail: one fixed cut; tune it with cinelens-accuracy if many recent movies fall below it.
+const MIN_MATCH_CONFIDENCE: f32 = 0.9;
+/// Movie keys at or above this are MovieLens movies without a TMDB id; below it, TMDB ids.
+const NO_TMDB: u64 = 1 << 32;
+const MOVIELENS: u8 = 0;
+const LETTERBOXD: u8 = 1;
 
 #[derive(Serialize)]
 pub struct Model {
@@ -32,12 +43,52 @@ struct MovieFactors {
     factors: Vec<f32>,
 }
 
+/// The Letterboxd sample's `letterboxd_interactions.csv`, with the IMDb → TMDB ids that join
+/// its movies to the rest (`catalog_imdb_ids`); MovieLens's `links.csv` is used as well.
+pub struct Letterboxd<'a> {
+    pub interactions: Box<dyn BufRead + 'a>,
+    /// Numeric IMDb id (`tt0068646` → 68646) → TMDB id.
+    pub imdb_to_tmdb: HashMap<u32, u32>,
+}
+
+/// IMDb → TMDB ids of a catálogo artifact, which covers the releases MovieLens lacks.
+pub fn catalog_imdb_ids(catalog_artifact: &[u8]) -> Result<HashMap<u32, u32>, String> {
+    #[derive(Deserialize)]
+    struct Catalog {
+        movies: Vec<Movie>,
+    }
+    #[derive(Deserialize)]
+    struct Movie {
+        tmdb_id: u32,
+        imdb_id: Option<String>,
+    }
+    let catalog: Catalog = serde_json::from_slice(catalog_artifact).map_err(|e| format!("catálogo: {e}"))?;
+    Ok(catalog
+        .movies
+        .into_iter()
+        .filter_map(|m| Some((parse_imdb(&m.imdb_id?)?, m.tmdb_id)))
+        .collect())
+}
+
+fn parse_imdb(id: &str) -> Option<u32> {
+    id.trim_start_matches("tt").parse().ok()
+}
+
 /// `ratings` is ml-latest's `ratings.csv` (`userId,movieId,rating,timestamp`), `links` its
 /// `links.csv` (`movieId,imdbId,tmdbId`).
-pub fn train(ratings: impl BufRead, links: impl BufRead, data_version: &str) -> Result<Model, String> {
-    let tmdb_ids = read_links(links)?;
-    let r = read_ratings(ratings)?;
-    let (n_users, n_movies) = (r.user_ids.len(), r.movie_ids.len());
+pub fn train(
+    ratings: impl BufRead,
+    links: impl BufRead,
+    letterboxd: Option<Letterboxd>,
+    data_version: &str,
+) -> Result<Model, String> {
+    let links = read_links(links)?;
+    let mut r = Ratings::default();
+    r.read_movielens(ratings, &links)?;
+    if let Some(letterboxd) = letterboxd {
+        r.read_letterboxd(letterboxd, &links)?;
+    }
+    let (n_users, n_movies) = (r.user_source.len(), r.movie_keys.len());
     let by_user = group(&r.user, n_users);
     let by_movie = group(&r.movie, n_movies);
 
@@ -45,6 +96,13 @@ pub fn train(ratings: impl BufRead, links: impl BufRead, data_version: &str) -> 
         .iter()
         .map(|rs| rs.iter().map(|&i| r.rating[i as usize]).sum::<f32>() / rs.len() as f32)
         .collect();
+    // Refitted after every iteration; MovieLens's is 0, the reference the app predicts in.
+    let mut letterboxd_bias = 0f32;
+    let centered = |i: usize, letterboxd_bias: f32| {
+        let u = r.user[i] as usize;
+        let bias = if r.user_source[u] == LETTERBOXD { letterboxd_bias } else { 0.0 };
+        r.rating[i] - user_mean[u] - bias
+    };
 
     // Rows: users `[1, factors…]`, movies `[bias, factors…]`, so a movie's bias is fitted as the
     // weight of the user's constant 1.
@@ -62,7 +120,7 @@ pub fn train(ratings: impl BufRead, links: impl BufRead, data_version: &str) -> 
         parallel_rows(&mut users, W, |u, row| {
             let rows = by_user[u].iter().map(|&i| {
                 let m = &movies[r.movie[i as usize] as usize * W..][..W];
-                (&m[1..], r.rating[i as usize] - user_mean[u] - m[0])
+                (&m[1..], centered(i as usize, letterboxd_bias) - m[0])
             });
             row[0] = 1.0;
             row[1..].copy_from_slice(&ridge(rows, FACTORS, LAMBDA));
@@ -70,22 +128,29 @@ pub fn train(ratings: impl BufRead, links: impl BufRead, data_version: &str) -> 
         parallel_rows(&mut movies, W, |m, row| {
             let rows = by_movie[m].iter().map(|&i| {
                 let u = r.user[i as usize] as usize;
-                (&users[u * W..][..W], r.rating[i as usize] - user_mean[u])
+                (&users[u * W..][..W], centered(i as usize, letterboxd_bias))
             });
             row.copy_from_slice(&ridge(rows, W, LAMBDA));
         });
+        let (mut sum, mut count) = (0f64, 0u64);
+        for i in (0..r.rating.len()).filter(|&i| r.user_source[r.user[i] as usize] == LETTERBOXD) {
+            let (u, m) = (r.user[i] as usize, r.movie[i] as usize);
+            let (user, movie) = (&users[u * W..][..W], &movies[m * W..][..W]);
+            let fitted: f32 = user.iter().zip(movie).map(|(a, b)| a * b).sum();
+            sum += (r.rating[i] - user_mean[u] - fitted) as f64;
+            count += 1;
+        }
+        letterboxd_bias = if count == 0 { 0.0 } else { (sum / count as f64) as f32 };
     }
 
     let mut published: Vec<MovieFactors> = (0..n_movies)
-        .filter(|&m| by_movie[m].len() >= MIN_RATINGS)
-        .filter_map(|m| {
+        .filter(|&m| by_movie[m].len() >= MIN_RATINGS && r.movie_keys[m] < NO_TMDB)
+        .map(|m| {
             let row = &movies[m * W..][..W];
-            Some(MovieFactors { tmdb_id: *tmdb_ids.get(&r.movie_ids[m])?, bias: row[0], factors: row[1..].to_vec() })
+            MovieFactors { tmdb_id: r.movie_keys[m] as u32, bias: row[0], factors: row[1..].to_vec() }
         })
         .collect();
     published.sort_by_key(|m| m.tmdb_id);
-    // ponytail: two MovieLens movies sharing a TMDB id keep the first; the core would keep one anyway.
-    published.dedup_by_key(|m| m.tmdb_id);
 
     Ok(Model {
         format_version: MODEL_FORMAT_VERSION,
@@ -96,53 +161,128 @@ pub fn train(ratings: impl BufRead, links: impl BufRead, data_version: &str) -> 
     })
 }
 
+#[derive(Default)]
 struct Ratings {
     /// Dense user and movie indexes per rating.
     user: Vec<u32>,
     movie: Vec<u32>,
     rating: Vec<f32>,
-    /// MovieLens ids by dense index.
-    user_ids: Vec<u32>,
-    movie_ids: Vec<u32>,
+    /// Source of each dense user.
+    user_source: Vec<u8>,
+    /// Movie key (TMDB id, or `NO_TMDB + MovieLens id`) by dense index.
+    movie_keys: Vec<u64>,
+    users: HashMap<(u8, u32), u32>,
+    movies: HashMap<u64, u32>,
 }
 
-fn read_ratings(input: impl BufRead) -> Result<Ratings, String> {
-    let mut r = Ratings { user: vec![], movie: vec![], rating: vec![], user_ids: vec![], movie_ids: vec![] };
-    let (mut users, mut movies) = (HashMap::new(), HashMap::new());
-    for (n, line) in input.lines().enumerate().skip(1) {
-        let line = line.map_err(|e| e.to_string())?;
-        let bad = || format!("ratings line {}: `{line}`", n + 1);
-        let mut fields = line.split(',');
-        let mut next = || fields.next().ok_or_else(bad);
-        let (user, movie, rating) = (next()?, next()?, next()?);
-        let user: u32 = user.parse().map_err(|_| bad())?;
-        let movie: u32 = movie.parse().map_err(|_| bad())?;
-        let rating: f32 = rating.parse().map_err(|_| bad())?;
-        if !(0.5..=5.0).contains(&rating) {
-            return Err(bad());
-        }
-        r.user.push(*users.entry(user).or_insert_with(|| {
-            r.user_ids.push(user);
-            r.user_ids.len() as u32 - 1
-        }));
-        r.movie.push(*movies.entry(movie).or_insert_with(|| {
-            r.movie_ids.push(movie);
-            r.movie_ids.len() as u32 - 1
-        }));
-        r.rating.push(rating);
+impl Ratings {
+    /// Movies are joined across sources by TMDB id, so two MovieLens movies sharing one count
+    /// as one.
+    fn push(&mut self, source: u8, user: u32, movie_key: u64, rating: f32) {
+        let user = *self.users.entry((source, user)).or_insert_with(|| {
+            self.user_source.push(source);
+            self.user_source.len() as u32 - 1
+        });
+        let movie = *self.movies.entry(movie_key).or_insert_with(|| {
+            self.movie_keys.push(movie_key);
+            self.movie_keys.len() as u32 - 1
+        });
+        self.user.push(user);
+        self.movie.push(movie);
+        self.rating.push(rating);
     }
-    Ok(r)
+
+    fn read_movielens(&mut self, input: impl BufRead, links: &Links) -> Result<(), String> {
+        for (n, line) in input.lines().enumerate().skip(1) {
+            let line = line.map_err(|e| e.to_string())?;
+            let bad = || format!("ratings line {}: `{line}`", n + 1);
+            let mut fields = line.split(',');
+            let mut next = || fields.next().ok_or_else(bad);
+            let (user, movie, rating) = (next()?, next()?, next()?);
+            let user: u32 = user.parse().map_err(|_| bad())?;
+            let movie: u32 = movie.parse().map_err(|_| bad())?;
+            let rating = parse_rating(rating).ok_or_else(bad)?;
+            let key = links.tmdb.get(&movie).map_or(NO_TMDB + movie as u64, |&t| t as u64);
+            self.push(MOVIELENS, user, key, rating);
+        }
+        Ok(())
+    }
+
+    /// Unrated rows, unmatched or low-confidence IMDb matches and movies with no TMDB id are
+    /// skipped.
+    // ponytail: movies with no TMDB id are dropped although their ratings could still shape the
+    // users' factors; keep them under NO_TMDB keys if the measured MAE ever needs it.
+    fn read_letterboxd(&mut self, letterboxd: Letterboxd, links: &Links) -> Result<(), String> {
+        let mut lines = letterboxd.interactions.lines();
+        let header = lines.next().ok_or("letterboxd: empty file")?.map_err(|e| e.to_string())?;
+        let header = split_csv_line(&header);
+        let column = |name: &str| {
+            header.iter().position(|h| h == name).ok_or_else(|| format!("letterboxd: no `{name}` column"))
+        };
+        let (user_col, rating_col, tconst_col, confidence_col) =
+            (column("user_id")?, column("rating")?, column("tconst")?, column("confidence")?);
+        for (n, line) in lines.enumerate() {
+            let line = line.map_err(|e| e.to_string())?;
+            let bad = || format!("letterboxd line {}: `{line}`", n + 2);
+            let fields = split_csv_line(&line);
+            let field = |i: usize| fields.get(i).map(String::as_str).ok_or_else(bad);
+            let (rating, tconst) = (field(rating_col)?, field(tconst_col)?);
+            if rating.is_empty() || tconst.is_empty() {
+                continue;
+            }
+            let rating = parse_rating(rating).ok_or_else(bad)?;
+            let confidence: f32 = field(confidence_col)?.parse().map_err(|_| bad())?;
+            let user: u32 = field(user_col)?.trim_start_matches("u_").parse().map_err(|_| bad())?;
+            let imdb = parse_imdb(tconst).ok_or_else(bad)?;
+            let tmdb = links.imdb.get(&imdb).or_else(|| letterboxd.imdb_to_tmdb.get(&imdb));
+            if let (Some(&tmdb), true) = (tmdb, confidence >= MIN_MATCH_CONFIDENCE) {
+                self.push(LETTERBOXD, user, tmdb as u64, rating);
+            }
+        }
+        Ok(())
+    }
 }
 
-/// MovieLens id → TMDB id; movies TMDB does not know are absent.
-fn read_links(input: impl BufRead) -> Result<HashMap<u32, u32>, String> {
-    let mut links = HashMap::new();
+fn parse_rating(s: &str) -> Option<f32> {
+    s.parse().ok().filter(|r| (0.5..=5.0).contains(r))
+}
+
+/// One CSV line; quoted fields may hold commas and `""` (not newlines).
+fn split_csv_line(line: &str) -> Vec<String> {
+    let (mut fields, mut field, mut quoted) = (Vec::new(), String::new(), false);
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (quoted, c) {
+            (true, '"') if chars.peek() == Some(&'"') => {
+                field.push('"');
+                chars.next();
+            }
+            (_, '"') => quoted = !quoted,
+            (false, ',') => fields.push(std::mem::take(&mut field)),
+            (_, c) => field.push(c),
+        }
+    }
+    fields.push(field);
+    fields
+}
+
+struct Links {
+    /// MovieLens id → TMDB id; movies TMDB does not know are absent.
+    tmdb: HashMap<u32, u32>,
+    /// Numeric IMDb id → TMDB id.
+    imdb: HashMap<u32, u32>,
+}
+
+fn read_links(input: impl BufRead) -> Result<Links, String> {
+    let mut links = Links { tmdb: HashMap::new(), imdb: HashMap::new() };
     for line in input.lines().skip(1) {
         let line = line.map_err(|e| e.to_string())?;
         let mut fields = line.split(',');
-        if let (Some(movie), Some(tmdb)) = (fields.next(), fields.nth(1)) {
-            if let (Ok(movie), Ok(tmdb)) = (movie.parse(), tmdb.trim().parse()) {
-                links.insert(movie, tmdb);
+        let (movie, imdb, tmdb) = (fields.next(), fields.next(), fields.next());
+        if let (Some(Ok(movie)), Some(Ok(tmdb))) = (movie.map(str::parse), tmdb.map(|t| t.trim().parse())) {
+            links.tmdb.insert(movie, tmdb);
+            if let Some(imdb) = imdb.and_then(parse_imdb) {
+                links.imdb.insert(imdb, tmdb);
             }
         }
     }
@@ -172,4 +312,16 @@ fn parallel_rows(rows: &mut [f32], width: usize, f: impl Fn(usize, &mut [f32]) +
             });
         }
     });
+}
+
+/// A whole file, gunzipped when it starts with the gzip magic bytes.
+pub fn read_maybe_gzipped(path: &str) -> Result<Vec<u8>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    if !bytes.starts_with(&[0x1f, 0x8b]) {
+        return Ok(bytes);
+    }
+    let mut out = Vec::new();
+    std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(bytes.as_slice()), &mut out)
+        .map_err(|e| format!("{path}: {e}"))?;
+    Ok(out)
 }

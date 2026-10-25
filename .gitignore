@@ -2,3 +2,4 @@
 movielens-*.csv
 /target/
 /node_modules/
+/data/

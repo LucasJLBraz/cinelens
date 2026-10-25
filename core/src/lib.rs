@@ -90,6 +90,20 @@ pub struct ImportSummary {
     pub quero_assistir: usize,
 }
 
+/// How close the nota prevista came to the owner's most recent notas, hidden from the fold-in.
+#[derive(Debug, Serialize)]
+pub struct Accuracy {
+    /// Most recent notas hidden from the fold-in.
+    pub held_out: usize,
+    /// Held-out notas the model could predict; those of movies outside it are left out.
+    pub notas: usize,
+    /// Mean absolute error over those notas.
+    pub mae: f32,
+    /// MovieLens's own error on those of the notas it logged a prediction for when each was
+    /// given; `None` when none of them came from the importação.
+    pub movielens_mae: Option<f32>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MoviePage {
     #[serde(flatten)]
@@ -257,6 +271,33 @@ impl Core {
             serde_json::from_slice(bytes).map_err(|e| Error::InvalidOwnerData(e.to_string()))?;
         self.recompute();
         Ok(())
+    }
+
+    /// Hides the `fraction` (0–1) of the owner's notas given most recently, folds in the rest
+    /// and predicts the hidden ones. `None` without a model or when none of them can be predicted.
+    pub fn accuracy(&self, fraction: f32) -> Option<Accuracy> {
+        let model = self.model.as_ref()?;
+        let mut by_recency: Vec<(&u32, &NotaEntry)> =
+            self.owner.notas.iter().filter_map(|(id, h)| Some((id, h.last()?))).collect();
+        // Stable: same-second notas are held out in tmdb_id order.
+        by_recency.sort_by_key(|(_, e)| std::cmp::Reverse(e.at));
+        let held_out = ((by_recency.len() as f32 * fraction).round() as usize).min(by_recency.len());
+        let (hidden, _) = by_recency.split_at(held_out);
+        let mut known = self.owner.notas.clone();
+        known.retain(|id, _| !hidden.iter().any(|(h, _)| *h == id));
+        let profile = model.profile(&known);
+
+        let (mut errors, mut movielens_errors) = (Vec::new(), Vec::new());
+        for (&id, entry) in hidden {
+            if let Some(prevista) = model.predict(&profile, id) {
+                errors.push((prevista - entry.nota).abs());
+                if let Some(pred) = entry.movielens_pred {
+                    movielens_errors.push((pred as f32 - entry.nota).abs());
+                }
+            }
+        }
+        let mean = |e: &[f32]| (!e.is_empty()).then(|| e.iter().sum::<f32>() / e.len() as f32);
+        Some(Accuracy { held_out, notas: errors.len(), mae: mean(&errors)?, movielens_mae: mean(&movielens_errors) })
     }
 
     /// The catálogo "Para você": highest nota prevista first.

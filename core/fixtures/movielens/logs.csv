@@ -5,6 +5,7 @@ datetime,login_id,action_type,log_json
 2024-09-07 20:12:04.0,xgvOYbE,rating,"{""movieId"":2571,""rating"":5.0,""action"":""ADD"",""pred"":4.5}"
 2024-09-21 16:22:29.0,hiemEWQ,rating,"{""movieId"":174055,""rating"":3.0,""action"":""ADD"",""pred"":3.2}"
 2024-09-21 16:22:35.0,hiemEWQ,rating,"{""movieId"":174055,""rating"":null,""action"":""REMOVE"",""pred"":null}"
+2025-01-10 10:00:00.0,VKpuiBU,rating,"{""movieId"":2959,""rating"":-1.0,""action"":""ADD"",""pred"":4.6}"
 2025-02-27 16:42:12.0,VKpuiBU,rating,"{""movieId"":296,""rating"":4.0,""action"":""ADD"",""pred"":3.9}"
 2025-02-27 16:43:00.0,VKpuiBU,rating,"{""movieId"":1,""rating"":3.0,""action"":""ADD"",""pred"":3.1}"
 2026-05-22 20:26:11.0,h9xwyac,rating,"{""movieId"":2959,""rating"":4.5,""action"":""ADD"",""pred"":4.3}"

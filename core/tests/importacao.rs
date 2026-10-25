@@ -45,6 +45,14 @@ fn importacao_ignores_ratings_removed_on_movielens() {
 }
 
 #[test]
+fn movies_hidden_on_movielens_are_not_notas() {
+    // MovieLens logs hiding a movie as a -1 rating; Fight Club was hidden between its notas.
+    let history = imported().movie(550).unwrap().history;
+    let notas: Vec<f32> = history.iter().map(|e| e.nota).collect();
+    assert_eq!(notas, vec![4.0, 4.5]);
+}
+
+#[test]
 fn wishlist_lands_in_quero_assistir() {
     let core = imported();
     assert!(core.movie(238).unwrap().quero_assistir);

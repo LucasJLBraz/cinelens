@@ -67,7 +67,8 @@ pub(crate) fn read(files: &[&str]) -> Result<Export, Error> {
         let log: RatingLog = serde_json::from_str(json).map_err(invalid)?;
         // REMOVE lines need no handling: a removed nota is absent from the ratings file, and an
         // earlier one given again keeps its place in the history.
-        if let ("ADD", Some(nota)) = (log.action.as_str(), log.rating) {
+        // A -1 rating is MovieLens hiding the movie, not a nota.
+        if let ("ADD", Some(nota)) = (log.action.as_str(), log.rating.filter(|&r| r != -1.0)) {
             if !crate::is_valid_nota(nota) {
                 return Err(invalid(format!("logged nota {nota} out of range")));
             }

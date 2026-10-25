@@ -1,9 +1,13 @@
 name: Model
 
-# Trains the movie factors on MovieLens ml-latest every month and publishes the asset
+# Trains the movie factors on MovieLens ml-latest plus the Letterboxd April 2026 sample every
+# month and publishes the asset
 # `model.json.gz` of the release `model-v<format version>`, which the app downloads, plus a
 # dated copy `model-<date>.json.gz` that stays as the history. Only public data: the owner's
-# notas never reach CI, the app folds them in on-device.
+# notas never reach CI, the app folds them in on-device. Letterboxd comes from Kaggle with the
+# KAGGLE_API_TOKEN secret (docs/guides/kaggle.md) and is joined through the catálogo's IMDb ids;
+# without the secret the model is trained on MovieLens alone (ADR 0002: Letterboxd stays only
+# while it does not worsen the MAE on the owner's notas).
 on:
   schedule:
     - cron: "41 6 3 * *"
@@ -15,7 +19,7 @@ permissions:
 jobs:
   model:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -26,13 +30,45 @@ jobs:
           curl -fsSLo "$RUNNER_TEMP/ml-latest.zip" https://files.grouplens.org/datasets/movielens/ml-latest.zip
           unzip -q -d "$RUNNER_TEMP" "$RUNNER_TEMP/ml-latest.zip" ml-latest/ratings.csv ml-latest/links.csv
 
+      - name: Download Letterboxd sample
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          if [ -z "$KAGGLE_API_TOKEN" ]; then
+            echo "::warning::KAGGLE_API_TOKEN secret missing, training on MovieLens alone; see docs/guides/kaggle.md"
+            exit 0
+          fi
+          echo "LETTERBOXD=1" >> "$GITHUB_ENV"
+          pip install --quiet kaggle==2.2.5
+          kaggle datasets download tliocastro/letterboxd-sample-apr-2026 -f letterboxd_interactions.csv -p "$RUNNER_TEMP"
+          # Kaggle may hand the file over zipped.
+          if [ -f "$RUNNER_TEMP/letterboxd_interactions.csv.zip" ]; then
+            unzip -q -o -d "$RUNNER_TEMP" "$RUNNER_TEMP/letterboxd_interactions.csv.zip"
+          fi
+          test -s "$RUNNER_TEMP/letterboxd_interactions.csv"
+
+      # Letterboxd movies are joined to TMDB ids through the catálogo's IMDb ids, which cover the
+      # releases ml-latest lacks.
+      - name: Download catálogo
+        if: env.LETTERBOXD == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          gh release download "catalog-v$FORMAT" -p catalog.json.gz -D "$RUNNER_TEMP"
+
       - name: Train
         run: |
           TODAY=$(date -u +%F)
           echo "TODAY=$TODAY" >> "$GITHUB_ENV"
+          LETTERBOXD_ARGS=()
+          if [ "$LETTERBOXD" = 1 ]; then
+            LETTERBOXD_ARGS=(--letterboxd "$RUNNER_TEMP/letterboxd_interactions.csv" --catalog "$RUNNER_TEMP/catalog.json.gz")
+          fi
           cargo run --release -p cinelens-train -- \
             --ratings "$RUNNER_TEMP/ml-latest/ratings.csv" \
             --links "$RUNNER_TEMP/ml-latest/links.csv" \
+            "${LETTERBOXD_ARGS[@]}" \
             --out model.json.gz \
             --data-version "$TODAY"
 
@@ -42,10 +78,16 @@ jobs:
         run: |
           FORMAT=$(grep -oP 'MODEL_FORMAT_VERSION: u32 = \K[0-9]+' core/src/recommender.rs)
           TAG="model-v$FORMAT"
+          LETTERBOXD_NOTES=""
+          if [ "$LETTERBOXD" = 1 ]; then
+            LETTERBOXD_NOTES="Treinado também no Letterboxd Movie Interaction Dataset (Letterboxd-Sample-Apr-2026, de Túlio Castro, https://www.kaggle.com/datasets/tliocastro/letterboxd-sample-apr-2026), licenciado sob CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/). Este modelo é uma adaptação desse conjunto e é distribuído sob a mesma licença CC BY-NC-SA 4.0: atribuição, uso não comercial, compartilhamento pela mesma licença."
+          fi
           cat > notes.md <<NOTES
           Modelo de recomendação (fatores dos filmes), formato $FORMAT, treinado em $TODAY. Baixado pelo app; não é uma versão do app.
 
           Treinado no conjunto de dados MovieLens \`ml-latest\` do GroupLens Research (https://grouplens.org/datasets/movielens/), usado sob os termos do GroupLens: uso em pesquisa e não comercial, transformações redistribuídas sob os mesmos termos, sem endosso da Universidade de Minnesota nem do GroupLens. Este modelo herda esses termos.
+
+          $LETTERBOXD_NOTES
 
           Citação: F. Maxwell Harper and Joseph A. Konstan. 2015. The MovieLens Datasets: History and Context. ACM Transactions on Interactive Intelligent Systems (TiiS) 5, 4: 19:1–19:19. https://doi.org/10.1145/2827872
           NOTES
