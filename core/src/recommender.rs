@@ -160,12 +160,15 @@ impl Model {
     }
 }
 
+/// The owner's notas by movie, each history in time order.
+type Notas = BTreeMap<u32, Vec<NotaEntry>>;
+
 /// The owner's most recent notas, hidden from the fold-in, and the rest. `fraction` is 0–1;
 /// same-second notas are held out in tmdb_id order.
 pub(crate) fn hold_out(
     notas: &BTreeMap<u32, Vec<NotaEntry>>,
     fraction: f32,
-) -> (BTreeMap<u32, Vec<NotaEntry>>, Vec<(u32, NotaEntry)>) {
+) -> (Notas, Vec<(u32, NotaEntry)>) {
     let mut by_recency: Vec<(u32, NotaEntry)> =
         notas.iter().filter_map(|(&id, h)| Some((id, h.last()?.clone()))).collect();
     by_recency.sort_by_key(|(_, e)| std::cmp::Reverse(e.at));

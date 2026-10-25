@@ -29,9 +29,9 @@ fn imported_nota_keeps_full_history_dated_from_the_logs() {
         page.history,
         vec![
             // 2024-09-07 20:12:01 UTC
-            NotaEntry { nota: 4.0, at: 1725739921, movielens_pred: Some(4.204193673714679) },
+            NotaEntry { nota: 4.0, at: 1725739921, movielens_pred: Some(4.204193673714679), prevista: None },
             // 2026-05-22 20:26:11 UTC
-            NotaEntry { nota: 4.5, at: 1779481571, movielens_pred: Some(4.3) },
+            NotaEntry { nota: 4.5, at: 1779481571, movielens_pred: Some(4.3), prevista: None },
         ]
     );
 }

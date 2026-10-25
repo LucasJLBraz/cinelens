@@ -38,6 +38,8 @@
     #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
     #nota-history li { padding: 4px 0; }
     #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    .previsao { font-size: 12px; color: var(--accent); }
+    #revelacao { margin: 8px 0 0; color: var(--accent); }
     #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
@@ -76,6 +78,7 @@
       </div>
     </div>
     <div id="notas"></div>
+    <p id="revelacao" hidden></p>
     <ul id="nota-history"></ul>
   </section>
   <section id="ajustes" hidden>
@@ -92,6 +95,12 @@
       <option value="1460">Pela metade a cada 4 anos</option>
     </select>
     <div id="decay-hint" class="hint"></div>
+    <label for="display-mode">Mostrar previsão como</label>
+    <select id="display-mode">
+      <option value="Faixa">Faixa (Aposta forte, Boa chance…)</option>
+      <option value="Estrelas">Estrelas</option>
+      <option value="Oculto">Oculto: só a ordem</option>
+    </select>
   </section>
   <footer>Dados e imagens de filmes: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
@@ -122,6 +131,14 @@
       return poster;
     }
 
+    // Only in the chosen mode; the raw nota_prevista is never shown.
+    function previsaoText(p) {
+      if (!p) return '';
+      if (p.modo === 'Faixa') return p.faixa;
+      const one = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      return `★ ${one(p.nota)} (${one(p.meia_estrela)}) · confiança ${Math.round(p.confianca * 100)}%`;
+    }
+
     function card(m) {
       const el = document.createElement('article');
       el.className = 'movie';
@@ -134,6 +151,12 @@
       original.className = 'original';
       original.textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
       el.append(poster, title, original);
+      if (m.previsao) {
+        const previsao = document.createElement('div');
+        previsao.className = 'previsao';
+        previsao.textContent = previsaoText(m.previsao);
+        el.append(previsao);
+      }
       return el;
     }
 
@@ -214,6 +237,8 @@
     async function openMovie(id) {
       const m = await invoke('movie', { tmdbId: id });
       if (!m) return;
+      // The rating screen never shows the prediction, so it cannot anchor the nota.
+      document.getElementById('revelacao').hidden = true;
       showMovie(m);
       explorarEl.hidden = true;
       filmeEl.hidden = false;
@@ -241,8 +266,14 @@
       document.getElementById('decay-hint').textContent = s.setting === 'Auto'
         ? `Calibrado nas suas notas: ${halfLife(s.half_life_days)}.` : '';
     }
+    const displayModeEl = document.getElementById('display-mode');
+    displayModeEl.addEventListener('change', async () => {
+      await invoke('set_display_mode', { mode: displayModeEl.value });
+      stale = true;
+    });
     document.getElementById('open-ajustes').addEventListener('click', async () => {
       showDecay(await invoke('decay'));
+      displayModeEl.value = await invoke('display_mode');
       explorarEl.hidden = true;
       ajustesEl.hidden = false;
       history.pushState({ ajustes: true }, '');
@@ -257,9 +288,12 @@
     notasEl.addEventListener('click', async e => {
       const nota = Number(e.target.dataset.nota);
       if (!nota) return;
-      const m = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
+      const [m, revealed] = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
       stale = true;
       if (m) showMovie(m);
+      const revelacao = document.getElementById('revelacao');
+      revelacao.hidden = !revealed;
+      if (revealed) revelacao.textContent = `O app achava: ${previsaoText(revealed)}`;
     });
 
     const importFiles = document.getElementById('import-files');

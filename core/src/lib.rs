@@ -4,9 +4,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+mod display;
 mod movielens;
 mod recommender;
 
+pub use display::{DisplayMode, Faixa, Previsao};
 pub use recommender::{ridge, MODEL_FORMAT_VERSION};
 use recommender::Model;
 
@@ -106,6 +108,8 @@ pub struct MovieCard {
     pub nota_prevista: Option<f32>,
     /// 0–1, alongside every nota prevista; content-only predictions stay low.
     pub confianca: Option<f32>,
+    /// The nota prevista as the owner chose to see it; `None` without one or in Oculto.
+    pub previsao: Option<Previsao>,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,6 +126,9 @@ pub struct NotaEntry {
     pub at: i64,
     /// What MovieLens predicted when the nota was given (imported notas only): the accuracy baseline.
     pub movielens_pred: Option<f64>,
+    /// The nota prevista when the nota was given in the app, revealed right after it.
+    #[serde(default)]
+    pub prevista: Option<f32>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -175,7 +182,10 @@ pub struct DecayStatus {
 
 #[derive(Default, Serialize, Deserialize)]
 struct Settings {
+    #[serde(default)]
     decay: Decay,
+    #[serde(default)]
+    display_mode: DisplayMode,
 }
 
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
@@ -204,6 +214,8 @@ pub struct Core {
     previstas: Vec<Option<(f32, f32)>>,
     /// Explorar order: indexes into `movies`, highest nota prevista first.
     para_voce: Vec<usize>,
+    /// Every current nota prevista, highest first: what Faixa is relative to.
+    ranked: Vec<f32>,
     /// In effect in the last fold-in.
     half_life_days: Option<u32>,
 }
@@ -279,6 +291,7 @@ impl Core {
             let key = |i: usize| self.previstas[i].map_or(f32::NEG_INFINITY, |(p, _)| p);
             key(b).total_cmp(&key(a))
         });
+        self.ranked = self.para_voce.iter().map_while(|&i| self.previstas[i].map(|(p, _)| p)).collect();
     }
 
     fn half_life(&self, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
@@ -292,6 +305,14 @@ impl Core {
     pub fn set_decay(&mut self, decay: Decay) {
         self.owner.settings.decay = decay;
         self.recompute();
+    }
+
+    pub fn set_display_mode(&mut self, mode: DisplayMode) {
+        self.owner.settings.display_mode = mode;
+    }
+
+    pub fn display_mode(&self) -> DisplayMode {
+        self.owner.settings.display_mode
     }
 
     pub fn decay(&self) -> DecayStatus {
@@ -332,14 +353,17 @@ impl Core {
         Ok(summary)
     }
 
-    /// Gives or changes the owner's nota; the previous one stays in the history.
-    pub fn rate(&mut self, tmdb_id: u32, nota: f32, at: i64) -> Result<(), Error> {
+    /// Gives or changes the owner's nota; the previous one stays in the history. Returns what
+    /// the app predicted for it, in the chosen display mode, to reveal now that it is given.
+    pub fn rate(&mut self, tmdb_id: u32, nota: f32, at: i64) -> Result<Option<Previsao>, Error> {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
-        self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None });
+        let card = self.movies.iter().position(|m| m.tmdb_id == tmdb_id).map(|i| self.card(i));
+        let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.previsao));
+        self.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
-        Ok(())
+        Ok(revealed)
     }
 
     fn add_nota(&mut self, tmdb_id: u32, entry: NotaEntry) {
@@ -409,6 +433,8 @@ impl Core {
             poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),
             nota_prevista: self.previstas[i].map(|(p, _)| p),
             confianca: self.previstas[i].map(|(_, c)| c),
+            previsao: self.previstas[i]
+                .and_then(|(p, c)| display::previsao(self.owner.settings.display_mode, p, c, &self.ranked)),
         }
     }
 }

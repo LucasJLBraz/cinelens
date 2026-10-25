@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, Decay, DecayStatus, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Core, Decay, DecayStatus, DisplayMode, ExplorarPage, Previsao, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -57,18 +57,31 @@ fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Option<MoviePage> {
     core.read().unwrap().movie(tmdb_id)
 }
 
+/// The movie page after the nota, and what the app had predicted for it (the reveal).
 #[tauri::command]
 fn rate(
     app: AppHandle,
     core: tauri::State<RwLock<Core>>,
     tmdb_id: u32,
     nota: f32,
-) -> Result<Option<MoviePage>, String> {
+) -> Result<(Option<MoviePage>, Option<Previsao>), String> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let mut core = core.write().unwrap();
-    core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;
+    let revealed = core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
-    Ok(core.movie(tmdb_id))
+    Ok((core.movie(tmdb_id), revealed))
+}
+
+#[tauri::command]
+fn display_mode(core: tauri::State<RwLock<Core>>) -> DisplayMode {
+    core.read().unwrap().display_mode()
+}
+
+#[tauri::command]
+fn set_display_mode(app: AppHandle, core: tauri::State<RwLock<Core>>, mode: DisplayMode) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.set_display_mode(mode);
+    save_owner(&app, &core)
 }
 
 #[tauri::command]
@@ -243,7 +256,9 @@ pub fn run() {
             movie,
             rate,
             decay,
-            set_decay
+            set_decay,
+            display_mode,
+            set_display_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
