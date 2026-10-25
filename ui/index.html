@@ -22,6 +22,21 @@
     #setup p { color: var(--muted); }
     progress { width: 100%; height: 6px; accent-color: var(--accent); }
     #retry { margin-top: 16px; padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .pill { padding: 8px 16px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; font-size: 13px; }
+    #import-result { margin: 0 16px; color: var(--muted); font-size: 13px; }
+    .movie { cursor: pointer; }
+    #filme { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    #filme .top { display: flex; gap: 16px; margin-top: 12px; }
+    #filme .poster { width: 120px; flex: none; }
+    #filme h1 { font-size: 20px; }
+    #filme .original { white-space: normal; margin-top: 4px; }
+    #filme .badge { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent); }
+    #notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
+    #notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
+    #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    #nota-history { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
+    #nota-history li { padding: 4px 0; }
     footer { position: sticky; bottom: 0; background: var(--bg); padding: 6px 16px max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); text-align: center; }
   </style>
 </head>
@@ -33,10 +48,28 @@
     <button id="retry" hidden>Tentar de novo</button>
   </section>
   <div id="explorar" hidden>
-    <header><h1>Explorar</h1></header>
+    <header>
+      <h1>Explorar</h1>
+      <button id="import" class="pill">Importar do MovieLens</button>
+      <input id="import-files" type="file" multiple hidden>
+    </header>
+    <p id="import-result" hidden></p>
     <main id="grid"></main>
     <button id="more" hidden>Mais filmes</button>
   </div>
+  <section id="filme" hidden>
+    <button id="back" class="pill">‹ Voltar</button>
+    <div class="top">
+      <div id="filme-poster"></div>
+      <div>
+        <h1 id="filme-title"></h1>
+        <div id="filme-original" class="original"></div>
+        <span id="filme-quero" class="badge" hidden>Quero assistir</span>
+      </div>
+    </div>
+    <div id="notas"></div>
+    <ul id="nota-history"></ul>
+  </section>
   <footer>Dados e imagens de filmes: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
     const { invoke, convertFileSrc } = window.__TAURI__.core;
@@ -52,9 +85,7 @@
       return el;
     }
 
-    function card(m) {
-      const el = document.createElement('article');
-      el.className = 'movie';
+    function posterOf(m) {
       let poster = placeholder(m);
       if (m.poster_url) {
         // Served from the on-device poster cache (see the `poster` protocol in src-tauri).
@@ -65,6 +96,14 @@
         poster.loading = 'lazy';
         poster.onerror = () => poster.replaceWith(placeholder(m));
       }
+      return poster;
+    }
+
+    function card(m) {
+      const el = document.createElement('article');
+      el.className = 'movie';
+      el.addEventListener('click', () => openMovie(m.tmdb_id));
+      const poster = posterOf(m);
       const title = document.createElement('div');
       title.className = 'title';
       title.textContent = m.title;
@@ -112,6 +151,72 @@
         stop();
       }
     }
+
+    const explorarEl = document.getElementById('explorar');
+    const filmeEl = document.getElementById('filme');
+    const notasEl = document.getElementById('notas');
+    const fmt = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1 });
+    for (let n = 0.5; n <= 5; n += 0.5) {
+      const b = document.createElement('button');
+      b.textContent = fmt(n);
+      b.dataset.nota = n;
+      notasEl.append(b);
+    }
+
+    function showMovie(m) {
+      filmeEl.dataset.id = m.tmdb_id;
+      document.getElementById('filme-poster').replaceChildren(posterOf(m));
+      document.getElementById('filme-title').textContent = m.title;
+      document.getElementById('filme-original').textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
+      document.getElementById('filme-quero').hidden = !m.quero_assistir;
+      for (const b of notasEl.children) b.classList.toggle('on', Number(b.dataset.nota) === m.nota);
+      // Previous notas only; MovieLens's prediction stays hidden so it never anchors the nota.
+      document.getElementById('nota-history').replaceChildren(...m.history.slice(0, -1).reverse().map(e => {
+        const li = document.createElement('li');
+        li.textContent = `Antes: ${fmt(e.nota)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
+        return li;
+      }));
+    }
+
+    async function openMovie(id) {
+      const m = await invoke('movie', { tmdbId: id });
+      if (!m) return;
+      showMovie(m);
+      explorarEl.hidden = true;
+      filmeEl.hidden = false;
+      window.scrollTo(0, 0);
+      // Lets Android's back gesture close the page.
+      history.pushState({ filme: id }, '');
+    }
+
+    window.addEventListener('popstate', () => {
+      filmeEl.hidden = true;
+      explorarEl.hidden = false;
+    });
+    document.getElementById('back').addEventListener('click', () => history.back());
+
+    notasEl.addEventListener('click', async e => {
+      const nota = Number(e.target.dataset.nota);
+      if (!nota) return;
+      const m = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
+      if (m) showMovie(m);
+    });
+
+    const importFiles = document.getElementById('import-files');
+    const importResult = document.getElementById('import-result');
+    document.getElementById('import').addEventListener('click', () => importFiles.click());
+    importFiles.addEventListener('change', async () => {
+      const files = await Promise.all([...importFiles.files].map(f => f.text()));
+      importFiles.value = '';
+      if (!files.length) return;
+      importResult.hidden = false;
+      try {
+        const s = await invoke('import_movielens', { files });
+        importResult.textContent = `Importadas ${s.notas} notas: ${s.matched} encontradas no catálogo, ${s.unmatched} não encontradas. ${s.quero_assistir} filmes em quero assistir.`;
+      } catch (e) {
+        importResult.textContent = `Não deu para importar (${e}). Escolha os arquivos de notas e de logs do export do MovieLens.`;
+      }
+    });
 
     function start() {
       document.getElementById('explorar').hidden = false;

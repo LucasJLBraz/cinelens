@@ -1,0 +1,5 @@
+movie_id,imdb_id,tmdb_id,rating,average_rating,title
+2959,0137523,550,4.5,4.22,Fight Club (1999)
+2571,0133093,603,5.0,4.15,"Matrix, The (1999)"
+296,0110912,680,4.0,4.19,Pulp Fiction (1994)
+1,0000001,999999,3.0,3.5,Not in the catálogo (2000)

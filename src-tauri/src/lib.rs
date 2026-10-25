@@ -1,12 +1,13 @@
-//! Thin Tauri adapters over the core facade: catálogo file and download, poster cache.
+//! Thin Tauri adapters over the core facade: catálogo file and download, owner data file,
+//! poster cache.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Core, ExplorarPage, CATALOG_FORMAT_VERSION};
+use cinelens_core::{Core, ExplorarPage, ImportSummary, MoviePage, CATALOG_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -19,6 +20,47 @@ fn catalog_url() -> String {
 
 fn catalog_file(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().expect("app data dir").join("catalog.json")
+}
+
+fn owner_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("owner.json")
+}
+
+fn save_owner(app: &AppHandle, core: &Core) -> Result<(), String> {
+    write_atomically(&owner_file(app), &core.owner_data()).map_err(|e| e.to_string())
+}
+
+/// `files` are the texts of the export files the owner picked, in any order.
+#[tauri::command]
+fn import_movielens(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    files: Vec<String>,
+) -> Result<ImportSummary, String> {
+    let mut core = core.write().unwrap();
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    let summary = core.import_movielens(&files).map_err(|e| e.to_string())?;
+    save_owner(&app, &core)?;
+    Ok(summary)
+}
+
+#[tauri::command]
+fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Option<MoviePage> {
+    core.read().unwrap().movie(tmdb_id)
+}
+
+#[tauri::command]
+fn rate(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    tmdb_id: u32,
+    nota: f32,
+) -> Result<Option<MoviePage>, String> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let mut core = core.write().unwrap();
+    core.rate(tmdb_id, nota, now).map_err(|e| e.to_string())?;
+    save_owner(&app, &core)?;
+    Ok(core.movie(tmdb_id))
 }
 
 #[tauri::command]
@@ -134,6 +176,12 @@ pub fn run() {
             if let Ok(json) = std::fs::read(catalog_file(app.handle())) {
                 let _ = core.load_catalog(&json);
             }
+            // Unlike the catálogo, owner data cannot be downloaded again: refuse to start over it.
+            match std::fs::read(owner_file(app.handle())) {
+                Ok(bytes) => core.load_owner_data(&bytes)?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
             app.manage(RwLock::new(core));
             Ok(())
         })
@@ -142,7 +190,14 @@ pub fn run() {
             let name = request.uri().path().trim_start_matches('/').to_string();
             tauri::async_runtime::spawn_blocking(move || responder.respond(poster(&app, &name)));
         })
-        .invoke_handler(tauri::generate_handler![explorar, catalog_status, download_catalog])
+        .invoke_handler(tauri::generate_handler![
+            explorar,
+            catalog_status,
+            download_catalog,
+            import_movielens,
+            movie,
+            rate
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
