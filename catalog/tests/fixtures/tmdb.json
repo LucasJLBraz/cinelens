@@ -1,0 +1,322 @@
+{
+ "/genre/movie/list?language=pt-BR": {
+  "genres": [
+   {
+    "id": 18,
+    "name": "Drama"
+   },
+   {
+    "id": 28,
+    "name": "Ação"
+   },
+   {
+    "id": 35,
+    "name": "Comédia"
+   },
+   {
+    "id": 878,
+    "name": "Ficção científica"
+   }
+  ]
+ },
+ "/trending/movie/week?language=pt-BR": {
+  "page": 1,
+  "total_pages": 1,
+  "total_results": 2,
+  "results": [
+   {
+    "id": 603
+   },
+   {
+    "id": 1311
+   }
+  ]
+ },
+ "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte=40&vote_count.gte=50&primary_release_date.gte=1999-01-01&primary_release_date.lte=1999-12-31&page=1": {
+  "page": 1,
+  "total_pages": 2,
+  "total_results": 1,
+  "results": [
+   {
+    "id": 550
+   }
+  ]
+ },
+ "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte=40&vote_count.gte=50&primary_release_date.gte=1999-01-01&primary_release_date.lte=1999-12-31&page=2": {
+  "page": 2,
+  "total_pages": 2,
+  "total_results": 1,
+  "results": [
+   {
+    "id": 603
+   }
+  ]
+ },
+ "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte=40&vote_count.gte=5&primary_release_date.gte=2026-04-28&primary_release_date.lte=2026-10-25&page=1": {
+  "page": 1,
+  "total_pages": 1,
+  "total_results": 1,
+  "results": [
+   {
+    "id": 1311
+   }
+  ]
+ },
+ "/movie/550?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+  "id": 550,
+  "imdb_id": "tt0000550",
+  "title": "Clube da Luta",
+  "original_title": "Fight Club",
+  "original_language": "en",
+  "release_date": "1999-10-15",
+  "runtime": 120,
+  "genres": [
+   {
+    "id": 18,
+    "name": "Drama"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "overview": "Sinopse de Clube da Luta.",
+  "poster_path": "/fc.jpg",
+  "backdrop_path": "/bdfc.jpg",
+  "vote_count": 30000,
+  "vote_average": 8.0,
+  "popularity": 50.0,
+  "credits": {
+   "cast": [
+    {
+     "id": 100,
+     "name": "Brad Pitt",
+     "order": 0
+    },
+    {
+     "id": 101,
+     "name": "Edward Norton",
+     "order": 1
+    }
+   ],
+   "crew": [
+    {
+     "id": 900,
+     "name": "David Fincher",
+     "job": "Director"
+    },
+    {
+     "id": 901,
+     "name": "Compositor Fight Club",
+     "job": "Original Music Composer"
+    },
+    {
+     "id": 902,
+     "name": "Roteirista",
+     "job": "Screenplay"
+    }
+   ]
+  },
+  "videos": {
+   "results": [
+    {
+     "key": "teaser550",
+     "site": "YouTube",
+     "type": "Teaser",
+     "iso_639_1": "pt"
+    },
+    {
+     "key": "en550",
+     "site": "YouTube",
+     "type": "Trailer",
+     "iso_639_1": "en"
+    },
+    {
+     "key": "pt550",
+     "site": "YouTube",
+     "type": "Trailer",
+     "iso_639_1": "pt"
+    }
+   ]
+  }
+ },
+ "/movie/603?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+  "id": 603,
+  "imdb_id": "tt0000603",
+  "title": "Matrix",
+  "original_title": "The Matrix",
+  "original_language": "en",
+  "release_date": "1999-03-30",
+  "runtime": 120,
+  "genres": [
+   {
+    "id": 28,
+    "name": "Ação"
+   },
+   {
+    "id": 878,
+    "name": "Ficção científica"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "overview": "Sinopse de Matrix.",
+  "poster_path": "/mx.jpg",
+  "backdrop_path": "/bdmx.jpg",
+  "vote_count": 26000,
+  "vote_average": 8.0,
+  "popularity": 50.0,
+  "credits": {
+   "cast": [
+    {
+     "id": 100,
+     "name": "Keanu Reeves",
+     "order": 0
+    }
+   ],
+   "crew": [
+    {
+     "id": 900,
+     "name": "Lana Wachowski",
+     "job": "Director"
+    },
+    {
+     "id": 901,
+     "name": "Compositor The Matrix",
+     "job": "Original Music Composer"
+    },
+    {
+     "id": 902,
+     "name": "Roteirista",
+     "job": "Screenplay"
+    }
+   ]
+  },
+  "videos": {
+   "results": [
+    {
+     "key": "en603",
+     "site": "YouTube",
+     "type": "Trailer",
+     "iso_639_1": "en"
+    }
+   ]
+  }
+ },
+ "/movie/13?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+  "id": 13,
+  "imdb_id": "tt0000013",
+  "title": "Forrest Gump: O Contador de Histórias",
+  "original_title": "Forrest Gump",
+  "original_language": "en",
+  "release_date": "1994-06-23",
+  "runtime": 120,
+  "genres": [
+   {
+    "id": 35,
+    "name": "Comédia"
+   },
+   {
+    "id": 18,
+    "name": "Drama"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "overview": "Sinopse de Forrest Gump: O Contador de Histórias.",
+  "poster_path": "/fg.jpg",
+  "backdrop_path": "/bdfg.jpg",
+  "vote_count": 28000,
+  "vote_average": 8.0,
+  "popularity": 50.0,
+  "credits": {
+   "cast": [
+    {
+     "id": 100,
+     "name": "Tom Hanks",
+     "order": 0
+    }
+   ],
+   "crew": [
+    {
+     "id": 900,
+     "name": "Robert Zemeckis",
+     "job": "Director"
+    },
+    {
+     "id": 901,
+     "name": "Compositor Forrest Gump",
+     "job": "Original Music Composer"
+    },
+    {
+     "id": 902,
+     "name": "Roteirista",
+     "job": "Screenplay"
+    }
+   ]
+  },
+  "videos": {
+   "results": []
+  }
+ },
+ "/movie/1311?language=pt-BR&append_to_response=credits,videos&include_video_language=pt,en": {
+  "id": 1311,
+  "imdb_id": "tt0001311",
+  "title": "Lançamento Recente",
+  "original_title": "Recent Release",
+  "original_language": "en",
+  "release_date": "2026-09-01",
+  "runtime": 120,
+  "genres": [
+   {
+    "id": 18,
+    "name": "Drama"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "overview": "Sinopse de Lançamento Recente.",
+  "poster_path": "/rr.jpg",
+  "backdrop_path": "/bdrr.jpg",
+  "vote_count": 12,
+  "vote_average": 8.0,
+  "popularity": 50.0,
+  "credits": {
+   "cast": [],
+   "crew": [
+    {
+     "id": 900,
+     "name": "Diretora Nova",
+     "job": "Director"
+    },
+    {
+     "id": 901,
+     "name": "Compositor Recent Release",
+     "job": "Original Music Composer"
+    },
+    {
+     "id": 902,
+     "name": "Roteirista",
+     "job": "Screenplay"
+    }
+   ]
+  },
+  "videos": {
+   "results": []
+  }
+ }
+}

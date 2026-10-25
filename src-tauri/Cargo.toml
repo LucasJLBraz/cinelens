@@ -13,3 +13,5 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 cinelens-core = { path = "../core" }
 tauri = { version = "2.12.5", features = [] }
+flate2 = "1"
+ureq = "3"

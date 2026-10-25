@@ -16,31 +16,61 @@
     .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .original { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #more { display: block; margin: 16px auto max(24px, env(safe-area-inset-bottom)); padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
-    #more[hidden] { display: none; }
+    [hidden] { display: none !important; }
+    .poster.missing { display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
+    #setup { padding: 32vh 32px 0; text-align: center; }
+    #setup p { color: var(--muted); }
+    progress { width: 100%; height: 6px; accent-color: var(--accent); }
+    #retry { margin-top: 16px; padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
+    footer { position: sticky; bottom: 0; background: var(--bg); padding: 6px 16px max(8px, env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); text-align: center; }
   </style>
 </head>
 <body>
-  <header><h1>Explorar</h1></header>
-  <main id="grid"></main>
-  <button id="more" hidden>Mais filmes</button>
+  <section id="setup" hidden>
+    <h1>Preparando o catálogo</h1>
+    <p id="setup-text">Baixando os filmes, só desta vez.</p>
+    <progress id="progress"></progress>
+    <button id="retry" hidden>Tentar de novo</button>
+  </section>
+  <div id="explorar" hidden>
+    <header><h1>Explorar</h1></header>
+    <main id="grid"></main>
+    <button id="more" hidden>Mais filmes</button>
+  </div>
+  <footer>Dados e imagens de filmes: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   <script>
-    const { invoke } = window.__TAURI__.core;
+    const { invoke, convertFileSrc } = window.__TAURI__.core;
+    const { listen } = window.__TAURI__.event;
     const grid = document.getElementById('grid');
     const more = document.getElementById('more');
     let page = 0;
 
+    function placeholder(m) {
+      const el = document.createElement('div');
+      el.className = 'poster missing';
+      el.textContent = m.title;
+      return el;
+    }
+
     function card(m) {
       const el = document.createElement('article');
       el.className = 'movie';
-      const poster = m.poster_url ? document.createElement('img') : document.createElement('div');
-      poster.className = 'poster';
-      if (m.poster_url) { poster.src = m.poster_url; poster.alt = m.title; poster.loading = 'lazy'; }
+      let poster = placeholder(m);
+      if (m.poster_url) {
+        // Served from the on-device poster cache (see the `poster` protocol in src-tauri).
+        poster = document.createElement('img');
+        poster.className = 'poster';
+        poster.src = convertFileSrc(m.poster_url.split('/').pop(), 'poster');
+        poster.alt = m.title;
+        poster.loading = 'lazy';
+        poster.onerror = () => poster.replaceWith(placeholder(m));
+      }
       const title = document.createElement('div');
       title.className = 'title';
       title.textContent = m.title;
       const original = document.createElement('div');
       original.className = 'original';
-      original.textContent = `${m.original_title} · ${m.year}`;
+      original.textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
       el.append(poster, title, original);
       return el;
     }
@@ -52,8 +82,45 @@
       page += 1;
     }
 
+    async function setup() {
+      const setupEl = document.getElementById('setup');
+      const text = document.getElementById('setup-text');
+      const progress = document.getElementById('progress');
+      const retry = document.getElementById('retry');
+      setupEl.hidden = false;
+      retry.hidden = true;
+      text.textContent = 'Baixando os filmes, só desta vez.';
+      progress.removeAttribute('value');
+      const stop = await listen('catalog-progress', ({ payload: [received, total] }) => {
+        const mb = (received / 1e6).toFixed(1);
+        if (total) {
+          progress.max = total;
+          progress.value = received;
+          text.textContent = `Baixando os filmes, só desta vez: ${mb} de ${(total / 1e6).toFixed(1)} MB`;
+        } else {
+          text.textContent = `Baixando os filmes, só desta vez: ${mb} MB`;
+        }
+      });
+      try {
+        await invoke('download_catalog');
+        setupEl.hidden = true;
+        start();
+      } catch (e) {
+        text.textContent = `Não deu para baixar o catálogo (${e}). Confira a internet.`;
+        retry.hidden = false;
+      } finally {
+        stop();
+      }
+    }
+
+    function start() {
+      document.getElementById('explorar').hidden = false;
+      load();
+    }
+
     more.addEventListener('click', load);
-    load();
+    document.getElementById('retry').addEventListener('click', setup);
+    invoke('catalog_status').then(version => version ? start() : setup());
   </script>
 </body>
 </html>

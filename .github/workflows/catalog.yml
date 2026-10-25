@@ -1,0 +1,57 @@
+name: Catalog
+
+# Builds the full catálogo from TMDB every day and publishes it as the asset
+# `catalog.json.gz` of the release `catalog-v<format version>`. See docs/guides/tmdb.md.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Every movie in the training data enters the catálogo. MovieLens ml-latest is frozen,
+      # so its TMDB ids are extracted once and kept in the cache.
+      - uses: actions/cache@v4
+        id: training-ids
+        with:
+          path: training-ids.txt
+          key: training-ids-ml-latest-v1
+      - name: Extract training data ids
+        if: steps.training-ids.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/ml-latest.zip" https://files.grouplens.org/datasets/movielens/ml-latest.zip
+          unzip -p "$RUNNER_TEMP/ml-latest.zip" ml-latest/links.csv | tail -n +2 | cut -d, -f3 > training-ids.txt
+
+      - name: Build catálogo
+        env:
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          test -n "$TMDB_TOKEN" || { echo "::error::TMDB_TOKEN secret missing, see docs/guides/tmdb.md"; exit 1; }
+          TODAY=$(date -u +%F)
+          echo "TODAY=$TODAY" >> "$GITHUB_ENV"
+          cargo run --release -p cinelens-catalog -- \
+            --out catalog.json.gz \
+            --today "$TODAY" \
+            --recent-since "$(date -u -d '-180 days' +%F)" \
+            --extra-ids training-ids.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          TAG="catalog-v$FORMAT"
+          NOTES="Catálogo completo, formato $FORMAT, dados de $TODAY. Baixado pelo app; não é uma versão do app."
+          # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Catálogo (formato $FORMAT)" --notes "$NOTES"
+          gh release upload "$TAG" catalog.json.gz --clobber
+          gh release edit "$TAG" --notes "$NOTES"

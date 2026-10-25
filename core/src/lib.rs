@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-const CATALOG_FORMAT_VERSION: u32 = 1;
+/// The catálogo artifact format this core reads; the catalog job writes the same.
+pub const CATALOG_FORMAT_VERSION: u32 = 1;
 const PAGE_SIZE: usize = 30;
 const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
 
@@ -24,6 +25,7 @@ impl std::error::Error for Error {}
 #[derive(Deserialize)]
 struct CatalogArtifact {
     format_version: u32,
+    data_version: String,
     movies: Vec<Movie>,
 }
 
@@ -32,7 +34,7 @@ struct Movie {
     tmdb_id: u32,
     title: String,
     original_title: String,
-    year: u16,
+    year: Option<u16>,
     poster_path: Option<String>,
 }
 
@@ -41,7 +43,7 @@ pub struct MovieCard {
     pub tmdb_id: u32,
     pub title: String,
     pub original_title: String,
-    pub year: u16,
+    pub year: Option<u16>,
     pub poster_url: Option<String>,
 }
 
@@ -51,12 +53,22 @@ pub struct ExplorarPage {
     pub has_more: bool,
 }
 
+/// A core with no catálogo yet (first run) is `Core::default()`.
+#[derive(Default)]
 pub struct Core {
+    data_version: Option<String>,
     movies: Vec<Movie>,
 }
 
 impl Core {
     pub fn open(catalog_artifact: &[u8]) -> Result<Core, Error> {
+        let mut core = Core::default();
+        core.load_catalog(catalog_artifact)?;
+        Ok(core)
+    }
+
+    /// Replaces the catálogo. On error the current one stays in place.
+    pub fn load_catalog(&mut self, catalog_artifact: &[u8]) -> Result<(), Error> {
         let artifact: CatalogArtifact = serde_json::from_slice(catalog_artifact)
             .map_err(|e| Error::InvalidArtifact(e.to_string()))?;
         if artifact.format_version != CATALOG_FORMAT_VERSION {
@@ -65,7 +77,13 @@ impl Core {
                 artifact.format_version
             )));
         }
-        Ok(Core { movies: artifact.movies })
+        self.data_version = Some(artifact.data_version);
+        self.movies = artifact.movies;
+        Ok(())
+    }
+
+    pub fn data_version(&self) -> Option<&str> {
+        self.data_version.as_deref()
     }
 
     pub fn explorar(&self, page: usize) -> ExplorarPage {
