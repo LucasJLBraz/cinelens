@@ -86,13 +86,13 @@ fn every_nota_given_on_either_device_stays_in_the_history() {
 fn settings_and_o_que_pesou_merge_per_item() {
     use cinelens_core::{Aspecto, DisplayMode};
     let (mut a, mut b, mut nuvem) = (device(), device(), Nuvem::default());
-    a.set_display_mode(DisplayMode::Estrelas, 100);
+    a.set_display_mode(DisplayMode::Oculto, 100);
     b.set_servicos(&[8], 200);
     b.set_pesou(603, &[Aspecto::Roteiro], 100);
     a.set_pesou(603, &[Aspecto::Fotografia], 200);
     sync_all(&mut a, &mut b, &mut nuvem);
     for core in [&a, &b] {
-        assert_eq!(core.display_mode(), DisplayMode::Estrelas);
+        assert_eq!(core.display_mode(), DisplayMode::Oculto);
         assert_eq!(core.servicos(), [8]);
         assert_eq!(core.movie(603).unwrap().pesou, [Aspecto::Fotografia]);
     }
@@ -113,11 +113,11 @@ fn the_first_sync_shares_the_owner_data_and_the_next_changes_nothing() {
 fn settings_chosen_before_sync_existed_survive_a_new_device() {
     let (mut a, mut b, mut nuvem) = (device(), device(), Nuvem::default());
     // Saved by an earlier version: no record of when it changed.
-    a.load_owner_data(br#"{"notas": {}, "quero_assistir": [], "settings": {"servicos": [8], "display_mode": "Estrelas"}}"#).unwrap();
+    a.load_owner_data(br#"{"notas": {}, "quero_assistir": [], "settings": {"servicos": [8], "display_mode": "Oculto"}}"#).unwrap();
     sync_all(&mut b, &mut a, &mut nuvem);
     b.sync(&mut nuvem).unwrap();
     for core in [&a, &b] {
         assert_eq!(core.servicos(), [8]);
-        assert_eq!(core.display_mode(), cinelens_core::DisplayMode::Estrelas);
+        assert_eq!(core.display_mode(), cinelens_core::DisplayMode::Oculto);
     }
 }

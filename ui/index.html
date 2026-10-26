@@ -69,7 +69,13 @@
     #filme-fundo img { display: block; width: calc(100% + 32px); margin: calc(-1 * max(16px, env(safe-area-inset-top))) -16px -48px; aspect-ratio: 16 / 9; object-fit: cover; mask-image: linear-gradient(#000 50%, transparent); }
     #filme-fundo:empty { height: 48px; }
     .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
-    #nota-prevista { margin-top: 8px; }
+    #nota-prevista { margin-top: var(--s2); }
+    /* Scores start hidden, like "ocultar patrimônio": a tap reveals one. */
+    #pontuacoes { flex-wrap: wrap; margin-top: var(--s4); }
+    #pontuacoes .pill { font-size: var(--t-meta); }
+    #pontuacoes .pill[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+    /* The rating panel never shows a prediction, so it cannot anchor the nota. */
+    #filme.dando-nota :is(#nota-prevista, #pontuacoes) { display: none; }
     #sinopse { margin: 16px 0 0; line-height: 1.5; }
     /* Carousels bleed to the screen edge, with the gutter kept inside on both ends. */
     .fileira { display: flex; gap: var(--s3); margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); }
@@ -290,12 +296,13 @@
         <div id="filme-original" class="original"></div>
         <div id="filme-meta" class="meta"></div>
         <div id="nota-prevista">
-          <div id="filme-exibicao" class="exibicao"></div>
+          <div id="filme-faixa"></div>
           <div id="porque" class="meta"></div>
         </div>
-        <div id="filme-notas" class="exibicao"></div>
+        <div id="sua-nota" class="exibicao"></div>
       </div>
     </div>
+    <div id="pontuacoes" class="chips"></div>
     <section id="onde" hidden>
       <h2>Onde assistir</h2>
       <div id="onde-lista"></div>
@@ -379,7 +386,6 @@
     <label for="display-mode">Mostrar previsão como</label>
     <select id="display-mode">
       <option value="Faixa">Faixa (Aposta forte, Boa chance…)</option>
-      <option value="Estrelas">Estrelas</option>
       <option value="Oculto">Oculto: só a ordem</option>
     </select>
     <label for="decay">Notas antigas pesam menos</label>
@@ -443,13 +449,6 @@
     }
 
     const decimal = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    // In the chosen mode; only the movie page shows the nota prevista whatever the mode.
-    function exibicaoText(p) {
-      if (!p) return '';
-      const confianca = `confiança ${Math.round(p.confianca * 100)}%`;
-      if (p.modo === 'Faixa') return `${p.faixa} · ${confianca}`;
-      return `★ ${decimal(p.nota)} (${decimal(p.meia_estrela)}) · ${confianca}`;
-    }
 
     // The faixa alone, colored by faixa; an empty line when there is none, so it keeps its place.
     function faixaEl(exibicao) {
@@ -696,7 +695,7 @@
       if (!nota) return;
       responderRodada(async m => {
         const [, revealed] = await invoke('rate', { tmdbId: m.tmdb_id, nota });
-        rodadaRevelacaoEl.textContent = revealed ? `${m.title}: o app achava ${exibicaoText(revealed)}` : '';
+        rodadaRevelacaoEl.textContent = revealed ? `${m.title}: o app achava ${revealed.faixa}` : '';
       });
     });
     rodadaNaoViEl.addEventListener('click', () => responderRodada(async m => {
@@ -771,15 +770,10 @@
       document.getElementById('filme-original').textContent = m.original_title;
       const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
-      // What to expect before rating. The nota prevista, always in stars here whatever the display
-      // mode, hides with #nota-prevista while rating; the owner's, public's and critics' notas stay.
-      const linhas = (id, notas) => document.getElementById(id).replaceChildren(...notas.filter(Boolean).map(t => Object.assign(document.createElement('div'), { textContent: t })));
-      linhas('filme-exibicao', [m.nota_prevista != null && `Nota prevista: ★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · confiança ${Math.round(m.confianca * 100)}%`]);
-      linhas('filme-notas', [
-        m.nota != null && `Sua nota: ${fmt(m.nota)}`,
-        m.publico != null && `Público (TMDB): ★ ${decimal(m.publico)}`,
-        m.critica != null && `Crítica (Metacritic ou Rotten Tomatoes): ${m.critica}/100`,
-      ]);
+      // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
+      document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
+      document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : '';
+      showPontuacoes(m);
       document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
       document.getElementById('onde').hidden = !onde;
@@ -818,6 +812,32 @@
       const trailer = document.getElementById('trailer');
       trailer.hidden = !m.trailer_youtube;
       trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
+    }
+
+    // Every score is a pill that starts hidden; a tap reveals that one, and only that one. The
+    // revealed ones are forgotten whenever a movie page opens, so numbers never anchor the owner.
+    const revelados = new Set();
+    const pontuacoesEl = document.getElementById('pontuacoes');
+    function showPontuacoes(m) {
+      const pontuacoes = [
+        ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · ${Math.round(m.confianca * 100)}%`],
+        ['publico', 'Público', m.publico != null && `★ ${decimal(m.publico)}`],
+        ['critica', 'Crítica', m.critica != null && `${m.critica}/100`],
+      ].filter(([, , valor]) => valor);
+      pontuacoesEl.replaceChildren(...pontuacoes.map(([chave, nome, valor]) => {
+        const b = Object.assign(document.createElement('button'), { className: 'pill' });
+        const mostrar = () => {
+          const on = revelados.has(chave);
+          b.textContent = `${nome} ${on ? valor : '•••'}`;
+          b.setAttribute('aria-pressed', on);
+        };
+        b.addEventListener('click', () => {
+          if (!revelados.delete(chave)) revelados.add(chave);
+          mostrar();
+        });
+        mostrar();
+        return b;
+      }));
     }
 
     // The page's own parecidos and those ver mais added, shown again when the "parecidos, mas…" chip is cleared.
@@ -873,13 +893,14 @@
       document.getElementById('painel-nota').hidden = true;
       document.getElementById('revelacao').hidden = true;
       pesouEl.hidden = true;
-      document.getElementById('nota-prevista').hidden = false;
+      filmeEl.classList.remove('dando-nota');
     }
 
     async function openMovie(id, push = true) {
       const m = await invoke('movie', { tmdbId: id });
       if (!m) return;
       closeRating();
+      revelados.clear();
       document.getElementById('nota-history').hidden = true;
       showMovie(m);
       tela(filmeEl);
@@ -939,7 +960,7 @@
       // The rating screen never shows the prediction, so it cannot anchor the nota.
       const painelNota = document.getElementById('painel-nota');
       painelNota.hidden = !painelNota.hidden;
-      document.getElementById('nota-prevista').hidden = !painelNota.hidden;
+      filmeEl.classList.toggle('dando-nota', !painelNota.hidden);
     });
     document.getElementById('ver-historico').addEventListener('click', () => {
       const historico = document.getElementById('nota-history');
@@ -1123,10 +1144,10 @@
       const [m, revealed] = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
       stale = true;
       if (m) showMovie(m);
-      document.getElementById('nota-prevista').hidden = false;
+      filmeEl.classList.remove('dando-nota');
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
-      if (revealed) revelacao.textContent = `O app achava: ${exibicaoText(revealed)}`;
+      if (revealed) revelacao.textContent = `O app achava: ${revealed.faixa}`;
       // Asked only once the nota is given, so it never slows the rating down.
       pesouEl.hidden = await invoke('pesou_oculto');
     });
@@ -1163,7 +1184,7 @@
       el.addEventListener('click', e => e.target.closest('.acoes') || openMovie(d.tmdb_id));
       const title = Object.assign(document.createElement('h2'), { textContent: d.title });
       const original = Object.assign(document.createElement('div'), { className: 'original', textContent: d.year ? `${d.original_title} · ${d.year}` : d.original_title });
-      const exibicao = Object.assign(document.createElement('div'), { className: 'exibicao', textContent: exibicaoText(d.exibicao) });
+      const exibicao = faixaEl(d.exibicao);
       const porque = Object.assign(document.createElement('div'), { className: 'meta', textContent: d.porque.length ? `Porque você amou ${d.porque.join(' e ')}` : '' });
       const acoes = document.createElement('div');
       acoes.className = 'acoes';

@@ -922,10 +922,9 @@ impl Core {
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, &self.ranked) == Faixa::ApostaForte);
             alta && novo(m) && !self.owner.notificados.contains_key(&m.tmdb_id)
         })?;
-        let (m, (prevista, _)) = (&self.movies[i], self.previstas[i]?);
+        let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {
             DisplayMode::Faixa => format!("Saiu {}, Aposta forte", m.title),
-            DisplayMode::Estrelas => format!("Saiu {}, nota prevista {}", m.title, format!("{prevista:.1}").replace('.', ",")),
             DisplayMode::Oculto => format!("Saiu {}", m.title),
         };
         Some(Notificacao { tmdb_id: m.tmdb_id, texto })

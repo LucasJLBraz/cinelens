@@ -76,14 +76,13 @@ fn not_for_a_release_the_owner_rated_or_saw() {
 }
 
 #[test]
-fn the_text_follows_the_display_mode() {
+fn the_text_follows_the_display_mode_with_no_number() {
     let texto = |mode: DisplayMode| {
         let mut core = core(40);
         core.set_display_mode(mode, HOJE);
         core.notificacao_devida(HOJE).unwrap().texto
     };
     assert_eq!(texto(DisplayMode::Faixa), "Saiu Um, Aposta forte");
-    assert_eq!(texto(DisplayMode::Estrelas), "Saiu Um, nota prevista 4,5");
     assert_eq!(texto(DisplayMode::Oculto), "Saiu Um");
 }
 

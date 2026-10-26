@@ -40,21 +40,6 @@ fn faixa_is_the_default_with_bands_from_the_owners_own_predictions() {
 }
 
 #[test]
-fn estrelas_shows_the_decimal_the_most_likely_half_star_and_the_confianca() {
-    let mut core = owner();
-    core.set_display_mode(DisplayMode::Estrelas, 0);
-
-    let card = core.movie(27205).unwrap().card;
-    let Some(Exibicao::Estrelas { nota, meia_estrela, confianca }) = card.exibicao else {
-        panic!("{:?}", card.exibicao);
-    };
-    assert_eq!(nota, card.nota_prevista.unwrap());
-    assert_eq!(meia_estrela, (nota * 2.0).round() / 2.0);
-    assert!((nota - meia_estrela).abs() <= 0.25);
-    assert_eq!(Some(confianca), card.confianca);
-}
-
-#[test]
 fn oculto_shows_nothing_but_keeps_the_order() {
     let mut core = owner();
     let order: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect();
@@ -103,11 +88,49 @@ fn no_reveal_when_hidden_or_without_a_prediction() {
 #[test]
 fn display_mode_survives_a_restart() {
     let mut core = owner();
-    core.set_display_mode(DisplayMode::Estrelas, 0);
+    core.set_display_mode(DisplayMode::Oculto, 0);
 
     let mut restarted = Core::open(CATALOG).unwrap();
     restarted.load_owner_data(&core.owner_data()).unwrap();
-    assert_eq!(restarted.display_mode(), DisplayMode::Estrelas);
+    assert_eq!(restarted.display_mode(), DisplayMode::Oculto);
+}
+
+/// Owner data saved before stars moved behind a tap on the movie page.
+fn with_estrelas(core: &Core) -> Vec<u8> {
+    let data = String::from_utf8(core.owner_data()).unwrap();
+    assert!(data.contains(r#""display_mode":"Oculto""#), "{data}");
+    data.replace(r#""display_mode":"Oculto""#, r#""display_mode":"Estrelas""#).into_bytes()
+}
+
+#[test]
+fn a_saved_estrelas_reads_as_faixa() {
+    let mut core = owner();
+    core.set_display_mode(DisplayMode::Oculto, 0);
+
+    let mut restarted = Core::open(CATALOG).unwrap();
+    restarted.load_owner_data(&with_estrelas(&core)).unwrap();
+    assert_eq!(restarted.display_mode(), DisplayMode::Faixa);
+}
+
+#[test]
+fn an_estrelas_arriving_through_sync_reads_as_faixa() {
+    struct Blob(Option<Vec<u8>>);
+    impl cinelens_core::SyncStorage for Blob {
+        fn get(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(self.0.clone())
+        }
+        fn put(&mut self, bytes: &[u8]) -> Result<(), String> {
+            self.0 = Some(bytes.to_vec());
+            Ok(())
+        }
+    }
+    let mut old_phone = owner();
+    old_phone.set_display_mode(DisplayMode::Oculto, 50);
+    let mut drive = Blob(Some(with_estrelas(&old_phone)));
+
+    let mut tablet = owner();
+    tablet.sync(&mut drive).unwrap();
+    assert_eq!(tablet.display_mode(), DisplayMode::Faixa);
 }
 
 #[test]

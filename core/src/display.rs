@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum DisplayMode {
-    /// The decimal, the most likely half star and the confiança.
-    Estrelas,
-    /// A band relative to the owner's own predictions.
+    /// A band relative to the owner's own predictions. Stars live only behind a tap on the movie
+    /// page, so a saved "Estrelas" reads as Faixa.
     #[default]
+    #[serde(alias = "Estrelas")]
     Faixa,
-    /// Nothing but the order (the movie page still shows the nota prevista).
+    /// Nothing but the order (the movie page still shows the nota prevista, behind a tap).
     Oculto,
 }
 
@@ -30,7 +30,6 @@ pub enum Faixa {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "modo")]
 pub enum Exibicao {
-    Estrelas { nota: f32, meia_estrela: f32, confianca: f32 },
     Faixa { faixa: Faixa, confianca: f32 },
 }
 
@@ -43,9 +42,6 @@ const BANDS: [(f32, Faixa); 3] = [(0.10, Faixa::ApostaForte), (0.35, Faixa::BoaC
 pub(crate) fn exibicao(mode: DisplayMode, nota: f32, confianca: f32, ranked: &[f32]) -> Option<Exibicao> {
     match mode {
         DisplayMode::Oculto => None,
-        DisplayMode::Estrelas => {
-            Some(Exibicao::Estrelas { nota, meia_estrela: (nota * 2.0).round() / 2.0, confianca })
-        }
         DisplayMode::Faixa => Some(Exibicao::Faixa { faixa: faixa(nota, ranked), confianca }),
     }
 }
