@@ -52,6 +52,9 @@ const PESOU_TOP: f32 = 0.35;
 const DESTAQUES: usize = 5;
 /// Movies in each Início row.
 const FILEIRA: usize = 12;
+/// The top recomendações an Início refresh draws its destaques and each row from: Explorar's
+/// first page.
+const SORTEIO: usize = PAGE_SIZE;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
 /// A new model must predict the owner's notas within this MAE to replace the current one.
@@ -840,16 +843,23 @@ impl Core {
         self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
     }
 
-    /// Início: the destaques to swipe through and a row per lista pronta; `at` is now (Unix seconds).
-    pub fn inicio(&self, at: i64) -> Inicio {
-        let destaques = self.destaques(at, DESTAQUES).map(|i| Destaque {
+    /// Início: the destaques to swipe through and a row per lista pronta; `at` is now (Unix
+    /// seconds). `sorteio` 0 shows the best of each; any other draws others from the top
+    /// `SORTEIO`, so a refresh shows different movies that are still good bets.
+    pub fn inicio(&self, at: i64, sorteio: u64) -> Inicio {
+        let tmdb_id = |&i: &usize| self.movies[i].tmdb_id;
+        let destaques = sortear(self.destaques(at, SORTEIO).collect(), DESTAQUES, sorteio, tmdb_id);
+        let destaques = destaques.into_iter().map(|i| Destaque {
             card: self.card(i),
             porque: self.porque(i),
             quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].tmdb_id),
         });
         let fileiras = listas::listas(at, self.tem_critica).into_iter().map(|(nome, filtro)| {
             let mut movies = self.explorar(&filtro, 0).movies;
-            movies.truncate(FILEIRA);
+            // Only recomendações are drawn: past them, Explorar lists the rest in catálogo order.
+            let recomendacoes = movies.iter().take_while(|m| m.nota_prevista.is_some()).count();
+            movies.truncate(recomendacoes.max(FILEIRA));
+            let movies = sortear(movies, FILEIRA, sorteio, |m| m.tmdb_id);
             Fileira { nome: nome.to_string(), filtro, movies }
         });
         Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
@@ -1219,4 +1229,24 @@ impl Core {
                 .and_then(|(p, c)| display::exibicao(self.owner.settings.display_mode, p, c, &self.ranked)),
         }
     }
+}
+
+/// `n` of `pool`, in pool order: the first `n` for `sorteio` 0, else those whose tmdb_id
+/// hashes lowest with it, so a movie leaving the pool frees only its own place.
+fn sortear<T>(pool: Vec<T>, n: usize, sorteio: u64, tmdb_id: impl Fn(&T) -> u32) -> Vec<T> {
+    if sorteio == 0 || pool.len() <= n {
+        return pool.into_iter().take(n).collect();
+    }
+    // SplitMix64's finalizer.
+    let hash = |x: &T| {
+        let mut z = (sorteio ^ u64::from(tmdb_id(x))).wrapping_add(0x9e37_79b9_7f4a_7c15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    };
+    let mut drawn: Vec<(u64, usize)> = pool.iter().map(hash).zip(0..).collect();
+    drawn.sort_unstable();
+    let mut keep = vec![false; pool.len()];
+    drawn.iter().take(n).for_each(|&(_, i)| keep[i] = true);
+    pool.into_iter().zip(keep).filter_map(|(x, keep)| keep.then_some(x)).collect()
 }

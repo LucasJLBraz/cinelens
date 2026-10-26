@@ -1,6 +1,6 @@
 //! Início: the destaque, and the listas prontas its rows and chips open in Explorar.
 
-use cinelens_core::{Core, Marca};
+use cinelens_core::{Core, Filtro, Marca};
 
 /// Genres: 12 Aventura, 35 Comédia, 10751 Família, 18 Drama, 878 Ficção científica.
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "trending": [8, 6],
@@ -43,7 +43,7 @@ fn core() -> Core {
 
 /// The movies of Início's row for the lista `nome`.
 fn fileira(core: &Core, nome: &str) -> Vec<u32> {
-    let inicio = core.inicio(NOW);
+    let inicio = core.inicio(NOW, 0);
     let fileira = inicio.fileiras.iter().find(|f| f.nome == nome).unwrap_or_else(|| panic!("no row {nome}"));
     fileira.movies.iter().map(|m| m.tmdb_id).collect()
 }
@@ -51,7 +51,7 @@ fn fileira(core: &Core, nome: &str) -> Vec<u32> {
 #[test]
 fn every_row_is_explorar_with_its_listas_filtro() {
     let core = core();
-    let inicio = core.inicio(NOW);
+    let inicio = core.inicio(NOW, 0);
     let nomes: Vec<&str> = inicio.fileiras.iter().map(|f| f.nome.as_str()).collect();
     assert_eq!(
         nomes,
@@ -88,11 +88,11 @@ fn cabe_numa_noite_is_under_1h40() {
 fn lancamentos_are_the_last_six_months_with_a_high_nota_prevista() {
     let core = core();
     assert_eq!(fileira(&core, "Lançamentos para você"), [7]);
-    let inicio = core.inicio(NOW);
+    let inicio = core.inicio(NOW, 0);
     let filtro = &inicio.fileiras.iter().find(|f| f.nome == "Lançamentos para você").unwrap().filtro;
     assert_eq!(filtro.lancado_desde.as_deref(), Some("2026-04-26"));
     // Out of the window once six months have passed.
-    let later = core.inicio(NOW + 200 * DAY);
+    let later = core.inicio(NOW + 200 * DAY, 0);
     assert!(later.fileiras.iter().find(|f| f.nome == "Lançamentos para você").unwrap().movies.is_empty());
 }
 
@@ -127,7 +127,7 @@ fn para_rever_lists_ja_vi_movies_with_a_high_nota_prevista() {
 #[test]
 fn the_destaque_swipes_through_the_top_recomendacoes_not_set_aside() {
     let mut core = core();
-    let ids = |core: &Core| core.inicio(NOW).destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    let ids = |core: &Core| core.inicio(NOW, 0).destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
     assert_eq!(ids(&core), [6, 7, 2, 1, 3]);
 
     core.marcar(7, Marca::AgoraNao, true, NOW);
@@ -164,7 +164,83 @@ fn aclamados_pela_critica_use_critic_scores_and_the_public_where_critics_are_mis
 fn without_any_critic_scores_the_list_is_aclamados_pelo_publico() {
     let mut core = Core::open(CATALOG.replace("critic_score", "unknown").as_bytes()).unwrap();
     core.load_model(MODEL.as_bytes()).unwrap();
-    let nomes: Vec<String> = core.inicio(NOW).fileiras.into_iter().map(|f| f.nome).collect();
+    let nomes: Vec<String> = core.inicio(NOW, 0).fileiras.into_iter().map(|f| f.nome).collect();
     assert!(!nomes.iter().any(|n| n == "Aclamados pela crítica"));
     assert_eq!(fileira(&core, "Aclamados pelo público"), [4]);
+}
+
+/// 300 comedies that pass every lista but Para rever, each predicted below the one before.
+fn many_good_bets() -> Core {
+    let movies: Vec<String> = (1..=300)
+        .map(|id| format!(r#"{{"tmdb_id": {id}, "title": "Filme {id}", "original_title": "F", "year": 2000, "release_date": "2000-06-01", "runtime": 90, "genre_ids": [35], "vote_count": 5000, "vote_average": 8.0, "critic_score": 90, "poster_path": null}}"#))
+        .collect();
+    let factors: Vec<String> = (1..=300)
+        .map(|id| format!(r#"{{"tmdb_id": {id}, "bias": {}, "factors": [0.0], "ratings": 50000}}"#, 1.0 - id as f32 * 0.003))
+        .collect();
+    let catalog = format!(r#"{{"format_version": 1, "data_version": "t", "movies": [{}]}}"#, movies.join(","));
+    let model = format!(
+        r#"{{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [], "movies": [{}]}}"#,
+        factors.join(",")
+    );
+    let mut core = Core::open(catalog.as_bytes()).unwrap();
+    core.load_model(model.as_bytes()).unwrap();
+    core
+}
+
+#[test]
+fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
+    let core = many_good_bets();
+    // The owner's top 100 recomendações among a lista's movies.
+    let top = |filtro: &Filtro| -> Vec<u32> {
+        (0..4).flat_map(|page| core.explorar(filtro, page).movies).take(100).map(|m| m.tmdb_id).collect()
+    };
+    let (first, second) = (core.inicio(NOW, 1), core.inicio(NOW, 2));
+
+    let destaques = |inicio: &cinelens_core::Inicio| inicio.destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    assert_ne!(destaques(&first), destaques(&second));
+    let fileira = |inicio: &cinelens_core::Inicio| {
+        let f = inicio.fileiras.iter().find(|f| f.nome == "Cabe numa noite").unwrap();
+        f.movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>()
+    };
+    assert_ne!(fileira(&first), fileira(&second));
+
+    for inicio in [&first, &second] {
+        let best = top(&Filtro::default());
+        assert!(destaques(inicio).iter().all(|id| best.contains(id)), "{:?}", destaques(inicio));
+        for f in &inicio.fileiras {
+            let best = top(&f.filtro);
+            assert!(f.movies.iter().all(|m| best.contains(&m.tmdb_id)), "{}", f.nome);
+        }
+    }
+}
+
+#[test]
+fn setting_a_drawn_destaque_aside_replaces_only_it() {
+    let mut core = many_good_bets();
+    let destaques = |core: &Core| core.inicio(NOW, 7).destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    let before = destaques(&core);
+
+    core.marcar(before[1], Marca::AgoraNao, true, NOW);
+    let after = destaques(&core);
+    assert_eq!(after.iter().filter(|id| before.contains(id)).count(), before.len() - 1, "{before:?} → {after:?}");
+}
+
+#[test]
+fn a_draw_never_trades_recomendacoes_for_movies_without_a_nota_prevista() {
+    // Only the first 20 in the model: Explorar's first page ends with 10 unranked movies.
+    let mut core = many_good_bets();
+    let factors: Vec<String> = (1..=20)
+        .map(|id| format!(r#"{{"tmdb_id": {id}, "bias": {}, "factors": [0.0], "ratings": 50000}}"#, 1.0 - id as f32 * 0.003))
+        .collect();
+    let model = format!(
+        r#"{{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [], "movies": [{}]}}"#,
+        factors.join(",")
+    );
+    core.load_model(model.as_bytes()).unwrap();
+
+    for sorteio in 1..20 {
+        let inicio = core.inicio(NOW, sorteio);
+        let f = inicio.fileiras.iter().find(|f| f.nome == "Cabe numa noite").unwrap();
+        assert!(f.movies.iter().all(|m| m.nota_prevista.is_some()), "sorteio {sorteio}");
+    }
 }

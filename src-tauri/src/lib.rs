@@ -334,8 +334,8 @@ fn explorar(core: tauri::State<RwLock<Core>>, filtro: Filtro, page: usize) -> Ex
 }
 
 #[tauri::command]
-fn inicio(core: tauri::State<RwLock<Core>>) -> Inicio {
-    core.read().unwrap().inicio(now())
+fn inicio(core: tauri::State<RwLock<Core>>, sorteio: u64) -> Inicio {
+    core.read().unwrap().inicio(now(), sorteio)
 }
 
 #[tauri::command]

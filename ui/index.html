@@ -235,7 +235,7 @@
     </div>
   </section>
   <section id="inicio" hidden>
-    <header><h1>Início</h1></header>
+    <header><h1>Início</h1><button id="outras" class="link">Outras sugestões</button></header>
     <div id="destaques"></div>
     <div id="atalhos" class="linha"></div>
     <div id="fileiras"></div>
@@ -1268,8 +1268,14 @@
       abrirAba('explorar');
     }
 
+    // 0 shows the best recomendações; "Outras sugestões" draws other good bets.
+    let sorteio = 0;
+    document.getElementById('outras').addEventListener('click', () => {
+      sorteio = 1 + Math.floor(Math.random() * 2 ** 32);
+      loadInicio();
+    });
     async function loadInicio() {
-      const inicio = await invoke('inicio');
+      const inicio = await invoke('inicio', { sorteio });
       destaquesEl.replaceChildren(...inicio.destaques.map(destaque));
       const fileiras = inicio.fileiras.filter(f => f.movies.length);
       document.getElementById('atalhos').replaceChildren(...fileiras.map(f =>

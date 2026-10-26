@@ -57,7 +57,7 @@ fn main() {
     });
 
     failed |= !budget("início: destaques and every row", Duration::from_millis(100), || {
-        assert!(!core.inicio(0).destaques.is_empty());
+        assert!(!core.inicio(0, 0).destaques.is_empty());
     });
 
     failed |= !budget("rodada: next movies after a nota", Duration::from_millis(100), || {

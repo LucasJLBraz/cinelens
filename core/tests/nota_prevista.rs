@@ -122,5 +122,5 @@ fn a_low_confianca_five_ranks_below_a_high_confianca_four_point_six() {
 
     assert_eq!(top.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), [27205, 603]);
     assert_eq!(top[1].nota_prevista, Some(5.0), "the shown nota prevista stays raw");
-    assert!(core.inicio(0).destaques.first().is_some_and(|d| d.card.tmdb_id == 27205));
+    assert!(core.inicio(0, 0).destaques.first().is_some_and(|d| d.card.tmdb_id == 27205));
 }
