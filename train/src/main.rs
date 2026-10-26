@@ -1,10 +1,11 @@
 //! `cinelens-train --ratings ratings.csv --links links.csv --out model.json.gz --data-version YYYY-MM-DD
-//!  [--catalog catalog.json.gz [--letterboxd letterboxd_interactions.csv]]
+//!  [--catalog catalog.json.gz [--letterboxd letterboxd_interactions.csv --letterboxd-slugs slugs.csv]]
 //!  [--genome-tags genome-tags.csv --genome-scores genome-scores.csv]`
 //!
-//! Reads MovieLens `ml-latest` (and the Letterboxd sample, joined through the catálogo's IMDb
-//! ids) and writes the gzipped model artifact. The catálogo also gives the content mapping; the
-//! tag genome gives the subset "parecidos, mas…" and o que pesou read.
+//! Reads MovieLens `ml-latest` (and the Letterboxd sample, joined through Wikidata's slug → TMDB
+//! id CSV, or else the catálogo's titles and years) and writes the gzipped model artifact. The
+//! catálogo also gives the content mapping; the tag genome gives the subset "parecidos, mas…"
+//! and o que pesou read.
 
 use std::fs::File;
 use std::io::{BufReader, Write};
@@ -34,7 +35,8 @@ fn run() -> Result<(), String> {
             let catalog = catalog.as_deref().ok_or("--letterboxd needs --catalog")?;
             Some(cinelens_train::Letterboxd {
                 interactions: Box::new(open(path)?),
-                imdb_to_tmdb: cinelens_train::catalog_imdb_ids(catalog)?,
+                slugs: cinelens_train::read_slugs(open(required("--letterboxd-slugs")?)?)?,
+                titles: cinelens_train::catalog_titles(catalog)?,
             })
         }
     };

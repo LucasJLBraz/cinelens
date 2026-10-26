@@ -2,7 +2,7 @@
 //! and predicts with.
 
 use cinelens_core::{content_features, Core, Direcao, Filtro};
-use cinelens_train::{add_genome, catalog_imdb_ids, train, Letterboxd};
+use cinelens_train::{add_genome, catalog_titles, read_slugs, train, Letterboxd};
 
 /// MovieLens ids 1–4 are sci-fi, 5–8 drama; 30 users, half loving each side and disliking the
 /// other. Movie 9 has too few ratings to be published; movie 10 has no TMDB id.
@@ -33,15 +33,16 @@ const LINKS: &str = "movieId,imdbId,tmdbId\n\
     9,0000009,109\n10,0000010,\n";
 
 /// TMDB ids 101–110 are the MovieLens movies; 111 and 112 are 2025 releases only Letterboxd has;
-/// 113 (sci-fi) and 114 (drama) are 2026 releases nobody rated yet. Sci-fi is genre 878 by
-/// director 900, drama genre 18 by director 901.
+/// 113 (sci-fi) and 114 (drama) are 2026 releases nobody rated yet, which share an original
+/// title. Sci-fi is genre 878 by director 900, drama genre 18 by director 901.
 fn catalog() -> Vec<u8> {
     let movies: Vec<String> = (101..=114)
         .map(|id| {
             let sci_fi = matches!(id, 101..=104 | 111 | 112 | 113);
             let (genre, director) = if sci_fi { (878, 900) } else { (18, 901) };
+            let original = if id >= 113 { "Twin".to_string() } else { format!("Movie {id}") };
             format!(
-                r#"{{"tmdb_id":{id},"title":"Filme {id}","original_title":"Movie {id}","year":2000,"poster_path":null,"imdb_id":"tt{:07}","genre_ids":[{genre}],"directors":[{{"id":{director},"name":"X"}}],"cast":[],"original_language":"en"}}"#,
+                r#"{{"tmdb_id":{id},"title":"Filme {id}","original_title":"{original}","year":2000,"poster_path":null,"imdb_id":"tt{:07}","genre_ids":[{genre}],"directors":[{{"id":{director},"name":"X"}}],"cast":[],"original_language":"en"}}"#,
                 id + 8_999_900
             )
         })
@@ -101,31 +102,37 @@ fn malformed_ratings_fail_the_job() {
 }
 
 /// 20 Letterboxd users, rating about half a star lower than MovieLens users, with the same two
-/// tastes over the MovieLens movies (joined through `links.csv`) and two releases MovieLens
-/// lacks: tt9000011 (sci-fi, matched with confidence) and tt9000012, matched with low confidence
-/// only. Every user also logged a movie without rating it.
+/// tastes over the MovieLens movies and three releases MovieLens lacks, all sci-fi. The MovieLens
+/// movies and 111 join through their Wikidata slugs (`SLUGS`); 112 through its title and year
+/// alone; "Twin" matches two catálogo movies, so it joins neither. Every user also logged a
+/// movie without rating it. Years are floats, as in the published sample.
 fn letterboxd_csv() -> String {
-    let mut csv = String::from("user_id,film_slug,film_name,film_year,rating,liked,tconst,match_rule,confidence\n");
+    let mut csv = String::from("username,film_slug,lb_film_id,film_name,film_year,rating,liked\n");
     for user in 1..=20u32 {
         let likes_sci_fi = user % 2 == 0;
-        let row = |tconst: &str, rating: f32, confidence: f32| {
-            format!("u_{user:05},slug,\"Name, with comma\",2025,{rating},false,{tconst},R1,{confidence}\n")
-        };
+        let row = |slug: &str, name: &str, rating: f32| format!("user{user},{slug},1,\"{name}\",2000.0,{rating},False\n");
         for movie in 1..=8u32 {
             let rating = if likes_sci_fi == (movie <= 4) { 4.5 } else { 1.0 };
-            csv += &row(&format!("tt{movie:07}"), rating, 1.0);
+            csv += &row(&format!("lb-{}", 100 + movie), "Unrelated, name", rating);
         }
-        csv += &row("tt9000011", if likes_sci_fi { 4.5 } else { 1.0 }, 0.95);
-        csv += &row("tt9000012", if likes_sci_fi { 4.5 } else { 1.0 }, 0.3);
-        csv += &format!("u_{user:05},seen,Seen,2025,,true,tt0000003,R1,1.0\n");
+        let sci_fi = if likes_sci_fi { 4.5 } else { 1.0 };
+        csv += &row("lb-111", "Unrelated, name", sci_fi);
+        csv += &row("not-in-wikidata", "MOVIE: 112!", sci_fi);
+        csv += &row("twin", "Twin", sci_fi);
+        csv += &format!("user{user},lb-103,1,Seen,2000,,true\n");
     }
     csv
 }
 
+/// Letterboxd slug → TMDB id, as the Model workflow fetches it from Wikidata.
+const SLUGS: &str = "slug,tmdb\nlb-101,101\nlb-102,102\nlb-103,103\nlb-104,104\n\
+    lb-105,105\nlb-106,106\nlb-107,107\nlb-108,108\nlb-111,111\nbroken,http://www.wikidata.org/x\n";
+
 fn with_letterboxd() -> Core {
     let letterboxd = Letterboxd {
         interactions: Box::new(std::io::Cursor::new(letterboxd_csv())),
-        imdb_to_tmdb: catalog_imdb_ids(&catalog()).unwrap(),
+        slugs: read_slugs(SLUGS.as_bytes()).unwrap(),
+        titles: catalog_titles(&catalog()).unwrap(),
     };
     let model = train(ratings_csv().as_bytes(), LINKS.as_bytes(), Some(letterboxd), &[], "2026-10-25").unwrap();
     let mut core = Core::open(&catalog()).unwrap();
@@ -134,7 +141,7 @@ fn with_letterboxd() -> Core {
 }
 
 #[test]
-fn letterboxd_brings_releases_movielens_lacks() {
+fn letterboxd_joins_through_the_wikidata_slugs() {
     let mut core = with_letterboxd();
     core.rate(101, 5.0, 100).unwrap();
     core.rate(105, 1.0, 100).unwrap();
@@ -144,10 +151,14 @@ fn letterboxd_brings_releases_movielens_lacks() {
 }
 
 #[test]
-fn letterboxd_matches_with_low_confidence_are_left_out() {
-    let core = with_letterboxd();
-    assert!(core.movie(111).unwrap().card.nota_prevista.is_some());
-    assert_eq!(core.movie(112).unwrap().card.nota_prevista, None);
+fn letterboxd_joins_through_title_and_year_only_when_one_movie_matches() {
+    let mut core = with_letterboxd();
+    core.rate(101, 5.0, 100).unwrap();
+    core.rate(105, 1.0, 100).unwrap();
+
+    assert!(core.movie(112).unwrap().card.nota_prevista.unwrap() > core.movie(106).unwrap().card.nota_prevista.unwrap() + 1.0);
+    assert_eq!(core.movie(113).unwrap().card.nota_prevista, None);
+    assert_eq!(core.movie(114).unwrap().card.nota_prevista, None);
 }
 
 #[test]
@@ -166,8 +177,12 @@ fn letterboxd_users_are_trained_alongside_movielens_users() {
 
 #[test]
 fn malformed_letterboxd_fails_the_job() {
-    let bad = "user_id,film_slug,film_name,film_year,rating,liked,tconst,match_rule,confidence\nu_00001,s,n,2025,abc,false,tt0000001,R1,1.0\n";
-    let letterboxd = Letterboxd { interactions: Box::new(bad.as_bytes()), imdb_to_tmdb: Default::default() };
+    let bad = "username,film_slug,lb_film_id,film_name,film_year,rating,liked\nu,lb-101,1,n,2000,abc,false\n";
+    let letterboxd = Letterboxd {
+        interactions: Box::new(bad.as_bytes()),
+        slugs: read_slugs(SLUGS.as_bytes()).unwrap(),
+        titles: Default::default(),
+    };
     assert!(train(ratings_csv().as_bytes(), LINKS.as_bytes(), Some(letterboxd), &[], "x").is_err());
 }
 

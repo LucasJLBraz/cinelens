@@ -5,7 +5,8 @@
 //! the user's own mean), so the movie factors are trained against the fold-in the app runs.
 //! Letterboxd users also get a bias term against MovieLens's: the owner is folded in like a
 //! MovieLens user, so a shift particular to the Letterboxd population must not leak into the
-//! movie biases the app uses.
+//! movie biases the app uses. Letterboxd movies are joined to TMDB ids through their Wikidata
+//! slugs, or else through a unique title and year in the catálogo (ADR 0002).
 //!
 //! The content mapping (feature → bias and factors) is learned from the published movies'
 //! factors, for the movies the training data lacks.
@@ -24,10 +25,6 @@ const ITERATIONS: usize = 10;
 const LAMBDA: f32 = 0.05;
 /// Movies with fewer ratings are left out of the artifact: their factors are mostly noise.
 const MIN_RATINGS: usize = 10;
-/// Letterboxd rows whose IMDb match is less certain are left out (`confidence` is the share of
-/// IMDb votes the matched title holds among the candidates).
-// ponytail: one fixed cut; tune it with cinelens-accuracy if many recent movies fall below it.
-const MIN_MATCH_CONFIDENCE: f32 = 0.9;
 /// Content features on fewer published movies are left out.
 const MIN_CONTENT_MOVIES: usize = 3;
 /// A feature's factors are the sum over its movies divided by their count plus this, so rare
@@ -77,16 +74,58 @@ struct ContentFactors {
     factors: Vec<f32>,
 }
 
-/// The Letterboxd sample's `letterboxd_interactions.csv`, with the IMDb → TMDB ids that join
-/// its movies to the rest (`catalog_imdb_ids`); MovieLens's `links.csv` is used as well.
+/// The Letterboxd sample's `letterboxd_interactions.csv`, with what joins its movies to TMDB ids.
 pub struct Letterboxd<'a> {
     pub interactions: Box<dyn BufRead + 'a>,
-    /// Numeric IMDb id (`tt0068646` → 68646) → TMDB id.
-    pub imdb_to_tmdb: HashMap<u32, u32>,
+    /// Letterboxd film slug → TMDB id (`read_slugs`).
+    pub slugs: HashMap<String, u32>,
+    /// The fallback for slugs Wikidata lacks (`catalog_titles`).
+    pub titles: Titles,
 }
 
-/// IMDb → TMDB ids of a catálogo artifact, which covers the releases MovieLens lacks.
-pub fn catalog_imdb_ids(catalog_artifact: &[u8]) -> Result<HashMap<u32, u32>, String> {
+/// Wikidata's `slug,tmdb` CSV (Letterboxd film ID P6127, TMDB movie ID P4947). Rows whose TMDB
+/// id is not a number are skipped, and so are slugs Wikidata gives more than one TMDB id.
+pub fn read_slugs(input: impl BufRead) -> Result<HashMap<String, u32>, String> {
+    let mut slugs: HashMap<String, Option<u32>> = HashMap::new();
+    for line in input.lines().skip(1) {
+        let line = line.map_err(|e| e.to_string())?;
+        let Some((slug, tmdb)) = line.trim_end().split_once(',') else { continue };
+        let Ok(tmdb) = tmdb.parse::<u32>() else { continue };
+        slugs.entry(slug.to_string()).and_modify(|t| if *t != Some(tmdb) { *t = None }).or_insert(Some(tmdb));
+    }
+    Ok(slugs.into_iter().filter_map(|(slug, tmdb)| Some((slug, tmdb?))).collect())
+}
+
+/// Normalized title and year → the catálogo movies that have them.
+type TitleIndex = HashMap<(String, u16), Vec<u32>>;
+
+/// The catálogo's movies by normalized title and year: original titles first, then the titles.
+#[derive(Default)]
+pub struct Titles {
+    original: TitleIndex,
+    title: TitleIndex,
+}
+
+impl Titles {
+    /// The one catálogo movie with this title and year; `None` when none or several match.
+    // ponytail: the year must match exactly, though Letterboxd and TMDB years sometimes differ by
+    // one; try year ± 1 if the logged title-and-year share is low.
+    fn find(&self, name: &str, year: u16) -> Option<u32> {
+        let key = (normalize(name), year);
+        if key.0.is_empty() {
+            return None;
+        }
+        // `Some(None)`: several movies match, so the next index is not tried.
+        let unique = |index: &TitleIndex| match index.get(&key).map(Vec::as_slice) {
+            Some(&[id]) => Some(Some(id)),
+            Some(_) => Some(None),
+            None => None,
+        };
+        unique(&self.original).or_else(|| unique(&self.title)).flatten()
+    }
+}
+
+pub fn catalog_titles(catalog_artifact: &[u8]) -> Result<Titles, String> {
     #[derive(Deserialize)]
     struct Catalog {
         movies: Vec<Movie>,
@@ -94,18 +133,39 @@ pub fn catalog_imdb_ids(catalog_artifact: &[u8]) -> Result<HashMap<u32, u32>, St
     #[derive(Deserialize)]
     struct Movie {
         tmdb_id: u32,
-        imdb_id: Option<String>,
+        title: String,
+        original_title: String,
+        year: Option<u16>,
     }
     let catalog: Catalog = serde_json::from_slice(catalog_artifact).map_err(|e| format!("catálogo: {e}"))?;
-    Ok(catalog
-        .movies
-        .into_iter()
-        .filter_map(|m| Some((parse_imdb(&m.imdb_id?)?, m.tmdb_id)))
-        .collect())
+    let mut titles = Titles::default();
+    for m in catalog.movies {
+        let Some(year) = m.year else { continue };
+        titles.original.entry((normalize(&m.original_title), year)).or_default().push(m.tmdb_id);
+        titles.title.entry((normalize(&m.title), year)).or_default().push(m.tmdb_id);
+    }
+    Ok(titles)
 }
 
-fn parse_imdb(id: &str) -> Option<u32> {
-    id.trim_start_matches("tt").parse().ok()
+/// Lowercase letters and digits only, accents dropped: "Amélie: Part 2!" → "ameliepart2".
+// ponytail: folds Latin-1 accents only; other scripts keep theirs, which only costs matches.
+fn normalize(title: &str) -> String {
+    title
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| match c {
+            'à'..='å' => 'a',
+            'ç' => 'c',
+            'è'..='ë' => 'e',
+            'ì'..='ï' => 'i',
+            'ñ' => 'n',
+            'ò'..='ö' | 'ø' => 'o',
+            'ù'..='ü' => 'u',
+            'ý' | 'ÿ' => 'y',
+            c => c,
+        })
+        .collect()
 }
 
 /// `ratings` is ml-latest's `ratings.csv` (`userId,movieId,rating,timestamp`), `links` its
@@ -122,7 +182,7 @@ pub fn train(
     let mut r = Ratings::default();
     r.read_movielens(ratings, &links)?;
     if let Some(letterboxd) = letterboxd {
-        r.read_letterboxd(letterboxd, &links)?;
+        r.read_letterboxd(letterboxd)?;
     }
     let (n_users, n_movies) = (r.user_source.len(), r.movie_keys.len());
     let by_user = group(&r.user, n_users);
@@ -332,37 +392,59 @@ impl Ratings {
         Ok(())
     }
 
-    /// Unrated rows, unmatched or low-confidence IMDb matches and movies with no TMDB id are
-    /// skipped.
-    // ponytail: movies with no TMDB id are dropped although their ratings could still shape the
-    // users' factors; keep them under NO_TMDB keys if the measured MAE ever needs it.
-    fn read_letterboxd(&mut self, letterboxd: Letterboxd, links: &Links) -> Result<(), String> {
+    /// Unrated rows and movies neither join finds are skipped; the share each join found and
+    /// the share dropped are logged.
+    // ponytail: unjoined movies are dropped although their ratings could still shape the users'
+    // factors; keep them under NO_TMDB keys if the measured MAE ever needs it.
+    fn read_letterboxd(&mut self, letterboxd: Letterboxd) -> Result<(), String> {
         let mut lines = letterboxd.interactions.lines();
         let header = lines.next().ok_or("letterboxd: empty file")?.map_err(|e| e.to_string())?;
         let header = split_csv_line(&header);
         let column = |name: &str| {
             header.iter().position(|h| h == name).ok_or_else(|| format!("letterboxd: no `{name}` column in {header:?}"))
         };
-        let (user_col, rating_col, tconst_col, confidence_col) =
-            (column("user_id")?, column("rating")?, column("tconst")?, column("confidence")?);
+        let (user_col, slug_col, name_col, year_col, rating_col) =
+            (column("username")?, column("film_slug")?, column("film_name")?, column("film_year")?, column("rating")?);
+        let mut users: HashMap<String, u32> = HashMap::new();
+        let (mut by_slug, mut by_title, mut dropped) = (0usize, 0usize, 0usize);
         for (n, line) in lines.enumerate() {
             let line = line.map_err(|e| e.to_string())?;
             let bad = || format!("letterboxd line {}: `{line}`", n + 2);
             let fields = split_csv_line(&line);
             let field = |i: usize| fields.get(i).map(String::as_str).ok_or_else(bad);
-            let (rating, tconst) = (field(rating_col)?, field(tconst_col)?);
-            if rating.is_empty() || tconst.is_empty() {
+            let rating = field(rating_col)?;
+            if rating.is_empty() {
                 continue;
             }
             let rating = parse_rating(rating).ok_or_else(bad)?;
-            let confidence: f32 = field(confidence_col)?.parse().map_err(|_| bad())?;
-            let user: u32 = field(user_col)?.trim_start_matches("u_").parse().map_err(|_| bad())?;
-            let imdb = parse_imdb(tconst).ok_or_else(bad)?;
-            let tmdb = links.imdb.get(&imdb).or_else(|| letterboxd.imdb_to_tmdb.get(&imdb));
-            if let (Some(&tmdb), true) = (tmdb, confidence >= MIN_MATCH_CONFIDENCE) {
+            let tmdb = match letterboxd.slugs.get(field(slug_col)?) {
+                Some(&tmdb) => {
+                    by_slug += 1;
+                    Some(tmdb)
+                }
+                None => {
+                    // The sample writes years as floats: "1998.0".
+                    let year = field(year_col)?.parse::<f32>().ok().map(|y| y as u16);
+                    let name = field(name_col)?;
+                    let tmdb = year.and_then(|year| letterboxd.titles.find(name, year));
+                    if tmdb.is_some() { by_title += 1 } else { dropped += 1 }
+                    tmdb
+                }
+            };
+            let next_user = users.len() as u32;
+            let user = *users.entry(field(user_col)?.to_string()).or_insert(next_user);
+            if let Some(tmdb) = tmdb {
                 self.push(LETTERBOXD, user, tmdb as u64, rating);
             }
         }
+        let total = (by_slug + by_title + dropped).max(1) as f64 / 100.0;
+        eprintln!(
+            "letterboxd: {} rated rows, {:.1}% joined by Wikidata slug, {:.1}% by title and year, {:.1}% dropped",
+            by_slug + by_title + dropped,
+            by_slug as f64 / total,
+            by_title as f64 / total,
+            dropped as f64 / total
+        );
         Ok(())
     }
 }
@@ -393,21 +475,16 @@ fn split_csv_line(line: &str) -> Vec<String> {
 struct Links {
     /// MovieLens id → TMDB id; movies TMDB does not know are absent.
     tmdb: HashMap<u32, u32>,
-    /// Numeric IMDb id → TMDB id.
-    imdb: HashMap<u32, u32>,
 }
 
 fn read_links(input: impl BufRead) -> Result<Links, String> {
-    let mut links = Links { tmdb: HashMap::new(), imdb: HashMap::new() };
+    let mut links = Links { tmdb: HashMap::new() };
     for line in input.lines().skip(1) {
         let line = line.map_err(|e| e.to_string())?;
         let mut fields = line.split(',');
-        let (movie, imdb, tmdb) = (fields.next(), fields.next(), fields.next());
+        let (movie, tmdb) = (fields.next(), fields.nth(1));
         if let (Some(Ok(movie)), Some(Ok(tmdb))) = (movie.map(str::parse), tmdb.map(|t| t.trim().parse())) {
             links.tmdb.insert(movie, tmdb);
-            if let Some(imdb) = imdb.and_then(parse_imdb) {
-                links.imdb.insert(imdb, tmdb);
-            }
         }
     }
     Ok(links)

@@ -18,6 +18,7 @@ curl -fL -o ml-latest.zip https://web.archive.org/web/20260101230406id_/https://
 echo "66a9e518c747d76b241d9a859b001a2619d3ed1672ceef599eb50daf73a7b4a3  ml-latest.zip" | sha256sum -c -
 unzip -o ml-latest.zip ml-latest/ratings.csv ml-latest/links.csv
 kaggle datasets download tliocastro/letterboxd-sample-apr-2026 -f letterboxd_interactions.csv --unzip
+curl -fsS -o letterboxd_slugs.csv -H "Accept: text/csv" --data-urlencode 'query=SELECT ?slug ?tmdb WHERE { ?item wdt:P6127 ?slug; wdt:P4947 ?tmdb }' https://query.wikidata.org/sparql
 curl -fLO https://github.com/LucasJLBraz/cinelens/releases/download/catalog-v1/catalog.json.gz
 cd ..
 ```
@@ -33,8 +34,10 @@ cargo run --release -p cinelens-train -- --ratings data/ml-latest/ratings.csv --
 ```
 
 ```bash
-cargo run --release -p cinelens-train -- --ratings data/ml-latest/ratings.csv --links data/ml-latest/links.csv --letterboxd data/letterboxd_interactions.csv --catalog data/catalog.json.gz --out data/model-letterboxd.json.gz --data-version local-letterboxd
+cargo run --release -p cinelens-train -- --ratings data/ml-latest/ratings.csv --links data/ml-latest/links.csv --letterboxd data/letterboxd_interactions.csv --letterboxd-slugs data/letterboxd_slugs.csv --catalog data/catalog.json.gz --out data/model-letterboxd.json.gz --data-version local-letterboxd
 ```
+
+Sem o token do Kaggle no computador, o workflow **Model** treina os dois no GitHub sem publicar: **Run workflow** com `publish` desligado (e `letterboxd` ligado para o segundo), depois `gh run download <id> -n model -D data/<nome>`.
 
 ## 3. Medir
 

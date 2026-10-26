@@ -6,10 +6,11 @@ name: Model
 # `model-version.txt` names a version it has not seen, plus a
 # dated copy `model-<date>.json.gz` that stays as the history. Only public data: the owner's
 # notas never reach CI, the app folds them in on-device. Letterboxd comes from Kaggle with the
-# KAGGLE_API_TOKEN secret (docs/guides/kaggle.md), only when a manual run asks for it: the
-# published sample has no IMDb ids, so it cannot be joined yet. Scheduled runs train on
-# MovieLens alone (ADR 0002: Letterboxd stays only while it does not worsen the MAE on the
-# owner's notas).
+# KAGGLE_API_TOKEN secret (docs/guides/kaggle.md), only when a manual run asks for it, joined
+# to TMDB ids through Wikidata's Letterboxd slugs or else the catálogo's titles and years.
+# Scheduled runs train on MovieLens alone (ADR 0002: Letterboxd stays only while it does not
+# worsen the MAE on the owner's notas). A run with `publish` off keeps the model as a workflow
+# artifact instead, to measure it locally first (docs/guides/accuracy.md).
 on:
   schedule:
     - cron: "41 6 3 * *"
@@ -19,6 +20,10 @@ on:
         description: Also train on the Letterboxd sample (needs KAGGLE_API_TOKEN)
         type: boolean
         default: false
+      publish:
+        description: Publish the model (off keeps it as a workflow artifact, to measure first)
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -46,7 +51,7 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          # Off unless asked for: the sample has no IMDb ids to join on (ADR 0002).
+          # Off unless asked for (ADR 0002).
           if [ "${{ inputs.letterboxd }}" != true ]; then
             echo "Training on MovieLens alone"
             exit 0
@@ -66,8 +71,19 @@ jobs:
           # The columns and a sample row, for when the dataset's layout changes.
           head -3 "$RUNNER_TEMP/letterboxd_interactions.csv"
 
+      # Letterboxd film ID (P6127) → TMDB movie ID (P4947). Slugs Wikidata lacks fall back to the
+      # catálogo's titles and years.
+      - name: Download Letterboxd slugs
+        if: env.LETTERBOXD == '1'
+        run: |
+          curl -fsS --retry 5 --retry-delay 30 --retry-all-errors -o "$RUNNER_TEMP/letterboxd_slugs.csv" \
+            -A "cinelens-model/1.0 (https://github.com/${{ github.repository }})" -H "Accept: text/csv" \
+            --data-urlencode 'query=SELECT ?slug ?tmdb WHERE { ?item wdt:P6127 ?slug; wdt:P4947 ?tmdb }' \
+            https://query.wikidata.org/sparql
+          echo "$(($(wc -l < "$RUNNER_TEMP/letterboxd_slugs.csv") - 1)) Wikidata slugs"
+
       # The content mapping is learned from the catálogo's genres, directors and cast, and
-      # Letterboxd movies are joined to TMDB ids through its IMDb ids.
+      # Letterboxd movies Wikidata lacks are joined through its titles and years.
       - name: Download catálogo
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,7 +107,7 @@ jobs:
             EXTRA+=(--catalog "$RUNNER_TEMP/catalog.json.gz")
           fi
           if [ "$LETTERBOXD" = 1 ]; then
-            EXTRA+=(--letterboxd "$RUNNER_TEMP/letterboxd_interactions.csv")
+            EXTRA+=(--letterboxd "$RUNNER_TEMP/letterboxd_interactions.csv" --letterboxd-slugs "$RUNNER_TEMP/letterboxd_slugs.csv")
           fi
           cargo run --release -p cinelens-train -- \
             --ratings "$RUNNER_TEMP/ml-latest/ratings.csv" \
@@ -102,7 +118,17 @@ jobs:
             --out model.json.gz \
             --data-version "$TODAY"
 
+      - name: Keep as artifact
+        # Scheduled runs have no inputs, and null == false in Actions expressions.
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: model
+          path: model.json.gz
+          retention-days: 7
+
       - name: Publish
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
