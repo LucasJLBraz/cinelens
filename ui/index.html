@@ -971,6 +971,8 @@
       const el = document.createElement('article');
       el.className = 'destaque';
       const info = document.createElement('div');
+      // The poster may turn into its placeholder, so the whole destaque but its actions opens the movie.
+      el.addEventListener('click', e => e.target.closest('.acoes') || openMovie(d.tmdb_id));
       const title = Object.assign(document.createElement('h2'), { textContent: d.title });
       const original = Object.assign(document.createElement('div'), { className: 'original', textContent: d.year ? `${d.original_title} · ${d.year}` : d.original_title });
       const exibicao = Object.assign(document.createElement('div'), { className: 'exibicao', textContent: exibicaoText(d.exibicao) });
@@ -978,7 +980,6 @@
       const acoes = document.createElement('div');
       acoes.className = 'acoes';
       const acao = (text, onclick) => acoes.appendChild(Object.assign(document.createElement('button'), { className: 'chip', textContent: text, onclick }));
-      acao('Detalhes', () => openMovie(d.tmdb_id));
       const quero = acao('Quero assistir', async () => {
         await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'QueroAssistir', on: !quero.classList.contains('on') });
         quero.classList.toggle('on');
