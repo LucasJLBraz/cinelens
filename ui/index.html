@@ -158,7 +158,15 @@
     #abas button.on svg { background: color-mix(in srgb, var(--accent) 16%, transparent); }
     /* Compact, so the atalhos and the first row's title show without scrolling. */
     #destaques { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
-    .destaque { flex: none; width: 100%; max-height: 40vh; scroll-snap-align: start; display: flex; gap: var(--s4); padding: var(--s2) var(--gutter); }
+    /* The next destaque peeks in from the right, and the dots below count them: a carrossel. */
+    #destaques { scroll-padding-inline: var(--gutter); padding-right: calc(2 * var(--gutter)); }
+    .destaque { flex: none; width: calc(100% - 3 * var(--gutter)); max-height: 40vh; scroll-snap-align: start; display: flex; gap: var(--s4); margin-left: var(--gutter); padding: var(--s2); border-radius: 8px; background: var(--card); }
+    #destaques-pontos { display: flex; justify-content: center; gap: 6px; padding: var(--s2) 0; }
+    #destaques-pontos span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .5; transition: opacity .2s, width .2s; }
+    #destaques-pontos span.on { width: 16px; border-radius: 3px; background: var(--accent); opacity: 1; }
+    #puxar { display: flex; align-items: flex-end; justify-content: center; height: 0; overflow: hidden; font-size: var(--t-meta); color: var(--muted); }
+    #puxar.solta { transition: height .2s; }
+    #puxar.pronto { color: var(--accent); }
     .destaque .poster { width: auto; height: min(180px, calc(40vh - 2 * var(--s2))); flex: none; }
     .destaque .info { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
     .destaque h2 { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
@@ -235,8 +243,10 @@
     </div>
   </section>
   <section id="inicio" hidden>
-    <header><h1>Início</h1><button id="outras" class="link">Outras sugestões</button></header>
+    <div id="puxar">Puxe para outras sugestões</div>
+    <header><h1>Início</h1></header>
     <div id="destaques"></div>
+    <div id="destaques-pontos" aria-hidden="true"></div>
     <div id="atalhos" class="linha"></div>
     <div id="fileiras"></div>
   </section>
@@ -1268,15 +1278,51 @@
       abrirAba('explorar');
     }
 
-    // 0 shows the best recomendações; "Outras sugestões" draws other good bets.
+    const pontosEl = document.getElementById('destaques-pontos');
+    destaquesEl.addEventListener('scroll', () => {
+      const [a, b] = destaquesEl.children;
+      const atual = b ? Math.round(destaquesEl.scrollLeft / (b.offsetLeft - a.offsetLeft)) : 0;
+      [...pontosEl.children].forEach((p, i) => p.classList.toggle('on', i === atual));
+    }, { passive: true });
+
+    // 0 shows the best recomendações; pulling Início down from its top draws other good bets.
     let sorteio = 0;
-    document.getElementById('outras').addEventListener('click', () => {
+    const inicioEl = document.getElementById('inicio');
+    const puxarEl = document.getElementById('puxar');
+    const PUXAR = 64;
+    let puxarDe = null;
+    let puxado = 0;
+    inicioEl.addEventListener('touchstart', e => {
+      puxarDe = window.scrollY <= 0 ? e.touches[0] : null;
+      puxado = 0;
+    }, { passive: true });
+    inicioEl.addEventListener('touchmove', e => {
+      if (!puxarDe) return;
+      const dx = e.touches[0].clientX - puxarDe.clientX;
+      const dy = e.touches[0].clientY - puxarDe.clientY;
+      // Sideways is the carrossel.
+      if (!puxado && Math.abs(dx) > Math.abs(dy)) { puxarDe = null; return; }
+      puxado = Math.max(0, dy / 2);
+      puxarEl.classList.remove('solta');
+      puxarEl.classList.toggle('pronto', puxado >= PUXAR);
+      puxarEl.textContent = puxado >= PUXAR ? 'Solte para outras sugestões' : 'Puxe para outras sugestões';
+      puxarEl.style.height = `${Math.min(puxado, PUXAR * 1.5)}px`;
+    }, { passive: true });
+    inicioEl.addEventListener('touchend', () => {
+      if (!puxarDe) return;
+      puxarDe = null;
+      puxarEl.classList.add('solta');
+      puxarEl.style.height = '0';
+      if (puxado < PUXAR) return;
       sorteio = 1 + Math.floor(Math.random() * 2 ** 32);
       loadInicio();
     });
+
     async function loadInicio() {
       const inicio = await invoke('inicio', { sorteio });
       destaquesEl.replaceChildren(...inicio.destaques.map(destaque));
+      destaquesEl.scrollLeft = 0;
+      pontosEl.replaceChildren(...inicio.destaques.map((_, i) => Object.assign(document.createElement('span'), { className: i ? '' : 'on' })));
       const fileiras = inicio.fileiras.filter(f => f.movies.length);
       document.getElementById('atalhos').replaceChildren(...fileiras.map(f =>
         Object.assign(document.createElement('button'), { className: 'chip', textContent: f.nome, onclick: () => verLista(f) })));
