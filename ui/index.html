@@ -9,14 +9,14 @@
       color-scheme: dark; --bg: #0f1115; --card: #1a1d24; --text: #e8e8ea; --muted: #8a8f9c; --accent: #f5c518;
       --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --gutter: var(--s4);
       --t-meta: 12px; --t-body: 14px; --t-secao: 16px; --t-tela: 20px; --t-pagina: 22px;
-      --alvo: 44px; --largura-card: 112px;
+      --alvo: 44px; --largura-card: 104px;
       --faixa-forte: #46c46e; --faixa-boa: var(--accent); --faixa-arriscado: #e8913a; --faixa-nao: var(--muted);
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body)/1.35 system-ui, sans-serif; }
     header { padding: max(var(--s4), env(safe-area-inset-top)) var(--gutter) var(--s2); }
     h1 { margin: 0; font-size: var(--t-tela); }
-    #grid, #pessoa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--largura-card), 1fr)); gap: var(--s4) var(--s3); padding: var(--s2) var(--gutter); }
+    #grid, #pessoa-grid, #parecidos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--largura-card), 1fr)); gap: var(--s4) var(--s3); padding: var(--s2) var(--gutter); }
     /* The movie card: every line reserved, so the faixa sits at the same height on every card. */
     .movie .titulo { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; height: 2.6em; margin-top: var(--s2); overflow: hidden; overflow-wrap: anywhere; font-size: var(--t-body); font-weight: 600; line-height: 1.3; }
     .movie .ano, .movie .faixa { height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-meta); line-height: 1.4; }
@@ -35,7 +35,7 @@
     .poster { width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--card); object-fit: cover; display: block; }
     .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .original { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #more { display: block; margin: 16px auto max(24px, env(safe-area-inset-bottom)); padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
+    #more, #parecidos-mais-filmes { display: block; margin: 16px auto max(24px, env(safe-area-inset-bottom)); padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
     [hidden] { display: none !important; }
     .poster.missing { display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
     #setup { padding: 32vh 32px 0; text-align: center; }
@@ -76,7 +76,15 @@
     #pontuacoes .pill[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
     /* The rating panel never shows a prediction, so it cannot anchor the nota. */
     #filme.dando-nota :is(#nota-prevista, #pontuacoes) { display: none; }
-    #sinopse { margin: 16px 0 0; line-height: 1.5; }
+    #sinopse { margin: 0; line-height: 1.5; }
+    #sinopse.fechada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+    /* The movie page: one section per part, 24px apart. */
+    #filme .secao { margin-top: var(--s5); }
+    #filme .secao h2 { margin-top: 0; }
+    #filme .cartao { padding: var(--s4); border-radius: var(--s3); background: var(--card); }
+    #parecidos-tela { padding: max(var(--s4), env(safe-area-inset-top)) var(--gutter) var(--s5); }
+    #parecidos-tela h1 { margin-top: var(--s3); }
+    #parecidos-grid { padding: var(--s3) 0; }
     /* Carousels bleed to the screen edge, with the gutter kept inside on both ends. */
     .fileira { display: flex; gap: var(--s3); margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); }
     .fileira > * { flex: none; scroll-snap-align: start; }
@@ -85,7 +93,6 @@
     .pessoas button { padding: 8px 12px; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; text-align: left; }
     .pessoas button small { display: block; color: var(--muted); }
     .pessoas button.fa { border-color: var(--accent); }
-    #trailer { margin-top: 24px; }
     .link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; }
     #pessoa { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #pessoa .cabeca { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
@@ -98,7 +105,7 @@
     #notas, #rodada-notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
     #notas button, #rodada-notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
-    #acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; align-items: flex-start; }
+    #acoes { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); align-items: flex-start; }
     #acoes .on { border-color: var(--accent); color: var(--accent); }
     .menu { position: relative; }
     .menu summary { list-style: none; cursor: pointer; }
@@ -140,8 +147,8 @@
     #pesou { margin-top: 12px; }
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
-    #parecidos-mas { margin-bottom: 8px; }
-    #parecidos-ver-mais { margin-top: 8px; font-size: 13px; }
+    #parecidos-mas { margin: 0 0 var(--s2); align-items: center; }
+    #parecidos-mas .meta { flex: none; }
     footer { padding: 32px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
     body:has(#abas:not([hidden])) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
     #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border-top: 1px solid #ffffff14; padding-bottom: env(safe-area-inset-bottom); }
@@ -157,7 +164,7 @@
     .destaque .acoes .on { border-color: var(--accent); color: var(--accent); }
     #atalhos { padding: 0 16px; }
     #fileiras section { padding: 0 16px; }
-    #fileiras .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     #rodada { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #rodada p { color: var(--muted); }
     #rodada-filme { max-width: 220px; margin: var(--s4) auto 0; text-align: center; }
@@ -303,11 +310,6 @@
       </div>
     </div>
     <div id="pontuacoes" class="chips"></div>
-    <section id="onde" hidden>
-      <h2>Onde assistir</h2>
-      <div id="onde-lista"></div>
-      <div class="credito">Dados de onde assistir: JustWatch<button id="onde-link" class="link"> · ver ofertas</button></div>
-    </section>
     <div id="acoes">
       <button id="dar-nota" class="pill">Dar nota</button>
       <button class="pill" data-marca="QueroAssistir">Quero assistir</button>
@@ -317,6 +319,7 @@
         <div class="menu-items">
           <button data-marca="NaoMeInteressa">Não me interessa</button>
           <button id="ver-historico">Histórico de notas</button>
+          <button id="trailer">▶ Trailer</button>
           <button id="abrir-tmdb">Abrir no TMDB</button>
         </div>
       </details>
@@ -338,22 +341,40 @@
       </div>
     </div>
     <ul id="nota-history" hidden></ul>
-    <p id="sinopse"></p>
-    <h2 id="parecidos-titulo">Parecidos</h2>
-    <div id="parecidos-mas" class="linha">
-      <span class="meta">Parecidos, mas…</span>
-      <button class="chip" data-direcao="MaisLeve">mais leve</button>
-      <button class="chip" data-direcao="MaisCurto">mais curto</button>
-      <button class="chip" data-direcao="MaisRecente">mais recente</button>
-      <button class="chip" data-direcao="MelhorFotografia">melhor fotografia</button>
-    </div>
-    <div id="parecidos" class="fileira"></div>
-    <button id="parecidos-ver-mais" class="link">ver mais parecidos</button>
-    <h2 id="direcao-titulo">Direção</h2>
-    <div id="direcao" class="pessoas"></div>
-    <h2 id="elenco-titulo">Elenco</h2>
-    <div id="elenco" class="pessoas"></div>
-    <button id="trailer" class="pill">▶ Trailer</button>
+    <section id="onde" class="secao cartao" hidden>
+      <h2>Onde assistir</h2>
+      <div id="onde-lista"></div>
+      <div class="credito">Dados de onde assistir: JustWatch <button id="onde-link" class="link">· ver ofertas</button></div>
+    </section>
+    <section id="sinopse-secao" class="secao">
+      <h2>Sinopse</h2>
+      <p id="sinopse"></p>
+      <button id="sinopse-mais" class="link" hidden>mais</button>
+    </section>
+    <section id="parecidos-secao" class="secao">
+      <div class="cabeca">
+        <h2 id="parecidos-titulo">Parecidos</h2>
+        <button id="parecidos-todos" class="link">Ver todos ›</button>
+      </div>
+      <div id="parecidos-mas" class="linha">
+        <span class="meta">Parecidos, mas…</span>
+        <button class="chip" data-direcao="MaisLeve">mais leve</button>
+        <button class="chip" data-direcao="MaisCurto">mais curto</button>
+        <button class="chip" data-direcao="MaisRecente">mais recente</button>
+        <button class="chip" data-direcao="MelhorFotografia">melhor fotografia</button>
+      </div>
+      <div id="parecidos" class="fileira"></div>
+    </section>
+    <section id="pessoas-secao" class="secao">
+      <h2>Direção e elenco</h2>
+      <div id="pessoas" class="pessoas"></div>
+    </section>
+  </section>
+  <section id="parecidos-tela" hidden>
+    <button class="pill back">‹ Voltar</button>
+    <h1 id="parecidos-tela-titulo"></h1>
+    <main id="parecidos-grid"></main>
+    <button id="parecidos-mais-filmes" hidden>Mais filmes</button>
   </section>
   <section id="pessoa" hidden>
     <button class="pill back">‹ Voltar</button>
@@ -707,7 +728,7 @@
     const abasEl = document.getElementById('abas');
     const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes') };
     const minhasNotasEl = document.getElementById('minhas-notas');
-    const telas = [...Object.values(abas), filmeEl, pessoaEl, minhasNotasEl, document.getElementById('boas-vindas')];
+    const telas = [...Object.values(abas), filmeEl, pessoaEl, minhasNotasEl, document.getElementById('parecidos-tela'), document.getElementById('boas-vindas')];
     function tela(el) {
       for (const t of telas) t.hidden = t !== el;
       abasEl.hidden = !Object.values(abas).includes(el);
@@ -767,8 +788,8 @@
       }
       document.getElementById('filme-poster').replaceChildren(posterOf(m));
       document.getElementById('filme-title').textContent = m.title;
-      document.getElementById('filme-original').textContent = m.original_title;
-      const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
+      document.getElementById('filme-original').textContent = [m.original_title !== m.title && m.original_title, m.year].filter(Boolean).join(' · ');
+      const meta = [m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
       document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
@@ -798,20 +819,23 @@
         li.textContent = `${i ? 'Antes' : 'Atual'}: ${fmt(e.nota)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
         return li;
       }));
-      document.getElementById('sinopse').textContent = m.sinopse;
-      document.getElementById('parecidos-titulo').hidden = !m.parecidos.length;
-      document.getElementById('parecidos-mas').hidden = !m.parecidos.length;
+      document.getElementById('sinopse-secao').hidden = !m.sinopse;
+      sinopseEl.textContent = m.sinopse;
+      sinopseEl.classList.add('fechada');
+      // Measured once the page shows.
+      requestAnimationFrame(() => sinopseMaisEl.hidden = sinopseEl.scrollHeight <= sinopseEl.clientHeight);
+      document.getElementById('parecidos-secao').hidden = !m.parecidos.length;
       parecidos = m.parecidos;
-      parecidosAcabaram = m.parecidos.length < PARECIDOS_POR_PAGINA;
       showParecidos(m.parecidos);
       for (const b of pesouEl.querySelectorAll('[data-aspecto]')) b.classList.toggle('on', m.pesou.includes(b.dataset.aspecto));
-      document.getElementById('direcao-titulo').hidden = !m.direcao.length && !m.trilha.length;
-      document.getElementById('direcao').replaceChildren(...pessoas(m.direcao), ...pessoas(m.trilha, 'Trilha sonora'));
-      document.getElementById('elenco-titulo').hidden = !m.elenco.length;
-      document.getElementById('elenco').replaceChildren(...pessoas(m.elenco));
+      document.getElementById('pessoas-secao').hidden = !m.direcao.length && !m.trilha.length && !m.elenco.length;
+      document.getElementById('pessoas').replaceChildren(...pessoas(m.direcao, 'Direção'), ...pessoas(m.trilha, 'Trilha sonora'), ...pessoas(m.elenco));
       const trailer = document.getElementById('trailer');
       trailer.hidden = !m.trailer_youtube;
-      trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
+      trailer.onclick = () => {
+        filmeEl.querySelector('.menu').open = false;
+        abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
+      };
     }
 
     // Every score is a pill that starts hidden; a tap reveals that one, and only that one. The
@@ -840,30 +864,20 @@
       }));
     }
 
-    // The page's own parecidos and those ver mais added, shown again when the "parecidos, mas…" chip is cleared.
+    const sinopseEl = document.getElementById('sinopse');
+    const sinopseMaisEl = document.getElementById('sinopse-mais');
+    sinopseMaisEl.addEventListener('click', () => {
+      sinopseEl.classList.remove('fechada');
+      sinopseMaisEl.hidden = true;
+    });
+
+    // The page's own parecidos, shown again when the "parecidos, mas…" chip is cleared.
     let parecidos = [];
-    let parecidosAcabaram = false;
-    // The core's PARECIDOS: a shorter page is the last one.
-    const PARECIDOS_POR_PAGINA = 12;
     const parecidosMasEl = document.getElementById('parecidos-mas');
-    const parecidosVerMaisEl = document.getElementById('parecidos-ver-mais');
     function showParecidos(list) {
       for (const b of parecidosMasEl.querySelectorAll('.chip')) b.classList.remove('on');
       document.getElementById('parecidos').replaceChildren(...list.map(card));
-      parecidosVerMaisEl.hidden = parecidosAcabaram;
     }
-    parecidosVerMaisEl.addEventListener('click', async () => {
-      const id = filmeEl.dataset.id;
-      const antes = parecidos;
-      parecidosVerMaisEl.disabled = true;
-      const mais = await invoke('parecidos', { tmdbId: Number(id), desde: antes.length }).finally(() => parecidosVerMaisEl.disabled = false);
-      // Another movie opened or a "parecidos, mas…" chip picked meanwhile: this page is stale.
-      if (filmeEl.dataset.id !== id || parecidos !== antes || parecidosVerMaisEl.hidden) return;
-      parecidosAcabaram = mais.length < PARECIDOS_POR_PAGINA;
-      parecidos = [...antes, ...mais];
-      document.getElementById('parecidos').append(...mais.map(card));
-      parecidosVerMaisEl.hidden = parecidosAcabaram;
-    });
     parecidosMasEl.addEventListener('click', async e => {
       const b = e.target.closest('[data-direcao]');
       if (!b) return;
@@ -871,7 +885,6 @@
       const list = await invoke('parecidos_mas', { tmdbId: Number(filmeEl.dataset.id), direcao: b.dataset.direcao });
       showParecidos(list);
       b.classList.add('on');
-      parecidosVerMaisEl.hidden = true;
       if (!list.length) document.getElementById('parecidos').append(Object.assign(document.createElement('p'), { className: 'meta', textContent: 'Nenhum parecido nessa direção.' }));
     });
 
@@ -907,6 +920,36 @@
       // Lets Android's back gesture close the page.
       if (push) history.pushState({ filme: id }, '');
     }
+
+    // The Parecidos screen: every parecido of a movie, in order of likeness, page by page.
+    const parecidosTelaEl = document.getElementById('parecidos-tela');
+    const parecidosGridEl = document.getElementById('parecidos-grid');
+    const parecidosMaisEl = document.getElementById('parecidos-mais-filmes');
+    // The core's PARECIDOS: a shorter page is the last one.
+    const PARECIDOS_POR_PAGINA = 12;
+    let parecidosDe = null;
+    async function maisParecidos() {
+      const id = parecidosDe, desde = parecidosGridEl.children.length;
+      parecidosMaisEl.disabled = true;
+      const mais = await invoke('parecidos', { tmdbId: id, desde }).finally(() => parecidosMaisEl.disabled = false);
+      // Another movie's parecidos opened meanwhile: this page is stale.
+      if (parecidosDe !== id || parecidosGridEl.children.length !== desde) return;
+      parecidosGridEl.append(...mais.map(card));
+      parecidosMaisEl.hidden = mais.length < PARECIDOS_POR_PAGINA;
+    }
+    function openParecidos(id, titulo, push = true) {
+      parecidosDe = id;
+      document.getElementById('parecidos-tela-titulo').textContent = `Parecidos com ${titulo}`;
+      parecidosGridEl.replaceChildren();
+      parecidosMaisEl.hidden = true;
+      tela(parecidosTelaEl);
+      if (push) history.pushState({ parecidos: id, titulo }, '');
+      return maisParecidos();
+    }
+    parecidosMaisEl.addEventListener('click', maisParecidos);
+    document.getElementById('parecidos-todos').addEventListener('click', () =>
+      openParecidos(Number(filmeEl.dataset.id), document.getElementById('filme-title').textContent));
+    parecidosTelaEl.querySelector('.back').addEventListener('click', () => history.back());
 
     async function showPessoa(p) {
       pessoaEl.dataset.id = p.id;
@@ -953,6 +996,7 @@
       if (state?.filme) return openMovie(state.filme, false);
       if (state?.pessoa) return openPessoa(state.pessoa, false);
       if (state?.minhasNotas) return openMinhasNotas(false);
+      if (state?.parecidos) return openParecidos(state.parecidos, state.titulo, false);
       abrirAba(aba);
     });
     document.getElementById('back').addEventListener('click', () => history.back());
