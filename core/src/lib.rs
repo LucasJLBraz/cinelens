@@ -357,6 +357,12 @@ pub struct Filmografia {
 pub struct MoviePage {
     #[serde(flatten)]
     pub card: MovieCard,
+    /// The nota prevista's faixa, shown on the page whatever the display mode.
+    pub faixa: Option<Faixa>,
+    /// TMDB's public score, in stars; `None` with too few votes to tell.
+    pub publico: Option<f32>,
+    /// Critics' score (Metacritic, else Rotten Tomatoes, from OMDb), 0–100.
+    pub critica: Option<u8>,
     pub backdrop_url: Option<String>,
     /// Minutes.
     pub runtime: Option<u32>,
@@ -988,6 +994,9 @@ impl Core {
         let genre = |id: &u32| self.generos.iter().find(|g| g.id == *id).map(|g| g.name.clone());
         Some(MoviePage {
             card: self.card(i),
+            faixa: self.previstas[i].map(|(p, _)| display::faixa(p, &self.ranked)),
+            publico: (m.vote_count >= filtro::PUBLICO_MIN_VOTOS).then_some(m.vote_average / 2.0),
+            critica: m.critic_score,
             backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),
             runtime: m.runtime,
             generos: m.genre_ids.iter().filter_map(genre).collect(),

@@ -10,7 +10,7 @@ pub enum DisplayMode {
     /// A band relative to the owner's own predictions.
     #[default]
     Faixa,
-    /// Nothing; the order alone.
+    /// Nothing but the order (the movie page still shows the nota prevista).
     Oculto,
 }
 

@@ -109,3 +109,16 @@ fn display_mode_survives_a_restart() {
     restarted.load_owner_data(&core.owner_data()).unwrap();
     assert_eq!(restarted.display_mode(), DisplayMode::Estrelas);
 }
+
+#[test]
+fn the_movie_page_shows_the_nota_prevista_and_its_faixa_whatever_the_mode() {
+    let mut core = owner();
+    core.set_display_mode(DisplayMode::Oculto, 0);
+    let top = core.explorar(&Filtro::default(), 0).movies[0].tmdb_id;
+
+    let page = core.movie(top).unwrap();
+    assert!(page.card.nota_prevista.is_some());
+    assert_eq!(page.faixa, Some(Faixa::ApostaForte));
+    // A movie with a nota has no nota prevista, so no faixa either.
+    assert_eq!(core.movie(603).unwrap().faixa, None);
+}

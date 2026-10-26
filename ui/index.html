@@ -212,6 +212,7 @@
           <div id="filme-exibicao" class="exibicao"></div>
           <div id="porque" class="meta"></div>
         </div>
+        <div id="filme-notas" class="exibicao"></div>
       </div>
     </div>
     <section id="onde" hidden>
@@ -342,13 +343,13 @@
       return poster;
     }
 
-    // Only in the chosen mode; the raw nota_prevista is never shown.
+    const decimal = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    // In the chosen mode; only the movie page shows the nota prevista whatever the mode.
     function exibicaoText(p) {
       if (!p) return '';
       const confianca = `confiança ${Math.round(p.confianca * 100)}%`;
       if (p.modo === 'Faixa') return `${p.faixa} · ${confianca}`;
-      const one = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-      return `★ ${one(p.nota)} (${one(p.meia_estrela)}) · ${confianca}`;
+      return `★ ${decimal(p.nota)} (${decimal(p.meia_estrela)}) · ${confianca}`;
     }
 
     function card(m) {
@@ -668,7 +669,15 @@
       document.getElementById('filme-original').textContent = m.original_title;
       const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
-      document.getElementById('filme-exibicao').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : exibicaoText(m.exibicao);
+      // What to expect before rating. The nota prevista, always in stars here whatever the display
+      // mode, hides with #nota-prevista while rating; the owner's, public's and critics' notas stay.
+      const linhas = (id, notas) => document.getElementById(id).replaceChildren(...notas.filter(Boolean).map(t => Object.assign(document.createElement('div'), { textContent: t })));
+      linhas('filme-exibicao', [m.nota_prevista != null && `Nota prevista: ★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · confiança ${Math.round(m.confianca * 100)}%`]);
+      linhas('filme-notas', [
+        m.nota != null && `Sua nota: ${fmt(m.nota)}`,
+        m.publico != null && `Público (TMDB): ★ ${decimal(m.publico)}`,
+        m.critica != null && `Crítica (Metacritic ou Rotten Tomatoes): ${m.critica}/100`,
+      ]);
       document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
       document.getElementById('onde').hidden = !onde;

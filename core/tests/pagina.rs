@@ -8,9 +8,10 @@ const CATALOG: &str = r#"{"format_version": 1, "data_version": "t",
     "movies": [
     {"tmdb_id": 1, "title": "Matrix", "original_title": "The Matrix", "year": 1999, "runtime": 136, "poster_path": "/m.jpg", "backdrop_path": "/bm.jpg",
      "genre_ids": [878, 28], "original_language": "en", "overview": "Um hacker descobre a verdade.", "trailer_youtube": "yt1",
+     "vote_count": 20000, "vote_average": 8.2, "critic_score": 73,
      "directors": [{"id": 10, "name": "Lana Wachowski"}], "cast": [{"id": 20, "name": "Keanu Reeves"}, {"id": 21, "name": "Carrie-Anne Moss"}],
      "composers": [{"id": 30, "name": "Don Davis"}]},
-    {"tmdb_id": 2, "title": "Matrix Reloaded", "original_title": "The Matrix Reloaded", "year": 2003, "poster_path": null, "genre_ids": [878],
+    {"tmdb_id": 2, "title": "Matrix Reloaded", "original_title": "The Matrix Reloaded", "year": 2003, "poster_path": null, "genre_ids": [878], "vote_count": 100, "vote_average": 7.0,
      "directors": [{"id": 10, "name": "Lana Wachowski"}], "cast": [{"id": 20, "name": "Keanu Reeves"}]},
     {"tmdb_id": 3, "title": "John Wick", "original_title": "John Wick", "year": 2014, "poster_path": null, "genre_ids": [28],
      "directors": [{"id": 11, "name": "Chad Stahelski"}], "cast": [{"id": 20, "name": "Keanu Reeves"}]},
@@ -71,6 +72,17 @@ fn the_page_carries_every_detail_of_the_movie() {
     assert_eq!(names(&page.elenco), ["Keanu Reeves", "Carrie-Anne Moss"]);
     assert_eq!(names(&page.trilha), ["Don Davis"]);
     assert!(page.card.exibicao.is_some());
+}
+
+#[test]
+fn the_page_shows_the_publics_score_in_stars_and_the_critics_score() {
+    let core = owner();
+    let matrix = core.movie(1).unwrap();
+    assert_eq!((matrix.publico, matrix.critica), (Some(4.1), Some(73)));
+
+    // Too few TMDB votes to say what the public thinks; no critics' score in the catálogo.
+    let reloaded = core.movie(2).unwrap();
+    assert_eq!((reloaded.publico, reloaded.critica), (None, None));
 }
 
 #[test]
