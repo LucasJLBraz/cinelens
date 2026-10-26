@@ -48,6 +48,12 @@ fn main() {
         assert_eq!(core.explorar(&filtro, 0).movies.len(), 30);
     });
 
+    // Typos in every word: no exact match anywhere, so every title and name is compared.
+    let filtro = Filtro { busca: "flme nmero pesoa".into(), ..Default::default() };
+    failed |= !budget("busca: typos over the whole catálogo", Duration::from_millis(100), || {
+        assert_eq!(core.explorar(&filtro, 0).movies.len(), 30);
+    });
+
     let mut id = 0;
     failed |= !budget("movie page: open", Duration::from_millis(100), || {
         id += 1_001;

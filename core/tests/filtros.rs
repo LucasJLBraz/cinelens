@@ -148,6 +148,35 @@ fn search_matches_titles_director_and_actor_ignoring_case_and_accents() {
 }
 
 #[test]
+fn search_forgives_typos_and_punctuation() {
+    let core = core();
+    let search = |q: &str| ids(&core, Filtro { busca: q.into(), ..Default::default() });
+    assert_eq!(search("matirx"), [1], "two letters swapped");
+    assert_eq!(search("christofer nolan"), [2, 6], "a wrong letter");
+    assert_eq!(search("centrl do brasil"), [4], "a missing letter");
+    assert_eq!(search("cidadededeus"), [3], "no spaces");
+    assert_eq!(search("amelie poulain!"), [5], "punctuation");
+    assert_eq!(search("orig"), [2], "a word being typed");
+    assert!(search("xyzw").is_empty());
+    assert!(search("mtx").is_empty(), "short words must be exact");
+}
+
+#[test]
+fn search_ranks_the_typed_title_first_then_exact_words() {
+    let catalog = r#"{"format_version": 1, "data_version": "t", "genres": [], "movies": [
+        {"tmdb_id": 1, "title": "Lego", "original_title": "Lego", "poster_path": null, "cast": [{"id": 1, "name": "Batman Silva"}]},
+        {"tmdb_id": 2, "title": "Batmen", "original_title": "Batmen", "poster_path": null},
+        {"tmdb_id": 3, "title": "Batman", "original_title": "Batman", "poster_path": null},
+        {"tmdb_id": 4, "title": "Upgrade", "original_title": "Upgrade", "poster_path": null},
+        {"tmdb_id": 5, "title": "Up: Altas Aventuras", "original_title": "Up", "poster_path": null}
+    ]}"#;
+    let core = Core::open(catalog.as_bytes()).unwrap();
+    let search = |q: &str| ids(&core, Filtro { busca: q.into(), ..Default::default() });
+    assert_eq!(search("batman"), [3, 1, 2], "title, then a name, then a typo");
+    assert_eq!(search("up"), [5, 4], "the whole title");
+}
+
+#[test]
 fn filters_combine() {
     let core = core();
     let filtro = Filtro { incluir: vec![878], ano_min: Some(2005), busca: "origem".into(), ..Default::default() };

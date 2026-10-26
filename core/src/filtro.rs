@@ -63,7 +63,8 @@ pub struct Filtro {
     pub nao_me_interessa: bool,
     /// Only movies on a subscription service the owner has.
     pub no_meu_streaming: bool,
-    /// Words that must all appear in the pt-BR or original title, a director or an actor.
+    /// Words that must all appear in the pt-BR or original title, a director or an actor,
+    /// exactly or with a typo or two; matching titles come first.
     pub busca: String,
     /// Populares ↔ Garimpo, -1 to 1: how much popularity raises (below 0) or lowers (above 0)
     /// a recomendação. 0 is the nota prevista alone.
@@ -74,6 +75,8 @@ pub struct Filtro {
 pub(crate) struct Matcher<'a> {
     filtro: &'a Filtro,
     words: Vec<String>,
+    /// The words joined by single spaces, to recognize a whole title.
+    frase: String,
     incluir: HashSet<u32>,
     excluir: HashSet<u32>,
 }
@@ -83,12 +86,14 @@ impl<'a> Matcher<'a> {
         Matcher {
             filtro,
             words: fold(&filtro.busca).split_whitespace().map(str::to_string).collect(),
+            frase: fold(&filtro.busca).split_whitespace().collect::<Vec<_>>().join(" "),
             incluir: filtro.incluir.iter().copied().collect(),
             excluir: filtro.excluir.iter().copied().collect(),
         }
     }
 
-    pub fn passes(&self, core: &Core, i: usize) -> bool {
+    /// Whether movie `i` passes, as its `relevancia`.
+    pub fn passes(&self, core: &Core, i: usize) -> Option<(bool, usize)> {
         let f = self.filtro;
         let m = &core.movies[i];
         let owner = &core.owner;
@@ -104,7 +109,7 @@ impl<'a> Matcher<'a> {
             Mostrar::So => marked,
         };
         let watch = m.watch.as_ref();
-        (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
+        if (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
             && !m.genre_ids.iter().any(|g| self.excluir.contains(g))
             && in_range(m.year.map(u32::from), f.ano_min.map(u32::from), f.ano_max.map(u32::from))
             && in_range(m.runtime, f.duracao_min, f.duracao_max)
@@ -127,19 +132,108 @@ impl<'a> Matcher<'a> {
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.tmdb_id))
             && (!f.no_meu_streaming
                 || watch.is_some_and(|w| w.flatrate.iter().any(|p| owner.settings.servicos.contains(p))))
-            && self.words.iter().all(|w| core.busca[i].contains(w.as_str()))
+        {
+            self.relevancia(core, i)
+        } else {
+            None
+        }
+    }
+
+    /// How well the busca matches movie `i`, lower first; `None` when some word is missing.
+    /// A title that is the whole busca first, then by word: exact in a title, exact in a name,
+    /// a typo in a title, a typo in a name.
+    fn relevancia(&self, core: &Core, i: usize) -> Option<(bool, usize)> {
+        if self.words.is_empty() {
+            return Some((false, 0));
+        }
+        let b = &core.busca[i];
+        let mut custo = 0;
+        for w in &self.words {
+            custo += if b.titulos.contains(w.as_str()) {
+                0
+            } else if b.pessoas.contains(w.as_str()) {
+                1
+            } else {
+                // An exact word would have been found above, so 1 is the best a typo can do.
+                let typo = |text: &str| {
+                    let mut best = None;
+                    for d in text.split_whitespace().filter_map(|t| typo(w, t)) {
+                        if d == 1 {
+                            return Some(1);
+                        }
+                        best = Some(best.map_or(d, |b: usize| b.min(d)));
+                    }
+                    best
+                };
+                typo(&b.titulos).map(|d| 2 * d).or_else(|| typo(&b.pessoas).map(|d| 2 * d + 1))?
+            };
+        }
+        Some((!b.titulos.lines().any(|t| t == self.frase), custo))
     }
 }
 
-/// What search looks in: the titles and people's names, folded.
-pub(crate) fn searchable(m: &Movie) -> String {
-    // Composers are not searched: owners look up who directed or acted.
-    let people = m.directors.iter().chain(&m.cast).map(|p| p.name.as_str());
-    let texts: Vec<&str> = [m.title.as_str(), m.original_title.as_str()].into_iter().chain(people).collect();
-    fold(&texts.join("\n"))
+/// What search looks in, folded: the titles, also without spaces ("cidadededeus"), and the
+/// directors' and actors' names.
+pub(crate) struct Busca {
+    titulos: String,
+    pessoas: String,
 }
 
-/// Lowercase without accents, so "amelie" finds "Amélie".
+pub(crate) fn searchable(m: &Movie) -> Busca {
+    let palavras = |t: &str| fold(t).split_whitespace().collect::<Vec<_>>().join(" ");
+    let (title, original) = (palavras(&m.title), palavras(&m.original_title));
+    let juntos = |t: &str| t.replace(' ', "");
+    // Composers are not searched: owners look up who directed or acted.
+    let people: Vec<&str> = m.directors.iter().chain(&m.cast).map(|p| p.name.as_str()).collect();
+    Busca {
+        titulos: format!("{title}\n{original}\n{} {}", juntos(&title), juntos(&original)),
+        pessoas: fold(&people.join("\n")),
+    }
+}
+
+/// The edits (a letter added, dropped, changed, or two swapped) that turn `w` into the start of
+/// `t`, when few enough for `w`'s length: none under 4 letters, 1 up to 7, then 2. Starting
+/// at `t`'s start forgives a word still being typed.
+// ponytail: compares bytes, so a non-Latin letter counts as several edits; and the first letter
+// must be right, which keeps a busca over the whole catálogo fast.
+fn typo(w: &str, t: &str) -> Option<usize> {
+    let (w, t) = (w.as_bytes(), t.as_bytes());
+    let k = match w.len() {
+        0..=3 => return None,
+        4..=7 => 1,
+        _ => 2,
+    };
+    if w[0] != t[0] || t.len() + k < w.len() {
+        return None;
+    }
+    let n = t.len().min(w.len() + k);
+    // Rows i-2, i-1 and i of d[i][j], the edits from w[..i] to t[..j] (optimal string
+    // alignment), on the stack: a busca compares hundreds of thousands of words.
+    const MAX: usize = 40;
+    if n >= MAX {
+        return None;
+    }
+    let (mut antes, mut cima, mut linha) = ([0; MAX], [0; MAX], [0; MAX]);
+    (0..=n).for_each(|j| linha[j] = j);
+    for i in 1..=w.len() {
+        (antes, cima, linha) = (cima, linha, antes);
+        linha[0] = i;
+        for j in 1..=n {
+            let mut e = (cima[j] + 1).min(linha[j - 1] + 1).min(cima[j - 1] + usize::from(w[i - 1] != t[j - 1]));
+            if i > 1 && j > 1 && w[i - 1] == t[j - 2] && w[i - 2] == t[j - 1] {
+                e = e.min(antes[j - 2] + 1);
+            }
+            linha[j] = e;
+        }
+        if linha[..=n].iter().all(|&e| e > k) {
+            return None;
+        }
+    }
+    linha[..=n].iter().copied().min().filter(|&e| e <= k)
+}
+
+/// Lowercase without accents or punctuation, so "amelie" finds "Amélie" and "homem aranha"
+/// finds "Homem-Aranha".
 // ponytail: hand-written table for Portuguese, Spanish and French accents; misses ø, œ and the
 // like. Unicode normalization (a new dependency) if titles in other languages fail to match.
 fn fold(text: &str) -> String {
@@ -153,7 +247,8 @@ fn fold(text: &str) -> String {
             'ú' | 'ù' | 'û' | 'ü' => 'u',
             'ç' => 'c',
             'ñ' => 'n',
-            c => c,
+            c if c.is_alphanumeric() || c == '\n' => c,
+            _ => ' ',
         })
         .collect()
 }

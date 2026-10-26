@@ -540,7 +540,7 @@ pub struct Core {
     generos: Vec<Genero>,
     provedores: Vec<Provedor>,
     /// Aligned with `movies`: what search matches against.
-    busca: Vec<String>,
+    busca: Vec<filtro::Busca>,
     /// Aligned with `movies`: 0 (no votes) to 1 (the most voted), on a log scale.
     popularidade: Vec<f32>,
     /// TMDB trending this week.
@@ -1173,7 +1173,8 @@ impl Core {
     /// prevista first, popularity weighed by `filtro.garimpo`), then the rest in catálogo order.
     pub fn explorar(&self, filtro: &Filtro, page: usize) -> ExplorarPage {
         let matcher = filtro::Matcher::new(filtro);
-        let passes = |&i: &usize| matcher.passes(self, i);
+        let mut relevancia = vec![(false, 0); self.movies.len()];
+        let passes = |&i: &usize| matcher.passes(self, i).map(|r| relevancia[i] = r).is_some();
         let mut found: Vec<usize> = if filtro.nao_me_interessa {
             (0..self.movies.len()).filter(|&i| self.dispensado(i)).filter(passes).collect()
         } else {
@@ -1194,6 +1195,8 @@ impl Core {
             let n = found.partition_point(|&i| ordenado(i));
             found[..n].sort_by(|&a, &b| score(b).total_cmp(&score(a)));
         }
+        // Stable: equally good matches keep the order above.
+        found.sort_by_key(|&i| relevancia[i]);
         let start = (page * PAGE_SIZE).min(found.len());
         let end = (start + PAGE_SIZE).min(found.len());
         ExplorarPage { movies: found[start..end].iter().map(|&i| self.card(i)).collect(), has_more: end < found.len() }
