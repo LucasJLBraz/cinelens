@@ -156,12 +156,18 @@
     #abas svg { width: 56px; height: 28px; padding: 2px 16px; border-radius: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     #abas button.on { color: var(--accent); font-weight: 600; }
     #abas button.on svg { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+    /* Compact, so the atalhos and the first row's title show without scrolling. */
     #destaques { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
-    .destaque { flex: none; width: 100%; scroll-snap-align: start; display: flex; gap: 16px; padding: 8px 16px; }
-    .destaque .poster { width: 120px; flex: none; }
-    .destaque h2 { margin: 0; }
-    .destaque .acoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .destaque .acoes .on { border-color: var(--accent); color: var(--accent); }
+    .destaque { flex: none; width: 100%; max-height: 40vh; scroll-snap-align: start; display: flex; gap: var(--s4); padding: var(--s2) var(--gutter); }
+    .destaque .poster { width: auto; height: min(180px, calc(40vh - 2 * var(--s2))); flex: none; }
+    .destaque .info { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+    .destaque h2 { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+    .destaque .porque { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-meta); color: var(--muted); }
+    .destaque .acoes { display: flex; gap: var(--s2); margin-top: auto; }
+    .destaque .acoes button { display: flex; align-items: center; justify-content: center; width: var(--alvo); height: var(--alvo); padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: none; color: var(--text); }
+    .destaque .acoes svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .destaque .acoes [aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+    .destaque .acoes [aria-pressed=true] svg { fill: currentColor; }
     #atalhos { padding: 0 16px; }
     #fileiras section { padding: 0 16px; }
     .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
@@ -1224,31 +1230,35 @@
     function destaque(d) {
       const el = document.createElement('article');
       el.className = 'destaque';
-      const info = document.createElement('div');
+      const info = Object.assign(document.createElement('div'), { className: 'info' });
       // The poster may turn into its placeholder, so the whole destaque but its actions opens the movie.
       el.addEventListener('click', e => e.target.closest('.acoes') || openMovie(d.tmdb_id));
       const title = Object.assign(document.createElement('h2'), { textContent: d.title });
-      const original = Object.assign(document.createElement('div'), { className: 'original', textContent: d.year ? `${d.original_title} · ${d.year}` : d.original_title });
-      const exibicao = faixaEl(d.exibicao);
-      const porque = Object.assign(document.createElement('div'), { className: 'meta', textContent: d.porque.length ? `Porque você amou ${d.porque.join(' e ')}` : '' });
+      const porque = Object.assign(document.createElement('div'), { className: 'porque', textContent: d.porque.length ? `Porque você amou ${d.porque.join(' e ')}` : '' });
       const acoes = document.createElement('div');
       acoes.className = 'acoes';
-      const acao = (text, onclick) => acoes.appendChild(Object.assign(document.createElement('button'), { className: 'chip', textContent: text, onclick }));
-      const quero = acao('Quero assistir', async () => {
-        await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'QueroAssistir', on: !quero.classList.contains('on') });
-        quero.classList.toggle('on');
+      const acao = (label, icone, onclick) => {
+        const b = Object.assign(document.createElement('button'), { title: label, onclick });
+        b.setAttribute('aria-label', label);
+        b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icone}</svg>`;
+        return acoes.appendChild(b);
+      };
+      const quero = acao('Quero assistir', '<path d="M6 3h12v18l-6-4-6 4z"/>', async () => {
+        const on = quero.getAttribute('aria-pressed') !== 'true';
+        await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'QueroAssistir', on });
+        quero.setAttribute('aria-pressed', on);
         stale = true;
       });
-      quero.classList.toggle('on', d.quero_assistir);
-      acao('Parecidos', async () => {
+      quero.setAttribute('aria-pressed', d.quero_assistir);
+      acao('Parecidos', '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>', async () => {
         await openMovie(d.tmdb_id);
         document.getElementById('parecidos-titulo').scrollIntoView();
       });
-      acao('Agora não', async () => {
+      acao('Agora não', '<path d="M18 6 6 18M6 6l12 12"/>', async () => {
         await invoke('marcar', { tmdbId: d.tmdb_id, marca: 'AgoraNao', on: true });
         loadInicio();
       });
-      info.append(title, original, exibicao, porque, acoes);
+      info.append(title, faixaEl(d.exibicao), porque, acoes);
       el.append(posterOf(d), info);
       return el;
     }
