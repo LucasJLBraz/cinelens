@@ -208,6 +208,11 @@ fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Res
 }
 
 #[tauri::command]
+fn parecidos(core: tauri::State<RwLock<Core>>, tmdb_id: u32, desde: usize) -> Vec<MovieCard> {
+    core.read().unwrap().parecidos(tmdb_id, desde)
+}
+
+#[tauri::command]
 fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
     core.read().unwrap().parecidos_mas(tmdb_id, direcao)
 }
@@ -614,6 +619,7 @@ pub fn run() {
             set_notificacao,
             servicos,
             set_servicos,
+            parecidos,
             parecidos_mas,
             set_pesou,
             pesou_oculto,

@@ -101,6 +101,18 @@ fn parecidos_are_the_movies_most_alike_in_who_liked_them() {
 }
 
 #[test]
+fn ver_mais_goes_on_with_the_next_most_alike_parecidos() {
+    let core = owner();
+    let page: Vec<u32> = core.movie(2).unwrap().parecidos.iter().map(|m| m.tmdb_id).collect();
+    let from = |desde| core.parecidos(2, desde).iter().map(|m| m.tmdb_id).collect::<Vec<_>>();
+
+    assert_eq!(from(0), page);
+    assert_eq!(from(3), page[3..], "past the first three, the rest in order of likeness");
+    assert!(from(page.len()).is_empty());
+    assert!(core.parecidos(999, 0).is_empty(), "no one outside the catálogo");
+}
+
+#[test]
 fn the_reason_line_names_movies_the_owner_rated_highly() {
     let core = owner();
     assert_eq!(core.movie(2).unwrap().porque, ["Interestelar"]);

@@ -1007,7 +1007,7 @@ impl Core {
             elenco: people(&m.cast),
             trilha: people(&m.composers),
             porque: self.porque(i),
-            parecidos: self.parecidos(i),
+            parecidos: self.parecidos(tmdb_id, 0),
             nota: history.last().map(|e| e.nota),
             history,
             quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
@@ -1021,8 +1021,10 @@ impl Core {
         })
     }
 
-    fn parecidos(&self, i: usize) -> Vec<MovieCard> {
-        self.alike(i, PARECIDOS).into_iter().map(|j| self.card(j)).collect()
+    /// The next parecidos after the first `desde`, most alike first: "ver mais" pages through them.
+    pub fn parecidos(&self, tmdb_id: u32, desde: usize) -> Vec<MovieCard> {
+        let Some(&i) = self.index.get(&tmdb_id) else { return Vec::new() };
+        self.alike(i, desde + PARECIDOS).into_iter().skip(desde).map(|j| self.card(j)).collect()
     }
 
     /// "Parecidos, mas…": of the movies most alike to this one, those further in `direcao` than

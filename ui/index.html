@@ -104,6 +104,7 @@
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
     #parecidos-mas { margin-bottom: 8px; }
+    #parecidos-ver-mais { margin-top: 8px; font-size: 13px; }
     footer { padding: 32px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
     body:has(#abas:not([hidden])) { padding-bottom: 56px; }
     #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); padding-bottom: env(safe-area-inset-bottom); }
@@ -260,6 +261,7 @@
       <button class="chip" data-direcao="MelhorFotografia">melhor fotografia</button>
     </div>
     <div id="parecidos" class="fileira"></div>
+    <button id="parecidos-ver-mais" class="link">ver mais parecidos</button>
     <h2 id="direcao-titulo">Direção</h2>
     <div id="direcao" class="pessoas"></div>
     <h2 id="elenco-titulo">Elenco</h2>
@@ -706,6 +708,7 @@
       document.getElementById('parecidos-titulo').hidden = !m.parecidos.length;
       document.getElementById('parecidos-mas').hidden = !m.parecidos.length;
       parecidos = m.parecidos;
+      parecidosAcabaram = m.parecidos.length < PARECIDOS_POR_PAGINA;
       showParecidos(m.parecidos);
       for (const b of pesouEl.querySelectorAll('[data-aspecto]')) b.classList.toggle('on', m.pesou.includes(b.dataset.aspecto));
       document.getElementById('direcao-titulo').hidden = !m.direcao.length && !m.trilha.length;
@@ -717,13 +720,30 @@
       trailer.onclick = () => abrirUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(m.trailer_youtube)}`);
     }
 
-    // The page's own parecidos, shown again when the "parecidos, mas…" chip is cleared.
+    // The page's own parecidos and those ver mais added, shown again when the "parecidos, mas…" chip is cleared.
     let parecidos = [];
+    let parecidosAcabaram = false;
+    // The core's PARECIDOS: a shorter page is the last one.
+    const PARECIDOS_POR_PAGINA = 12;
     const parecidosMasEl = document.getElementById('parecidos-mas');
+    const parecidosVerMaisEl = document.getElementById('parecidos-ver-mais');
     function showParecidos(list) {
       for (const b of parecidosMasEl.querySelectorAll('.chip')) b.classList.remove('on');
       document.getElementById('parecidos').replaceChildren(...list.map(card));
+      parecidosVerMaisEl.hidden = parecidosAcabaram;
     }
+    parecidosVerMaisEl.addEventListener('click', async () => {
+      const id = filmeEl.dataset.id;
+      const antes = parecidos;
+      parecidosVerMaisEl.disabled = true;
+      const mais = await invoke('parecidos', { tmdbId: Number(id), desde: antes.length }).finally(() => parecidosVerMaisEl.disabled = false);
+      // Another movie opened or a "parecidos, mas…" chip picked meanwhile: this page is stale.
+      if (filmeEl.dataset.id !== id || parecidos !== antes || parecidosVerMaisEl.hidden) return;
+      parecidosAcabaram = mais.length < PARECIDOS_POR_PAGINA;
+      parecidos = [...antes, ...mais];
+      document.getElementById('parecidos').append(...mais.map(card));
+      parecidosVerMaisEl.hidden = parecidosAcabaram;
+    });
     parecidosMasEl.addEventListener('click', async e => {
       const b = e.target.closest('[data-direcao]');
       if (!b) return;
@@ -731,6 +751,7 @@
       const list = await invoke('parecidos_mas', { tmdbId: Number(filmeEl.dataset.id), direcao: b.dataset.direcao });
       showParecidos(list);
       b.classList.add('on');
+      parecidosVerMaisEl.hidden = true;
       if (!list.length) document.getElementById('parecidos').append(Object.assign(document.createElement('p'), { className: 'meta', textContent: 'Nenhum parecido nessa direção.' }));
     });
 
