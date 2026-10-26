@@ -35,7 +35,7 @@
     .poster { width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--card); object-fit: cover; display: block; }
     .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .original { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #more, #parecidos-mais-filmes { display: block; margin: 16px auto max(24px, env(safe-area-inset-bottom)); padding: 10px 24px; border: 1px solid var(--muted); border-radius: 20px; background: none; color: var(--text); font: inherit; }
+    #more, #parecidos-mais-filmes { display: block; min-height: var(--alvo); margin: var(--s4) auto max(var(--s5), env(safe-area-inset-bottom)); padding: 0 var(--s5); border: 1px solid var(--muted); border-radius: var(--s5); background: none; color: var(--text); font: inherit; }
     [hidden] { display: none !important; }
     .poster.missing { display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
     #setup { padding: 32vh 32px 0; text-align: center; }
@@ -71,14 +71,14 @@
     .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
     #nota-prevista { margin-top: var(--s2); }
     /* Scores start hidden, like "ocultar patrimônio": a tap reveals one. */
-    #pontuacoes { flex-wrap: wrap; margin-top: var(--s4); }
+    #pontuacoes { flex-wrap: wrap; margin-top: var(--s5); }
     #pontuacoes .pill { font-size: var(--t-meta); }
     #pontuacoes .pill[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
     /* The rating panel never shows a prediction, so it cannot anchor the nota. */
     #filme.dando-nota :is(#nota-prevista, #pontuacoes) { display: none; }
     #sinopse { margin: 0; line-height: 1.5; }
     #sinopse.fechada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
-    /* The movie page: one section per part, 24px apart. */
+    /* The movie page: one section per part, the same space apart. */
     #filme .secao { margin-top: var(--s5); }
     #filme .secao h2 { margin-top: 0; }
     #filme .cartao { padding: var(--s4); border-radius: var(--s3); background: var(--card); }
@@ -105,7 +105,7 @@
     #notas, #rodada-notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
     #notas button, #rodada-notas button { padding: 10px 0; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #notas button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
-    #acoes { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); align-items: flex-start; }
+    #acoes { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s5); align-items: flex-start; }
     #acoes .on { border-color: var(--accent); color: var(--accent); }
     .menu { position: relative; }
     .menu summary { list-style: none; cursor: pointer; }
@@ -125,7 +125,7 @@
     .exibicao { font-size: 12px; color: var(--accent); }
     #revelacao { margin: 8px 0 0; color: var(--accent); }
     #ajustes label, #ajustes details.dica { display: block; margin-top: var(--s5); font-weight: 600; }
-    #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
+    #ajustes select { display: block; min-height: var(--alvo); width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
     #resumo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 16px; border-radius: 12px; background: var(--card); }
     #resumo .numeros { display: flex; gap: 24px; min-width: 0; }
@@ -143,7 +143,7 @@
     #stats .colunas { display: flex; gap: 2px; align-items: flex-end; height: 80px; }
     #stats .colunas div { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--accent); }
     #stats .eixo { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-    #stats .link { display: flex; margin-top: 4px; font-size: 13px; text-align: left; }
+    #stats .link { display: flex; margin-top: var(--s1); font-size: var(--t-meta); text-align: left; }
     #pesou { margin-top: 12px; }
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
@@ -164,10 +164,10 @@
     .destaque .acoes .on { border-color: var(--accent); color: var(--accent); }
     #atalhos { padding: 0 16px; }
     #fileiras section { padding: 0 16px; }
-    .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
     #rodada { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #rodada p { color: var(--muted); }
-    #rodada-filme { max-width: 220px; margin: var(--s4) auto 0; text-align: center; }
+    #rodada-filme { max-width: calc(2 * var(--largura-card)); margin: var(--s4) auto 0; text-align: center; }
     #rodada-filme .movie .titulo { font-size: var(--t-secao); }
     #rodada-notas { max-width: 420px; margin: 16px auto 8px; }
     #rodada-nao-vi { display: block; margin: 0 auto; }
@@ -821,10 +821,8 @@
       }));
       document.getElementById('sinopse-secao').hidden = !m.sinopse;
       sinopseEl.textContent = m.sinopse;
-      sinopseEl.classList.add('fechada');
-      // Measured once the page shows.
-      requestAnimationFrame(() => sinopseMaisEl.hidden = sinopseEl.scrollHeight <= sinopseEl.clientHeight);
       document.getElementById('parecidos-secao').hidden = !m.parecidos.length;
+      document.getElementById('parecidos-todos').hidden = m.parecidos.length < PARECIDOS_POR_PAGINA;
       parecidos = m.parecidos;
       showParecidos(m.parecidos);
       for (const b of pesouEl.querySelectorAll('[data-aspecto]')) b.classList.toggle('on', m.pesou.includes(b.dataset.aspecto));
@@ -916,6 +914,9 @@
       revelados.clear();
       document.getElementById('nota-history').hidden = true;
       showMovie(m);
+      // Clamped on opening only, so a nota given meanwhile keeps it open; measured once the page shows.
+      sinopseEl.classList.add('fechada');
+      requestAnimationFrame(() => sinopseMaisEl.hidden = sinopseEl.scrollHeight <= sinopseEl.clientHeight);
       tela(filmeEl);
       // Lets Android's back gesture close the page.
       if (push) history.pushState({ filme: id }, '');
