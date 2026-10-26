@@ -106,3 +106,21 @@ fn loading_model_with_unknown_format_version_keeps_the_current_one() {
     assert_eq!(core.model_version(), Some("fixture-2026-10-25"));
     assert!(core.movie(27205).unwrap().card.nota_prevista.is_some());
 }
+
+#[test]
+fn a_low_confianca_five_ranks_below_a_high_confianca_four_point_six() {
+    // Before any nota the prediction is the global mean plus the movie's bias.
+    let model = br#"{"format_version": 2, "data_version": "x", "global_mean": 3.5, "lambda": 0.05, "content": [],
+        "movies": [
+            {"tmdb_id": 603, "bias": 2.0, "factors": [0.0], "ratings": 5},
+            {"tmdb_id": 27205, "bias": 1.1, "factors": [0.0], "ratings": 50000}
+        ]}"#;
+    let mut core = Core::open(CATALOG).unwrap();
+    core.load_model(model).unwrap();
+
+    let top: Vec<_> = core.explorar(&Filtro::default(), 0).movies.into_iter().take(2).collect();
+
+    assert_eq!(top.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), [27205, 603]);
+    assert_eq!(top[1].nota_prevista, Some(5.0), "the shown nota prevista stays raw");
+    assert!(core.inicio(0).destaques.first().is_some_and(|d| d.card.tmdb_id == 27205));
+}

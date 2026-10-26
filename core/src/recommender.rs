@@ -141,7 +141,7 @@ pub(crate) struct Model {
 
 /// The owner's side of the prediction, recomputed after every change to the notas.
 pub(crate) struct Profile {
-    mean: f32,
+    pub mean: f32,
     factors: Vec<f32>,
     /// Lower Cholesky factor of the fold-in's normal matrix; `None` before any nota.
     cholesky: Option<Vec<f64>>,

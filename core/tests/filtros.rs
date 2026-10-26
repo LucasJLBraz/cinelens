@@ -23,8 +23,8 @@ const CATALOG: &str = r#"{"format_version": 1, "data_version": "t",
     {"tmdb_id": 8, "title": "Sem Dados", "original_title": "No Data", "poster_path": null}
 ]}"#;
 
-/// No notas yet: each nota prevista is 3.5 + bias, so Para você is 4, 2, 3, 1, 6, 5, 7 (then 8).
-/// Movie 4 has few ratings, so a low confiança.
+/// No notas yet: each nota prevista is 3.5 + bias. Movie 4 has the highest but few ratings, so a
+/// low confiança that ranks it low: Para você is 2, 3, 1, 6, 5, 4, 7 (then 8).
 const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [],
     "movies": [
         {"tmdb_id": 1, "bias": 0.3, "factors": [0.0], "ratings": 50000},
@@ -48,7 +48,7 @@ fn ids(core: &Core, filtro: Filtro) -> Vec<u32> {
 
 #[test]
 fn unfiltered_explorar_is_para_voce() {
-    assert_eq!(ids(&core(), Filtro::default()), [4, 2, 3, 1, 6, 5, 7, 8]);
+    assert_eq!(ids(&core(), Filtro::default()), [2, 3, 1, 6, 5, 4, 7, 8]);
 }
 
 #[test]
@@ -76,14 +76,14 @@ fn genres_are_the_catalogos_list_in_portuguese() {
 fn year_and_runtime_ranges_leave_out_movies_without_them() {
     let core = core();
     assert_eq!(ids(&core, Filtro { ano_min: Some(2000), ano_max: Some(2009), ..Default::default() }), [3, 6, 5]);
-    assert_eq!(ids(&core, Filtro { duracao_max: Some(115), ..Default::default() }), [4, 6, 7]);
+    assert_eq!(ids(&core, Filtro { duracao_max: Some(115), ..Default::default() }), [6, 4, 7]);
     assert_eq!(ids(&core, Filtro { duracao_min: Some(130), ..Default::default() }), [2, 3, 1]);
 }
 
 #[test]
 fn original_language_and_country() {
     let core = core();
-    assert_eq!(ids(&core, Filtro { idioma: Some("pt".into()), ..Default::default() }), [4, 3]);
+    assert_eq!(ids(&core, Filtro { idioma: Some("pt".into()), ..Default::default() }), [3, 4]);
     assert_eq!(ids(&core, Filtro { pais: Some("GB".into()), ..Default::default() }), [2]);
     let opcoes = core.opcoes();
     assert_eq!(opcoes.idiomas, ["en", "pt", "fr"], "most movies first");
@@ -93,7 +93,7 @@ fn original_language_and_country() {
 #[test]
 fn minimum_nota_prevista_and_confianca() {
     let core = core();
-    assert_eq!(ids(&core, Filtro { nota_prevista_min: Some(3.85), ..Default::default() }), [4, 2, 3]);
+    assert_eq!(ids(&core, Filtro { nota_prevista_min: Some(3.85), ..Default::default() }), [2, 3, 4]);
     assert_eq!(ids(&core, Filtro { confianca_min: Some(0.5), ..Default::default() }), [2, 3, 1, 6, 5, 7]);
 }
 
@@ -128,7 +128,7 @@ fn onde_assistir_keeps_movies_on_the_owners_services() {
     assert_eq!(ids(&core, filtro()), [] as [u32; 0], "no services chosen yet");
 
     core.set_servicos(&[8], 0);
-    assert_eq!(ids(&core, filtro()), [4, 1]);
+    assert_eq!(ids(&core, filtro()), [1, 4]);
     // Renting is not subscription.
     core.set_servicos(&[337], 0);
     assert_eq!(ids(&core, filtro()), [2]);
@@ -144,7 +144,7 @@ fn search_matches_titles_director_and_actor_ignoring_case_and_accents() {
     assert_eq!(search("nolan"), [2, 6], "director");
     assert_eq!(search("keanu"), [1], "actor");
     assert_eq!(search("nolan memento"), [6], "every word");
-    assert_eq!(search("  "), [4, 2, 3, 1, 6, 5, 7, 8]);
+    assert_eq!(search("  "), [2, 3, 1, 6, 5, 4, 7, 8]);
 }
 
 #[test]
@@ -161,10 +161,12 @@ fn populares_raises_well_known_movies_and_garimpo_obscure_ones() {
     let core = core();
     let position = |garimpo: f32, id: u32| ids(&core, Filtro { garimpo, ..Default::default() }).iter().position(|&m| m == id).unwrap();
 
-    // Para você: 4 (900 votes) above 1 (30000 votes), 2 (35000 votes) above 3 (7000 votes).
-    assert!(position(0.0, 4) < position(0.0, 1));
-    assert!(position(-1.0, 1) < position(-1.0, 4), "Populares");
+    // Para você: 3 (7000 votes) above 1 (30000 votes), 2 (35000 votes) above 3, 5 (11000 votes)
+    // above 4 (900 votes).
+    assert!(position(0.0, 3) < position(0.0, 1));
+    assert!(position(-1.0, 1) < position(-1.0, 3), "Populares");
     assert!(position(1.0, 3) < position(1.0, 2), "Garimpo");
+    assert!(position(1.0, 4) < position(1.0, 5), "Garimpo");
     // Movies without a nota prevista stay last either way.
     assert_eq!(position(1.0, 8), 7);
 }

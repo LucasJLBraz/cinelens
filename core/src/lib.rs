@@ -660,7 +660,15 @@ impl Core {
     /// What recomendações are ranked by: the nota prevista plus `boost`. Only for movies with a
     /// nota prevista.
     fn ranking(&self, i: usize) -> f32 {
-        self.previstas[i].map_or(0.0, |(p, _)| p) + self.boost[i]
+        self.encolhida(i).unwrap_or(0.0) + self.boost[i]
+    }
+
+    /// The nota prevista shrunk toward the owner's mean by confiança², so a sparsely rated 5.0
+    /// does not outrank a well-known 4.6; only the order uses it, never what is shown.
+    fn encolhida(&self, i: usize) -> Option<f32> {
+        let (p, c) = self.previstas[i]?;
+        let mean = self.profile.as_ref().map_or(p, |profile| profile.mean);
+        Some(mean + (p - mean) * c * c)
     }
 
     /// `FA_BOOST` for a movie with a person the owner is fã of.
@@ -738,7 +746,7 @@ impl Core {
             .collect();
         let key = |i: usize| {
             let nota = self.owner.notas.get(&self.movies[i].tmdb_id).and_then(|h| h.last()).map(|e| e.nota);
-            self.previstas[i].map(|(p, _)| p).or(nota).unwrap_or(f32::NEG_INFINITY)
+            self.encolhida(i).or(nota).unwrap_or(f32::NEG_INFINITY)
         };
         found.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
         Some(Filmografia {
