@@ -126,6 +126,17 @@
     #rodada-notas { max-width: 420px; margin: 16px auto 8px; }
     #rodada-nao-vi { display: block; margin: 0 auto; }
     #rodada-revelacao { text-align: center; font-size: 13px; min-height: 1.4em; }
+    .busca-servico { width: 100%; margin-top: 8px; padding: 10px 14px; border: 1px solid var(--card); border-radius: 20px; background: var(--card); color: var(--text); font: inherit; }
+    .servicos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+    .servico { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 84px; min-width: 0; padding: 10px 6px; border: 2px solid var(--card); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; font-size: 12px; }
+    .servico img { width: 44px; height: 44px; border-radius: 10px; }
+    .servico span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .servico.on { border-color: var(--accent); color: var(--accent); }
+    #boas-vindas { display: flex; flex-direction: column; min-height: 100vh; padding: max(32px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+    #boas-vindas p { color: var(--muted); }
+    #boas-vindas .passo { flex: 1; }
+    #boas-vindas .hint { font-size: 13px; }
+    #bv-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
   </style>
 </head>
 <body>
@@ -134,6 +145,34 @@
     <p id="setup-text">Baixando os filmes, só desta vez.</p>
     <progress id="progress"></progress>
     <button id="retry" hidden>Tentar de novo</button>
+  </section>
+  <section id="boas-vindas" hidden>
+    <div class="passo" data-passo="importar">
+      <h1>Bem-vindo ao Cinelens</h1>
+      <p>Já usa o MovieLens? Traga suas notas e o app já começa sabendo do que você gosta.</p>
+      <button class="pill" data-acao="importar">Importar do MovieLens</button>
+      <p class="hint" data-resultado hidden></p>
+    </div>
+    <div class="passo" data-passo="servicos" hidden>
+      <h1>Seus serviços</h1>
+      <p>Quais você assina? Assim o app mostra o que dá para ver agora.</p>
+      <div class="seletor-servicos"></div>
+    </div>
+    <div class="passo" data-passo="google" hidden>
+      <h1>Sincronizar</h1>
+      <p>Entre com Google para ter suas notas em todos os seus aparelhos. Elas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</p>
+      <button class="pill" data-acao="google">Entrar com Google</button>
+      <p class="hint" data-resultado hidden></p>
+    </div>
+    <div class="passo" data-passo="rodada" hidden>
+      <h1>Rodada rápida</h1>
+      <p>Dê nota a alguns filmes que você viu e pule os que não viu. Cada resposta ensina o app sobre o seu gosto.</p>
+      <button class="pill" data-acao="rodada">Começar a rodada</button>
+    </div>
+    <div id="bv-rodape">
+      <span class="hint">Dá para fazer tudo isso depois, no Perfil.</span>
+      <button id="bv-seguir" class="pill">Pular</button>
+    </div>
   </section>
   <section id="inicio" hidden>
     <header><h1>Início</h1></header>
@@ -301,7 +340,7 @@
       <option value="Oculto">Oculto: só a ordem</option>
     </select>
     <label>Serviços que você assina</label>
-    <div id="servicos" class="checks"></div>
+    <div id="servicos" class="seletor-servicos"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
     <div class="checks"><label><input id="notificacao" type="checkbox"> Avisar de um lançamento Aposta forte, no máximo uma vez por semana</label></div>
@@ -517,6 +556,7 @@
         await invoke('download_catalog');
         setupEl.hidden = true;
         start();
+        boasVindas();
       } catch (e) {
         text.textContent = `Não deu para baixar o catálogo (${e}). Confira a internet.`;
         retry.hidden = false;
@@ -614,7 +654,7 @@
     const pessoaEl = document.getElementById('pessoa');
     const abasEl = document.getElementById('abas');
     const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes') };
-    const telas = [...Object.values(abas), filmeEl, pessoaEl];
+    const telas = [...Object.values(abas), filmeEl, pessoaEl, document.getElementById('boas-vindas')];
     function tela(el) {
       for (const t of telas) t.hidden = t !== el;
       abasEl.hidden = !Object.values(abas).includes(el);
@@ -899,16 +939,22 @@
       googleEl.hidden = conectado;
       if (conectado) document.getElementById('google-hint').textContent = 'Sincronizando com o seu Google Drive.';
     }
-    googleEl.addEventListener('click', async () => {
-      googleEl.disabled = true;
+    // Signs in from Perfil or the boas-vindas, with what went wrong in `hint`.
+    async function entrarGoogle(button, hint) {
+      button.disabled = true;
       try {
         await invoke('google_entrar');
-        showGoogle();
+        return true;
       } catch (e) {
-        document.getElementById('google-hint').textContent = `Não deu para entrar (${e}).`;
+        hint.hidden = false;
+        hint.textContent = `Não deu para entrar (${e}).`;
+        return false;
       } finally {
-        googleEl.disabled = false;
+        button.disabled = false;
       }
+    }
+    googleEl.addEventListener('click', async () => {
+      if (await entrarGoogle(googleEl, document.getElementById('google-hint'))) showGoogle();
     });
     async function loadPerfil() {
       invoke('estatisticas').then(showStats, () => statsEl.replaceChildren());
@@ -922,23 +968,47 @@
       displayModeEl.value = await invoke('display_mode');
       perguntarPesouEl.checked = !(await invoke('pesou_oculto'));
       notificacaoEl.checked = await invoke('notificacao');
-      const [provedores, meus] = await invoke('servicos');
-      servicosEl.replaceChildren(...provedores.map(p => {
-        const label = document.createElement('label');
-        const box = document.createElement('input');
-        box.type = 'checkbox';
-        box.value = p.id;
-        box.checked = meus.includes(p.id);
-        label.append(box, p.name);
-        return label;
-      }));
+      seletorServicos(document.getElementById('servicos'));
     }
-    const servicosEl = document.getElementById('servicos');
-    servicosEl.addEventListener('change', async () => {
-      const ids = [...servicosEl.querySelectorAll('input:checked')].map(b => Number(b.value));
-      await invoke('set_servicos', { ids });
-      stale = true;
-    });
+
+    // The services the owner subscribes to, in Perfil and the boas-vindas: the main ones as
+    // chips (the core lists them first), the rest found by search.
+    const SERVICOS_PRINCIPAIS = 12;
+    const semAcento = t => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    async function seletorServicos(el) {
+      const [provedores, meus] = await invoke('servicos');
+      const busca = Object.assign(document.createElement('input'), { type: 'search', className: 'busca-servico', placeholder: 'Buscar outro serviço' });
+      const grade = document.createElement('div');
+      grade.className = 'servicos';
+      const chips = provedores.map(p => {
+        const b = document.createElement('button');
+        b.className = 'servico';
+        b.dataset.id = p.id;
+        if (p.logo_url) {
+          const img = Object.assign(document.createElement('img'), { src: p.logo_url, alt: '' });
+          img.onerror = () => img.remove();
+          b.append(img);
+        }
+        b.append(Object.assign(document.createElement('span'), { textContent: p.name }));
+        const marcar = on => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); };
+        marcar(meus.includes(p.id));
+        b.addEventListener('click', async () => {
+          marcar(!b.classList.contains('on'));
+          await invoke('set_servicos', { ids: chips.filter(c => c.classList.contains('on')).map(c => Number(c.dataset.id)) });
+          stale = true;
+          el.dispatchEvent(new Event('change'));
+        });
+        return b;
+      });
+      const filtrar = () => {
+        const q = semAcento(busca.value.trim());
+        chips.forEach((b, i) => b.hidden = q ? !semAcento(provedores[i].name).includes(q) : i >= SERVICOS_PRINCIPAIS && !b.classList.contains('on'));
+      };
+      busca.addEventListener('input', filtrar);
+      filtrar();
+      grade.append(...chips);
+      el.replaceChildren(busca, grade);
+    }
     const perguntarPesouEl = document.getElementById('perguntar-pesou');
     perguntarPesouEl.addEventListener('change', () => invoke('set_pesou_oculto', { oculto: !perguntarPesouEl.checked }));
     const notificacaoEl = document.getElementById('notificacao');
@@ -971,8 +1041,13 @@
     });
 
     const importFiles = document.getElementById('import-files');
-    const importResult = document.getElementById('import-result');
-    document.getElementById('import').addEventListener('click', () => importFiles.click());
+    // Where the import's outcome is shown: Perfil's line or the boas-vindas'.
+    let importResult = document.getElementById('import-result');
+    function importar(resultEl) {
+      importResult = resultEl;
+      importFiles.click();
+    }
+    document.getElementById('import').addEventListener('click', () => importar(document.getElementById('import-result')));
     importFiles.addEventListener('change', async () => {
       const files = await Promise.all([...importFiles.files].map(f => f.text()));
       importFiles.value = '';
@@ -982,6 +1057,7 @@
         const s = await invoke('import_movielens', { files });
         stale = true;
         importResult.textContent = `Importadas ${s.notas} notas: ${s.matched} encontradas no catálogo, ${s.unmatched} não encontradas. ${s.quero_assistir} filmes em quero assistir.`;
+        importResult.dispatchEvent(new Event('importado'));
       } catch (e) {
         importResult.textContent = `Não deu para importar (${e}). Escolha os arquivos de notas e de logs do export do MovieLens.`;
       }
@@ -1045,6 +1121,45 @@
         return section;
       }));
     }
+
+    // Shown once, right after the first catálogo download (not again if the catálogo is ever
+    // downloaded anew). Every step can be skipped and done later from Perfil (the rodada from its tab).
+    const bvEl = document.getElementById('boas-vindas');
+    const bvSeguir = document.getElementById('bv-seguir');
+    const passos = [...bvEl.querySelectorAll('.passo')];
+    let passo = 0;
+    function mostrarPasso(i) {
+      passo = i;
+      passos.forEach((p, j) => p.hidden = j !== i);
+      bvSeguir.textContent = 'Pular';
+      if (passos[i].dataset.passo === 'servicos') seletorServicos(passos[i].querySelector('.seletor-servicos'));
+      window.scrollTo(0, 0);
+    }
+    const passoFeito = () => bvSeguir.textContent = 'Continuar';
+    function boasVindas() {
+      try {
+        if (localStorage.getItem('boas-vindas')) return;
+        localStorage.setItem('boas-vindas', '1');
+      } catch {}
+      tela(bvEl);
+      mostrarPasso(0);
+    }
+    bvSeguir.addEventListener('click', () => passo + 1 < passos.length ? mostrarPasso(passo + 1) : abrirAba('inicio'));
+    bvEl.querySelector('[data-passo=servicos] .seletor-servicos').addEventListener('change', passoFeito);
+    bvEl.addEventListener('importado', passoFeito, true);
+    bvEl.addEventListener('click', async e => {
+      const b = e.target.closest('[data-acao]');
+      if (!b) return;
+      const resultado = b.parentElement.querySelector('[data-resultado]');
+      if (b.dataset.acao === 'importar') importar(resultado);
+      if (b.dataset.acao === 'google' && await entrarGoogle(b, resultado)) {
+        resultado.hidden = false;
+        resultado.textContent = 'Pronto: suas notas vão sincronizar com o seu Google Drive.';
+        b.hidden = true;
+        passoFeito();
+      }
+      if (b.dataset.acao === 'rodada') abrirAba('rodada');
+    });
 
     // Explorar works in catálogo order until the model arrives; it is fetched in the
     // background, so the app never waits on it (and retries on the next launch if offline).

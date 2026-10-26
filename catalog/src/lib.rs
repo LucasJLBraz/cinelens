@@ -76,6 +76,7 @@ struct Person {
 struct Provider {
     id: u32,
     name: String,
+    logo_path: Option<String>,
 }
 
 /// Where a movie is in Brazil (TMDB's data from JustWatch), as provider ids.
@@ -193,6 +194,8 @@ struct Region {
 struct RegionProvider {
     provider_id: u32,
     provider_name: String,
+    #[serde(default)]
+    logo_path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -381,7 +384,7 @@ fn movie(mut d: Details) -> (Movie, Vec<Provider>) {
     let providers: Vec<Provider> = region
         .iter()
         .flat_map(|r| r.flatrate.iter().chain(&r.rent).chain(&r.buy))
-        .map(|p| Provider { id: p.provider_id, name: p.provider_name.clone() })
+        .map(|p| Provider { id: p.provider_id, name: p.provider_name.clone(), logo_path: p.logo_path.clone() })
         .collect();
     let ids = |list: &[RegionProvider]| list.iter().map(|p| p.provider_id).collect();
     let watch = region.map(|r| Watch { flatrate: ids(&r.flatrate), rent: ids(&r.rent), buy: ids(&r.buy), link: r.link });

@@ -26,6 +26,7 @@ pub const CATALOG_FORMAT_VERSION: u32 = 1;
 const PAGE_SIZE: usize = 30;
 const POSTER_BASE: &str = "https://image.tmdb.org/t/p/w342";
 const BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w780";
+const LOGO_BASE: &str = "https://image.tmdb.org/t/p/w92";
 const PARECIDOS: usize = 12;
 /// The most alike movies "parecidos, mas…" picks its parecidos from.
 const PARECIDOS_MAS_POOL: usize = 100;
@@ -94,7 +95,7 @@ struct CatalogArtifact {
     #[serde(default)]
     genres: Vec<Genero>,
     #[serde(default)]
-    providers: Vec<Provedor>,
+    providers: Vec<Provider>,
     #[serde(default)]
     trending: Vec<u32>,
     movies: Vec<Movie>,
@@ -117,11 +118,19 @@ pub struct Opcoes {
     pub paises: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct Provider {
+    id: u32,
+    name: String,
+    logo_path: Option<String>,
+}
+
 /// A streaming, rental or purchase service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Provedor {
     pub id: u32,
     pub name: String,
+    pub logo_url: Option<String>,
 }
 
 /// Where a movie is in Brazil, as provider ids (TMDB's data from JustWatch).
@@ -575,7 +584,14 @@ impl Core {
         self.em_alta = artifact.trending.into_iter().collect();
         self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
         self.generos = artifact.genres;
-        self.provedores = artifact.providers;
+        let na_assinatura = |id: u32| self.movies.iter().filter(|m| m.watch.as_ref().is_some_and(|w| w.flatrate.contains(&id))).count();
+        let mut provedores: Vec<Provedor> = artifact
+            .providers
+            .into_iter()
+            .map(|p| Provedor { id: p.id, name: p.name, logo_url: p.logo_path.map(|l| format!("{LOGO_BASE}{l}")) })
+            .collect();
+        provedores.sort_by_cached_key(|p| (std::cmp::Reverse(na_assinatura(p.id)), p.name.clone()));
+        self.provedores = provedores;
         self.refresh_items();
         Ok(())
     }
@@ -920,7 +936,8 @@ impl Core {
         self.owner.notificados.insert(tmdb_id, at);
     }
 
-    /// Every service some catálogo movie is on in Brazil, by name.
+    /// Every service some catálogo movie is on in Brazil, those with the most movies on
+    /// subscription first (the main services), then by name.
     pub fn provedores(&self) -> &[Provedor] {
         &self.provedores
     }

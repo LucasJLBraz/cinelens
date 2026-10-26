@@ -94,10 +94,14 @@ fn build_fails_instead_of_publishing_a_partial_catalogo() {
 fn artifact_carries_brazil_watch_providers() {
     let artifact: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
 
-    // Only providers some movie is on in Brazil, by name.
+    // Only providers some movie is on in Brazil, by name, with their TMDB logos.
     assert_eq!(
         artifact["providers"],
-        json!([{"id": 2, "name": "Apple TV"}, {"id": 1899, "name": "Max"}, {"id": 8, "name": "Netflix"}])
+        json!([
+            {"id": 2, "name": "Apple TV", "logo_path": "/a.jpg"},
+            {"id": 1899, "name": "Max", "logo_path": "/m.jpg"},
+            {"id": 8, "name": "Netflix", "logo_path": "/n.jpg"}
+        ])
     );
     assert_eq!(
         artifact["movies"][0]["watch"],
@@ -120,7 +124,8 @@ fn core_lists_where_to_watch_a_built_movie() {
     let names = |p: &[cinelens_core::Provedor]| p.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
     assert_eq!(names(&matrix.assinatura), ["Max", "Netflix"]);
     assert!(matrix.aluguel.is_empty() && matrix.compra.is_empty());
-    assert_eq!(names(core.provedores()), ["Apple TV", "Max", "Netflix"]);
+    // Netflix has two movies on subscription, Max one; Apple TV only rents and sells.
+    assert_eq!(names(core.provedores()), ["Netflix", "Max", "Apple TV"]);
     assert!(core.movie(13).unwrap().onde_assistir.is_none());
 }
 
