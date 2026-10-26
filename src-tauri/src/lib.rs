@@ -354,7 +354,8 @@ fn opcoes(core: tauri::State<RwLock<Core>>) -> Opcoes {
 }
 
 /// The data versions of the local catálogo and model; `None` before their first download.
-#[tauri::command]
+/// Off the main thread: the UI's first call, it waits for the launch to load them.
+#[tauri::command(async)]
 fn status(core: tauri::State<RwLock<Core>>) -> (Option<String>, Option<String>) {
     let core = core.read().unwrap();
     (core.data_version().map(str::to_string), core.model_version().map(str::to_string))
@@ -566,31 +567,44 @@ pub fn run() {
     builder
         .setup(|app| {
             let mut core = Core::default();
-            // A missing or unreadable catálogo means the UI downloads it again.
-            if let Ok(json) = std::fs::read(catalog_file(app.handle())) {
-                let _ = core.load_catalog(&json);
-            }
-            // Same for the model.
-            if let Ok(json) = std::fs::read(model_file(app.handle())) {
-                let _ = core.load_model(&json);
-            }
             // Unlike the catálogo, owner data cannot be downloaded again: refuse to start over it.
+            // Cheap here, with no catálogo or model to rank yet.
             match std::fs::read(owner_file(app.handle())) {
                 Ok(bytes) => core.load_owner_data(&bytes)?,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.into()),
             }
             app.manage(RwLock::new(core));
+            // The catálogo and model take seconds to parse (tens in a debug build on a phone), and
+            // the setup runs on the main thread, before the webview shows: load them behind the
+            // lock instead, so `status` waits for them rather than seeing a first run.
             let handle = app.handle().clone();
-            std::thread::spawn(move || loop {
-                let updates = [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))];
-                for (what, result) in updates.into_iter().chain([("notification", notify(&handle))]) {
-                    if let Err(e) = result {
-                        eprintln!("{what} update: {e}");
+            let (locked, wait) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                {
+                    let state = handle.state::<RwLock<Core>>();
+                    let mut core = state.write().unwrap();
+                    let _ = locked.send(());
+                    // A missing or unreadable catálogo means the UI downloads it again.
+                    if let Ok(json) = std::fs::read(catalog_file(&handle)) {
+                        let _ = core.load_catalog(&json);
+                    }
+                    // Same for the model.
+                    if let Ok(json) = std::fs::read(model_file(&handle)) {
+                        let _ = core.load_model(&json);
                     }
                 }
-                std::thread::sleep(UPDATE_EVERY);
+                loop {
+                    let updates = [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))];
+                    for (what, result) in updates.into_iter().chain([("notification", notify(&handle))]) {
+                        if let Err(e) = result {
+                            eprintln!("{what} update: {e}");
+                        }
+                    }
+                    std::thread::sleep(UPDATE_EVERY);
+                }
             });
+            wait.recv()?;
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 schedule_sync(&handle);
