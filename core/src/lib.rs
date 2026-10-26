@@ -57,6 +57,10 @@ const AGORA_NAO_SECS: i64 = 28 * 86_400;
 const MAE_LIMITE: f32 = 0.65;
 /// Share of the owner's most recent notas a new model is measured on (ADR 0002 uses 20%).
 const MAE_FRACAO: f32 = 0.2;
+/// The notification about a new release comes at most this often...
+const NOTIFICACAO_SECS: i64 = 7 * 86_400;
+/// ...about a movie released at most this many days ago.
+const NOVO_DIAS: i64 = 30;
 
 #[derive(Debug)]
 pub enum Error {
@@ -298,6 +302,14 @@ pub struct Destaque {
     pub quero_assistir: bool,
 }
 
+/// The weekly notification: a new release the owner would likely love.
+#[derive(Debug, Serialize)]
+pub struct Notificacao {
+    pub tmdb_id: u32,
+    /// "Saiu X, Aposta forte", shown as the display mode shows a nota prevista.
+    pub texto: String,
+}
+
 /// One of Início's rows: the first movies Explorar shows with a lista pronta's filtro.
 #[derive(Debug, Serialize)]
 pub struct Fileira {
@@ -438,6 +450,9 @@ struct Settings {
     /// The owner never wants to be asked o que pesou.
     #[serde(default)]
     pesou_oculto: bool,
+    /// The owner turned the weekly notification off.
+    #[serde(default)]
+    sem_notificacao: bool,
 }
 
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
@@ -461,6 +476,9 @@ struct OwnerData {
     /// Movies skipped in the rodada rápida as não vi: never asked again.
     #[serde(default)]
     nao_vi: BTreeSet<u32>,
+    /// Movie → when (Unix seconds) the weekly notification announced it.
+    #[serde(default)]
+    notificados: BTreeMap<u32, i64>,
     #[serde(default)]
     settings: Settings,
     /// When (Unix seconds) each mark or setting last changed on any device, removals included,
@@ -856,6 +874,44 @@ impl Core {
 
     pub fn display_mode(&self) -> DisplayMode {
         self.owner.settings.display_mode
+    }
+
+    /// Whether the weekly notification is on.
+    pub fn notificacao(&self) -> bool {
+        !self.owner.settings.sem_notificacao
+    }
+
+    pub fn set_notificacao(&mut self, on: bool, at: i64) {
+        self.owner.stamp("settings/sem_notificacao".into(), at);
+        self.owner.settings.sem_notificacao = !on;
+    }
+
+    /// The weekly notification, if one is due at `at` (Unix seconds): the best recomendação
+    /// released in the last `NOVO_DIAS` days, in Aposta forte and never announced before.
+    pub fn notificacao_devida(&self, at: i64) -> Option<Notificacao> {
+        let last = self.owner.notificados.values().max();
+        if self.owner.settings.sem_notificacao || last.is_some_and(|&t| at - t < NOTIFICACAO_SECS) {
+            return None;
+        }
+        let (desde, hoje) = (listas::date(at - NOVO_DIAS * 86_400), listas::date(at));
+        let novo = |m: &Movie| m.release_date.as_ref().is_some_and(|d| *d >= desde && *d <= hoje);
+        let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
+            let m = &self.movies[i];
+            let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, &self.ranked) == Faixa::ApostaForte);
+            alta && novo(m) && !self.owner.notificados.contains_key(&m.tmdb_id)
+        })?;
+        let (m, (prevista, _)) = (&self.movies[i], self.previstas[i]?);
+        let texto = match self.owner.settings.display_mode {
+            DisplayMode::Faixa => format!("Saiu {}, Aposta forte", m.title),
+            DisplayMode::Estrelas => format!("Saiu {}, nota prevista {}", m.title, format!("{prevista:.1}").replace('.', ",")),
+            DisplayMode::Oculto => format!("Saiu {}", m.title),
+        };
+        Some(Notificacao { tmdb_id: m.tmdb_id, texto })
+    }
+
+    /// The owner was shown the notification about the movie at `at`: the week starts over.
+    pub fn notificado(&mut self, tmdb_id: u32, at: i64) {
+        self.owner.notificados.insert(tmdb_id, at);
     }
 
     /// Every service some catálogo movie is on in Brazil, by name.

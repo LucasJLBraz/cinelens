@@ -251,6 +251,40 @@ fn now() -> i64 {
 }
 
 #[tauri::command]
+fn notificacao(core: tauri::State<RwLock<Core>>) -> bool {
+    core.read().unwrap().notificacao()
+}
+
+#[tauri::command]
+fn set_notificacao(app: AppHandle, core: tauri::State<RwLock<Core>>, on: bool) -> Result<(), String> {
+    let mut core = core.write().unwrap();
+    core.set_notificacao(on, now());
+    save_owner(&app, &core)
+}
+
+/// Shows the weekly notification if one is due, asking the owner for the permission the first
+/// time one is; it counts as shown only once it is.
+// ponytail: checked only while the app runs (after each update), so a week without opening it
+// sends nothing; schedule an Android WorkManager job if the owner misses releases.
+fn notify(app: &AppHandle) -> Result<(), String> {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let Some(due) = app.state::<RwLock<Core>>().read().unwrap().notificacao_devida(now()) else { return Ok(()) };
+    let notification = app.notification();
+    let mut permission = notification.permission_state().map_err(|e| e.to_string())?;
+    if matches!(permission, PermissionState::Prompt | PermissionState::PromptWithRationale) {
+        permission = notification.request_permission().map_err(|e| e.to_string())?;
+    }
+    if permission != PermissionState::Granted {
+        return Ok(());
+    }
+    notification.builder().title("Lançamento para você").body(due.texto).show().map_err(|e| e.to_string())?;
+    let state = app.state::<RwLock<Core>>();
+    let mut core = state.write().unwrap();
+    core.notificado(due.tmdb_id, now());
+    save_owner(app, &core)
+}
+
+#[tauri::command]
 fn display_mode(core: tauri::State<RwLock<Core>>) -> DisplayMode {
     core.read().unwrap().display_mode()
 }
@@ -515,7 +549,8 @@ fn poster(app: &AppHandle, name: &str) -> Response<Vec<u8>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder =
+        tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_notification::init());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(google::init());
     builder
@@ -538,7 +573,8 @@ pub fn run() {
             app.manage(RwLock::new(core));
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
-                for (what, result) in [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))] {
+                let updates = [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))];
+                for (what, result) in updates.into_iter().chain([("notification", notify(&handle))]) {
                     if let Err(e) = result {
                         eprintln!("{what} update: {e}");
                     }
@@ -574,6 +610,8 @@ pub fn run() {
             set_decay,
             display_mode,
             set_display_mode,
+            notificacao,
+            set_notificacao,
             servicos,
             set_servicos,
             parecidos_mas,

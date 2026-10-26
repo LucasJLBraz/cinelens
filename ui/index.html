@@ -301,6 +301,7 @@
     <div id="servicos" class="checks"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
+    <div class="checks"><label><input id="notificacao" type="checkbox"> Avisar de um lançamento Aposta forte, no máximo uma vez por semana</label></div>
     <label>Sincronizar entre aparelhos</label>
     <button id="google" class="pill">Entrar com Google</button>
     <div id="google-hint" class="hint">Suas notas e marcas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</div>
@@ -890,6 +891,7 @@
       showDecay(await invoke('decay'));
       displayModeEl.value = await invoke('display_mode');
       perguntarPesouEl.checked = !(await invoke('pesou_oculto'));
+      notificacaoEl.checked = await invoke('notificacao');
       const [provedores, meus] = await invoke('servicos');
       servicosEl.replaceChildren(...provedores.map(p => {
         const label = document.createElement('label');
@@ -909,6 +911,8 @@
     });
     const perguntarPesouEl = document.getElementById('perguntar-pesou');
     perguntarPesouEl.addEventListener('change', () => invoke('set_pesou_oculto', { oculto: !perguntarPesouEl.checked }));
+    const notificacaoEl = document.getElementById('notificacao');
+    notificacaoEl.addEventListener('change', () => invoke('set_notificacao', { on: notificacaoEl.checked }));
     decayEl.addEventListener('change', async () => {
       const v = decayEl.value;
       showDecay(await invoke('set_decay', { decay: v === 'Auto' || v === 'Off' ? v : { HalfLifeDays: Number(v) } }));

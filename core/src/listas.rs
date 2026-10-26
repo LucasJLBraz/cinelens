@@ -51,7 +51,7 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
 }
 
 /// `YYYY-MM-DD` (UTC) of a Unix time.
-fn date(secs: i64) -> String {
+pub(crate) fn date(secs: i64) -> String {
     let (y, m, d) = civil(secs);
     format!("{y:04}-{m:02}-{d:02}")
 }

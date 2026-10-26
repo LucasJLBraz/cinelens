@@ -44,6 +44,10 @@ impl OwnerData {
             }
         }
         self.nao_vi.extend(theirs.nao_vi);
+        // The earliest announcement, so every device settles on the same.
+        for (id, at) in theirs.notificados {
+            self.notificados.entry(id).and_modify(|t| *t = (*t).min(at)).or_insert(at);
+        }
         let (mine, other) = (&self.changed, &theirs.changed);
         lww_set("quero_assistir", &mut self.quero_assistir, &theirs.quero_assistir, mine, other);
         lww_set("ja_vi", &mut self.ja_vi, &theirs.ja_vi, mine, other);
@@ -56,6 +60,7 @@ impl OwnerData {
         lww_value("settings/display_mode", &mut s.display_mode, &t.display_mode, mine, other);
         lww_value("settings/servicos", &mut s.servicos, &t.servicos, mine, other);
         lww_value("settings/pesou_oculto", &mut s.pesou_oculto, &t.pesou_oculto, mine, other);
+        lww_value("settings/sem_notificacao", &mut s.sem_notificacao, &t.sem_notificacao, mine, other);
         for (key, at) in theirs.changed {
             let stamp = self.changed.entry(key).or_insert(at);
             *stamp = (*stamp).max(at);
