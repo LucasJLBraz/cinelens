@@ -81,3 +81,18 @@ fn a_movie_with_unknown_content_has_no_nota_prevista() {
     let card = core.movie(9).unwrap().card;
     assert_eq!((card.nota_prevista, card.confianca), (None, None));
 }
+
+#[test]
+fn held_out_notas_outside_the_model_are_measured_apart_from_its_content() {
+    let mut core = sci_fi_lover();
+    core.rate(1, 5.0, 100).unwrap();
+    core.rate(4, 1.0, 100).unwrap();
+    // The most recent notas: a sci-fi in the model and the new sci-fi release outside it.
+    core.rate(3, 5.0, 200).unwrap();
+    core.rate(7, 5.0, 200).unwrap();
+
+    let accuracy = core.accuracy(2.0 / 6.0).unwrap();
+    assert_eq!((accuracy.held_out, accuracy.notas, accuracy.content_notas), (2, 1, 1));
+    // Predicting the owner's mean (3.67) would miss the release by 1.33.
+    assert!(accuracy.content_mae.unwrap() < 1.0, "{:?}", accuracy.content_mae);
+}

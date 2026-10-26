@@ -1,8 +1,10 @@
-//! `cinelens-accuracy --model model.json.gz [--held-out 0.2] movielens-*.csv`
+//! `cinelens-accuracy --model model.json.gz [--catalog catalog.json.gz] [--held-out 0.2] movielens-*.csv`
 //!
 //! The accuracy harness on the owner's real MovieLens export, run locally only (the export never
 //! reaches CI): imports it into a core, hides the most recent notas from the fold-in and prints
-//! the MAE of the nota prevista on them, next to MovieLens's own on the same notas.
+//! the MAE of the nota prevista on them, next to MovieLens's own on the same notas. With the
+//! catálogo, held-out movies outside the model are also predicted from their content, measured
+//! apart.
 
 /// MovieLens's MAE on all the owner's notas, from the predictions in the logs (design §6.6).
 const MOVIELENS_BASELINE: f32 = 0.654;
@@ -26,7 +28,10 @@ fn run() -> Result<(), String> {
         .map(|(_, path)| std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}")))
         .collect::<Result<_, _>>()?;
 
-    let mut core = cinelens_core::Core::default();
+    let mut core = match flag("--catalog") {
+        Some(catalog) => cinelens_core::Core::open(&cinelens_train::read_maybe_gzipped(catalog)?).map_err(|e| e.to_string())?,
+        None => cinelens_core::Core::default(),
+    };
     core.load_model(&cinelens_train::read_maybe_gzipped(model)?).map_err(|e| e.to_string())?;
     let files: Vec<&str> = files.iter().map(String::as_str).collect();
     core.import_movielens(&files).map_err(|e| e.to_string())?;
@@ -40,5 +45,8 @@ fn run() -> Result<(), String> {
         None => println!("MAE MovieLens on the same notas: (no logged predictions)"),
     }
     println!("MovieLens baseline on all notas: {MOVIELENS_BASELINE}");
+    if let Some(mae) = accuracy.content_mae {
+        println!("MAE cinelens on {} held-out notas outside the model, from their content: {mae:.3}", accuracy.content_notas);
+    }
     Ok(())
 }

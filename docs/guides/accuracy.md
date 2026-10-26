@@ -51,8 +51,47 @@ cargo run --release -p cinelens-train --bin cinelens-accuracy -- --model data/mo
 
 Cada uma imprime o MAE do Cinelens nas notas escondidas, o MAE do MovieLens nas mesmas notas (das previsões que ele registrou quando você deu cada nota) e a linha de base 0,654. `--held-out 0.1` muda a fração escondida.
 
+## 4. Medir as previsões por conteúdo
+
+Com `--catalog data/catalog.json.gz`, a medição também prevê as notas escondidas de filmes fora do modelo a partir do conteúdo deles (gêneros, direção, elenco, idioma) e imprime esse MAE à parte. As linhas de cima não mudam: o MAE principal continua só com os filmes do modelo, para comparar com as medições antigas.
+
 ## Como decidir
 
 - A base Letterboxd fica só se o modelo com ela não tiver MAE maior que o modelo só MovieLens.
 - O v1 só sai se o MAE do modelo publicado for ≤ 0,65.
 - Registre os números e a decisão em `docs/adr/0002-letterboxd-in-training.md`.
+
+## Medições de 2026-10-26 (#38)
+
+Export do dono, 289 notas. Cada mudança fica só se não piorar nenhum dos três cortes (10%, 20% e 30% escondidas): com tão poucas notas, um corte só é quase ruído. Todos os modelos treinados só com `ml-latest`.
+
+### Hiperparâmetros do treino
+
+MAE nos filmes do modelo (19, 38 e 65 notas). A linha de base é `FACTORS` 32 e `LAMBDA` 0,05.
+
+| `FACTORS` | `LAMBDA` | 10% | 20% | 30% |
+|---|---|---|---|---|
+| 16 | 0,02 | 0,557 | 0,491 | 0,562 |
+| 16 | 0,05 | 0,543 | 0,466 | 0,522 |
+| 16 | 0,1 | 0,540 | 0,464 | 0,506 |
+| 32 | 0,02 | 0,371 | 0,434 | 0,516 |
+| **32** | **0,05** | **0,375** | **0,428** | **0,493** |
+| 32 | 0,1 | 0,539 | 0,459 | 0,500 |
+| 64 | 0,02 | 0,482 | 0,454 | 0,540 |
+| 64 | 0,05 | 0,519 | 0,443 | 0,504 |
+| 64 | 0,1 | 0,539 | 0,458 | 0,499 |
+
+Nenhuma combinação melhora os três cortes: 32 e 0,02 ganha em 10% e perde em 20% e 30%. Os padrões ficam.
+
+### Atributos de conteúdo
+
+MAE nos filmes fora do modelo, previstos pelo conteúdo (10, 20 e 22 notas), com `FACTORS` 32 e `LAMBDA` 0,05. Nota do público é a média do TMDB em faixas de meio ponto, só com 500 votos ou mais; década vem do ano.
+
+| Conteúdo | 10% | 20% | 30% |
+|---|---|---|---|
+| **Atual (gêneros, direção, elenco, idioma)** | **0,624** | **0,571** | **0,608** |
+| + nota do público | 0,646 | 0,570 | 0,607 |
+| + década | 0,624 | 0,576 | 0,616 |
+| + nota do público e década | 0,644 | 0,575 | 0,615 |
+
+Nenhum atributo passa: a nota do público piora em 10%, a década em 20% e 30%. A década é comum a milhares de filmes, então o centroide dela fica perto da média e dilui os outros atributos na média simples. O conteúdo fica como está e nenhum modelo novo é publicado.

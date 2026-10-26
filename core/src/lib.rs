@@ -206,7 +206,8 @@ impl Movie {
     /// `g<genre id>`, `d<director id>`, `c<cast member id>`, `l<original language>`: the keys of
     /// the content mapping in the model.
     // ponytail: no TMDB keywords (the catalog job does not fetch them) nor synopsis words; add
-    // them as features if content-only predictions of new releases miss.
+    // them as features if content-only predictions of new releases miss. The public score and the
+    // decade were measured and left out (`docs/guides/accuracy.md`).
     fn content_features(&self) -> Vec<String> {
         let genres = self.genre_ids.iter().map(|g| format!("g{g}"));
         let directors = self.directors.iter().map(|p| format!("d{}", p.id));
@@ -287,6 +288,11 @@ pub struct Accuracy {
     /// MovieLens's own error on those of the notas it logged a prediction for when each was
     /// given; `None` when none of them came from the importação.
     pub movielens_mae: Option<f32>,
+    /// Held-out notas of movies outside the model, predicted from their content in the
+    /// catálogo; 0 without one.
+    pub content_notas: usize,
+    /// Mean absolute error over those, kept apart so content changes are measured on their own.
+    pub content_mae: Option<f32>,
 }
 
 /// A new model kept out because it predicts the owner worse; shown in Perfil.
@@ -608,8 +614,8 @@ impl Core {
     /// and says why. With nothing to measure on (no current model, no notas) it replaces it.
     pub fn trocar_modelo(&mut self, model_artifact: &[u8]) -> Result<Option<Rejeicao>, Error> {
         let novo = Model::parse(model_artifact)?;
-        let atual = self.model.as_ref().and_then(|m| self.accuracy_with(m, MAE_FRACAO)).map(|a| a.mae);
-        let mae = self.accuracy_with(&novo, MAE_FRACAO).map(|a| a.mae);
+        let atual = self.model.as_ref().and_then(|m| self.accuracy_with(m, MAE_FRACAO, false)).map(|a| a.mae);
+        let mae = self.accuracy_with(&novo, MAE_FRACAO, false).map(|a| a.mae);
         let virgula = |x: f32| format!("{x:.2}").replace('.', ",");
         let motivo = match (mae, atual) {
             (None, Some(_)) => Some("o modelo novo não prevê nenhuma das suas notas recentes".to_string()),
@@ -1121,18 +1127,36 @@ impl Core {
     /// Hides the `fraction` (0–1) of the owner's notas given most recently, folds in the rest
     /// and predicts the hidden ones. `None` without a model or when none of them can be predicted.
     pub fn accuracy(&self, fraction: f32) -> Option<Accuracy> {
-        self.accuracy_with(self.model.as_ref()?, fraction)
+        self.accuracy_with(self.model.as_ref()?, fraction, true)
     }
 
-    fn accuracy_with(&self, model: &Model, fraction: f32) -> Option<Accuracy> {
+    /// `content`: also measure the movies outside the model; the accuracy gate never reads it.
+    fn accuracy_with(&self, model: &Model, fraction: f32, content: bool) -> Option<Accuracy> {
         let (known, hidden) = recommender::hold_out(&self.owner.notas, fraction);
         // Calibrated on the notas left in, so the hidden ones never pick their own decay.
-        let errors = recommender::errors(model, &known, &hidden, self.half_life(Some(model), &known));
+        let half_life = self.half_life(Some(model), &known);
+        let errors = recommender::errors(model, &known, &hidden, half_life, |id| model.item(id, &[]));
         let movielens: Vec<f32> =
             errors.iter().filter_map(|(_, e)| Some((e.movielens_pred? as f32 - e.nota).abs())).collect();
         let errors: Vec<f32> = errors.iter().map(|(err, _)| *err).collect();
+        // Movies outside the model, predicted from their catálogo content, if loaded.
+        let content_only = |id| match model.item(id, &[]) {
+            Some(_) => None,
+            None => model.item(id, &self.movies[*self.index.get(&id)?].content_features()),
+        };
+        let content: Vec<f32> = match content {
+            true => recommender::errors(model, &known, &hidden, half_life, content_only).iter().map(|(err, _)| *err).collect(),
+            false => Vec::new(),
+        };
         let mean = |e: &[f32]| (!e.is_empty()).then(|| e.iter().sum::<f32>() / e.len() as f32);
-        Some(Accuracy { held_out: hidden.len(), notas: errors.len(), mae: mean(&errors)?, movielens_mae: mean(&movielens) })
+        Some(Accuracy {
+            held_out: hidden.len(),
+            notas: errors.len(),
+            mae: mean(&errors)?,
+            movielens_mae: mean(&movielens),
+            content_notas: content.len(),
+            content_mae: mean(&content),
+        })
     }
 
     /// The catálogo movies passing `filtro`, recomendações first ("Para você": highest nota

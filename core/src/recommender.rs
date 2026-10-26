@@ -287,16 +287,16 @@ pub(crate) fn hold_out(
     (known, hidden)
 }
 
-/// Absolute errors on the `hidden` notas the model knows, folding in `known`.
+/// Absolute errors on the `hidden` notas whose movie `item` knows, folding in `known`.
 pub(crate) fn errors<'a>(
     model: &Model,
     known: &Notas,
     hidden: &'a [(u32, NotaEntry)],
     half_life_days: Option<u32>,
+    item: impl Fn(u32) -> Option<Item>,
 ) -> Vec<(f32, &'a NotaEntry)> {
     let profile = model.profile(known, &BTreeSet::new(), half_life_days);
-    // ponytail: collaborative movies only; pass content features if held-out recent releases matter.
-    let error = |id: u32, e: &NotaEntry| Some((model.predict(&profile, &model.item(id, &[])?) - e.nota).abs());
+    let error = |id: u32, e: &NotaEntry| Some((model.predict(&profile, &item(id)?) - e.nota).abs());
     hidden.iter().filter_map(|(id, e)| Some((error(*id, e)?, e))).collect()
 }
 
@@ -313,7 +313,7 @@ pub(crate) fn calibrate(model: &Model, notas: &Notas) -> Option<u32> {
     }
     let (known, hidden) = hold_out(notas, 0.2);
     let mae = |half_life| {
-        let e = errors(model, &known, &hidden, half_life);
+        let e = errors(model, &known, &hidden, half_life, |id| model.item(id, &[]));
         if e.is_empty() { f32::INFINITY } else { e.iter().map(|(err, _)| err).sum::<f32>() / e.len() as f32 }
     };
     let mut best = (None, mae(None));
