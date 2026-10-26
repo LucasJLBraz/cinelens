@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MovieCard, MoviePage, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -344,6 +344,11 @@ fn estatisticas(core: tauri::State<RwLock<Core>>) -> Estatisticas {
 }
 
 #[tauri::command]
+fn minhas_notas(core: tauri::State<RwLock<Core>>) -> Vec<MinhaNota> {
+    core.read().unwrap().minhas_notas()
+}
+
+#[tauri::command]
 fn opcoes(core: tauri::State<RwLock<Core>>) -> Opcoes {
     core.read().unwrap().opcoes()
 }
@@ -601,6 +606,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             explorar,
             inicio,
+            minhas_notas,
             opcoes,
             status,
             download_catalog,

@@ -120,3 +120,16 @@ fn a_nota_out_of_range_in_the_owner_data_is_left_out() {
     core.load_owner_data(blob).unwrap();
     assert_eq!(core.estatisticas().distribuicao, [0, 0, 0, 0, 0, 0, 0, 1, 0, 0]);
 }
+
+#[test]
+fn minhas_notas_lists_the_most_recently_rated_first() {
+    let mut core = Core::open(CATALOG.as_bytes()).unwrap();
+    core.rate(1, 4.0, JAN_2025).unwrap();
+    core.rate(2, 3.0, JAN_2025 + 60).unwrap();
+    core.rate(999, 2.0, JAN_2025 + 90).unwrap();
+    // Changing movie 1's nota makes it the most recent again.
+    core.rate(1, 5.0, MAR_2026).unwrap();
+    let notas: Vec<(u32, f32, i64)> = core.minhas_notas().iter().map(|n| (n.card.tmdb_id, n.nota, n.at)).collect();
+    // Movie 999 is outside the catálogo: nothing to show or open.
+    assert_eq!(notas, [(1, 5.0, MAR_2026), (2, 3.0, JAN_2025 + 60)]);
+}

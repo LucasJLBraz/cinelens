@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::{filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard};
+use crate::{filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry};
 
 /// Movies in each of Perfil's lists.
 const LISTA: usize = 10;
@@ -60,6 +60,15 @@ pub struct Mudanca {
     pub de: f32,
     /// The current one.
     pub para: f32,
+}
+
+/// A movie the owner rated, with its current nota: Minhas notas.
+#[derive(Debug, Serialize)]
+pub struct MinhaNota {
+    pub card: MovieCard,
+    pub nota: f32,
+    /// When the current nota was given, Unix seconds.
+    pub at: i64,
 }
 
 /// How close the nota prevista came to the notas given after it.
@@ -156,6 +165,16 @@ impl Core {
             mudancas: self.mais_distantes(mudancas.collect()).map(|(card, de, para)| Mudanca { card, de, para }).collect(),
             acerto: media(&erros).map(|mae| Acerto { notas: erros.len(), mae }),
         }
+    }
+
+    /// Every rated movie in the catálogo, the most recently rated first.
+    pub fn minhas_notas(&self) -> Vec<MinhaNota> {
+        let mut notas: Vec<(usize, &NotaEntry)> =
+            self.owner.notas.iter().filter_map(|(id, h)| Some((*self.index.get(id)?, h.last()?)))
+            .filter(|(_, e)| is_valid_nota(e.nota))
+            .collect();
+        notas.sort_by_key(|&(_, e)| std::cmp::Reverse(e.at));
+        notas.into_iter().map(|(i, e)| MinhaNota { card: self.card(i), nota: e.nota, at: e.at }).collect()
     }
 
     /// The `LISTA` movies whose two notas are furthest apart, furthest first; ties keep the

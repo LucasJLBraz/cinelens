@@ -15,7 +15,7 @@ mod sync;
 
 pub use delta::{apply_catalog_delta, catalog_delta};
 pub use display::{DisplayMode, Faixa, Exibicao};
-pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, Mudanca};
+pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar};
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 pub use sync::SyncStorage;

@@ -97,3 +97,7 @@ _Avoid_: feed, dashboard, vitrine
 **Explorar** (Explore):
 The single filterable grid of the catalog, opened unfiltered or with a filter pre-set from Início; search lives here.
 _Avoid_: buscar, grade, catálogo (for the screen)
+
+**Minhas notas** (My ratings):
+The list of every movie the owner rated, the most recent nota first, opened from Perfil.
+_Avoid_: histórico (that is one movie's past notas)

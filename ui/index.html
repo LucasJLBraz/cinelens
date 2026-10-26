@@ -91,7 +91,16 @@
     #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
-    #stats h2 { margin-top: 20px; }
+    #ajustes h2.secao { margin: 32px 0 4px; padding-top: 16px; border-top: 1px solid var(--card); font-size: 18px; }
+    #resumo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 16px; border-radius: 12px; background: var(--card); }
+    #resumo .numeros { display: flex; gap: 24px; min-width: 0; }
+    #resumo strong { display: block; font-size: 22px; color: var(--accent); }
+    #resumo span { font-size: 12px; color: var(--muted); }
+    #resumo .pill { flex: none; min-height: 44px; }
+    #ajustes .aviso { margin-top: 12px; padding: 12px; border-left: 3px solid var(--accent); border-radius: 4px; background: var(--card); color: var(--text); }
+    #stats .card { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--card); min-width: 0; }
+    #stats h3 { margin: 0 0 8px; font-size: 14px; }
+    #stats .card > .hint { margin-top: 8px; }
     #stats .linha { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 13px; }
     #stats .linha > :first-child { flex: 0 0 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #stats .linha .barra { height: 8px; border-radius: 4px; background: var(--accent); }
@@ -106,10 +115,12 @@
     #parecidos-mas { margin-bottom: 8px; }
     #parecidos-ver-mais { margin-top: 8px; font-size: 13px; }
     footer { padding: 32px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
-    body:has(#abas:not([hidden])) { padding-bottom: 56px; }
-    #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); padding-bottom: env(safe-area-inset-bottom); }
-    #abas button { padding: 12px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; }
+    body:has(#abas:not([hidden])) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+    #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border-top: 1px solid #ffffff14; padding-bottom: env(safe-area-inset-bottom); }
+    #abas button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 8px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; }
+    #abas svg { width: 56px; height: 28px; padding: 2px 16px; border-radius: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     #abas button.on { color: var(--accent); font-weight: 600; }
+    #abas button.on svg { background: color-mix(in srgb, var(--accent) 16%, transparent); }
     #destaques { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
     .destaque { flex: none; width: 100%; scroll-snap-align: start; display: flex; gap: 16px; padding: 8px 16px; }
     .destaque .poster { width: 120px; flex: none; }
@@ -136,6 +147,14 @@
     #boas-vindas p { color: var(--muted); }
     #boas-vindas .passo { flex: 1; }
     #boas-vindas .hint { font-size: 13px; }
+    #minhas-notas { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+    #minhas-notas h1 { margin-top: 12px; }
+    #minhas-notas-lista { margin: 8px 0 0; padding: 0; list-style: none; }
+    #minhas-notas-lista button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--card); background: none; color: var(--text); font: inherit; text-align: left; }
+    #minhas-notas-lista .poster { width: 40px; flex: none; border-radius: 4px; }
+    #minhas-notas-lista .poster.missing { padding: 0; font-size: 0; }
+    #minhas-notas-lista .info { flex: 1; min-width: 0; }
+    #minhas-notas-lista .nota { color: var(--accent); font-weight: 600; white-space: nowrap; }
     #bv-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
   </style>
 </head>
@@ -316,12 +335,31 @@
     <div class="original">Do que você deve gostar mais para o que menos</div>
     <main id="pessoa-grid" class="grade"></main>
   </section>
+  <section id="minhas-notas" hidden>
+    <button class="pill back">‹ Voltar</button>
+    <h1>Minhas notas</h1>
+    <ul id="minhas-notas-lista"></ul>
+    <p id="minhas-notas-vazio" class="meta" hidden>Nenhuma nota ainda.</p>
+  </section>
   <section id="ajustes" hidden>
     <h1>Perfil</h1>
+    <div id="resumo">
+      <div class="numeros">
+        <div><strong id="resumo-notas">0</strong><span>notas</span></div>
+        <div id="resumo-acerto-box" hidden><strong id="resumo-acerto"></strong><span>erro médio do app</span></div>
+      </div>
+      <button id="ver-minhas-notas" class="pill">Minhas notas ›</button>
+    </div>
+    <div id="modelo-hint" class="hint aviso" hidden></div>
+    <h2 class="secao" id="stats-titulo">Estatísticas</h2>
     <div id="stats"></div>
-    <button id="import" class="pill" style="margin-top: 16px">Importar do MovieLens</button>
-    <input id="import-files" type="file" multiple hidden>
-    <p id="import-result" class="hint" hidden></p>
+    <h2 class="secao">Ajustes</h2>
+    <label for="display-mode">Mostrar previsão como</label>
+    <select id="display-mode">
+      <option value="Faixa">Faixa (Aposta forte, Boa chance…)</option>
+      <option value="Estrelas">Estrelas</option>
+      <option value="Oculto">Oculto: só a ordem</option>
+    </select>
     <label for="decay">Notas antigas pesam menos</label>
     <select id="decay">
       <option value="Auto">Automático</option>
@@ -333,28 +371,26 @@
       <option value="1460">Pela metade a cada 4 anos</option>
     </select>
     <div id="decay-hint" class="hint"></div>
-    <label for="display-mode">Mostrar previsão como</label>
-    <select id="display-mode">
-      <option value="Faixa">Faixa (Aposta forte, Boa chance…)</option>
-      <option value="Estrelas">Estrelas</option>
-      <option value="Oculto">Oculto: só a ordem</option>
-    </select>
     <label>Serviços que você assina</label>
     <div id="servicos" class="seletor-servicos"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
     <div class="checks"><label><input id="notificacao" type="checkbox"> Avisar de um lançamento Aposta forte, no máximo uma vez por semana</label></div>
+    <h2 class="secao">Sincronizar e importar</h2>
     <label>Sincronizar entre aparelhos</label>
     <button id="google" class="pill">Entrar com Google</button>
     <div id="google-hint" class="hint">Suas notas e marcas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</div>
-    <div id="modelo-hint" class="hint" hidden></div>
+    <label>Notas do MovieLens</label>
+    <button id="import" class="pill">Importar do MovieLens</button>
+    <input id="import-files" type="file" multiple hidden>
+    <p id="import-result" class="hint" hidden></p>
     <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   </section>
   <nav id="abas" hidden>
-    <button data-aba="inicio">Início</button>
-    <button data-aba="explorar">Explorar</button>
-    <button data-aba="rodada">Rodada</button>
-    <button data-aba="ajustes">Perfil</button>
+    <button data-aba="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Início</button>
+    <button data-aba="explorar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Explorar</button>
+    <button data-aba="rodada"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>Rodada</button>
+    <button data-aba="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>Perfil</button>
   </nav>
   <script>
     const { invoke, convertFileSrc } = window.__TAURI__.core;
@@ -654,7 +690,8 @@
     const pessoaEl = document.getElementById('pessoa');
     const abasEl = document.getElementById('abas');
     const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes') };
-    const telas = [...Object.values(abas), filmeEl, pessoaEl, document.getElementById('boas-vindas')];
+    const minhasNotasEl = document.getElementById('minhas-notas');
+    const telas = [...Object.values(abas), filmeEl, pessoaEl, minhasNotasEl, document.getElementById('boas-vindas')];
     function tela(el) {
       for (const t of telas) t.hidden = t !== el;
       abasEl.hidden = !Object.values(abas).includes(el);
@@ -664,7 +701,10 @@
     let aba = 'inicio';
     function abrirAba(nome) {
       aba = nome;
-      for (const b of abasEl.children) b.classList.toggle('on', b.dataset.aba === nome);
+      for (const b of abasEl.children) {
+        b.classList.toggle('on', b.dataset.aba === nome);
+        b.setAttribute('aria-current', b.dataset.aba === nome ? 'page' : 'false');
+      }
       if (nome === 'ajustes') loadPerfil();
       if (nome === 'rodada' && rodadaFila.length < 3) encherRodada();
       tela(abas[nome]);
@@ -674,7 +714,10 @@
         loadInicio();
       }
     }
-    abasEl.addEventListener('click', e => e.target.dataset.aba && abrirAba(e.target.dataset.aba));
+    abasEl.addEventListener('click', e => {
+      const b = e.target.closest('[data-aba]');
+      if (b) abrirAba(b.dataset.aba);
+    });
     // TMDB pages, the trailer and where to watch open in the system browser.
     const abrirUrl = url => invoke('plugin:opener|open_url', { url });
     const duracao = min => min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
@@ -848,9 +891,30 @@
     });
     pessoaEl.querySelector('.back').addEventListener('click', () => history.back());
 
+    // Every rated movie, the most recent nota first.
+    async function openMinhasNotas(push = true) {
+      const notas = await invoke('minhas_notas');
+      document.getElementById('minhas-notas-lista').replaceChildren(...notas.map(n => {
+        const li = document.createElement('li');
+        const b = Object.assign(document.createElement('button'), { onclick: () => openMovie(n.card.tmdb_id) });
+        const info = Object.assign(document.createElement('div'), { className: 'info' });
+        info.append(
+          Object.assign(document.createElement('div'), { className: 'title', textContent: n.card.title }),
+          Object.assign(document.createElement('div'), { className: 'original', textContent: new Date(n.at * 1000).toLocaleDateString('pt-BR') }));
+        b.append(posterOf(n.card), info, Object.assign(document.createElement('span'), { className: 'nota', textContent: `${fmt(n.nota)} ★` }));
+        li.append(b);
+        return li;
+      }));
+      document.getElementById('minhas-notas-vazio').hidden = notas.length > 0;
+      tela(minhasNotasEl);
+      if (push) history.pushState({ minhasNotas: true }, '');
+    }
+    minhasNotasEl.querySelector('.back').addEventListener('click', () => history.back());
+
     window.addEventListener('popstate', ({ state }) => {
       if (state?.filme) return openMovie(state.filme, false);
       if (state?.pessoa) return openPessoa(state.pessoa, false);
+      if (state?.minhasNotas) return openMinhasNotas(false);
       abrirAba(aba);
     });
     document.getElementById('back').addEventListener('click', () => history.back());
@@ -886,22 +950,29 @@
     const estrelas = n => n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
     function showStats(e) {
       const el = (tag, props = {}, ...kids) => { const x = Object.assign(document.createElement(tag), props); x.append(...kids); return x; };
+      // One card per statistic: a title starts the next card.
       const out = [];
-      const titulo = t => out.push(el('h2', { textContent: t }));
-      const hint = t => out.push(el('div', { className: 'hint', textContent: t }));
+      let atual;
+      const titulo = t => out.push(atual = el('div', { className: 'card' }, el('h3', { textContent: t })));
+      const push = x => atual.append(x);
+      const hint = t => push(el('div', { className: 'hint', textContent: t }));
       const colunas = (valores, de, ate) => {
         const max = Math.max(1, ...valores);
-        out.push(el('div', { className: 'colunas' }, ...valores.map(v => el('div', { style: `height: ${v / max * 100}%`, title: String(v) }))));
-        out.push(el('div', { className: 'eixo' }, el('span', { textContent: de }), el('span', { textContent: ate })));
+        push(el('div', { className: 'colunas' }, ...valores.map(v => el('div', { style: `height: ${v / max * 100}%`, title: String(v) }))));
+        push(el('div', { className: 'eixo' }, el('span', { textContent: de }), el('span', { textContent: ate })));
       };
       // A bar per group, as long as its mean nota.
-      const linhas = (grupos, nome = g => g.nome) => grupos.forEach(g => out.push(el('div', { className: 'linha' },
+      const linhas = (grupos, nome = g => g.nome) => grupos.forEach(g => push(el('div', { className: 'linha' },
         el('span', { textContent: nome(g) }), el('div', { className: 'barra', style: `width: ${g.media / 5 * 40}%` }),
         el('span', { textContent: `${estrelas(g.media)} ★ · ${g.notas}` }))));
-      const filme = (card, texto) => out.push(el('button', { className: 'link', textContent: `${card.title}: ${texto}`, onclick: () => openMovie(card.tmdb_id) }));
+      const filme = (card, texto) => push(el('button', { className: 'link', textContent: `${card.title}: ${texto}`, onclick: () => openMovie(card.tmdb_id) }));
       const total = e.distribuicao.reduce((a, b) => a + b, 0);
+      document.getElementById('resumo-notas').textContent = total;
+      document.getElementById('resumo-acerto-box').hidden = !e.acerto;
+      if (e.acerto) document.getElementById('resumo-acerto').textContent = `${estrelas(e.acerto.mae)} ★`;
+      document.getElementById('stats-titulo').hidden = !total;
       if (!total) return statsEl.replaceChildren();
-      titulo(total === 1 ? 'Sua primeira nota' : `Suas ${total} notas`);
+      titulo('Suas notas');
       colunas(e.distribuicao, '½', '5 ★');
       if (e.vs_publico !== null) {
         const d = e.vs_publico;
@@ -953,6 +1024,7 @@
         button.disabled = false;
       }
     }
+    document.getElementById('ver-minhas-notas').addEventListener('click', () => openMinhasNotas());
     googleEl.addEventListener('click', async () => {
       if (await entrarGoogle(googleEl, document.getElementById('google-hint'))) showGoogle();
     });
