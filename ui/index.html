@@ -5,12 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Cinelens</title>
   <style>
-    :root { color-scheme: dark; --bg: #0f1115; --card: #1a1d24; --text: #e8e8ea; --muted: #8a8f9c; --accent: #f5c518; }
+    :root {
+      color-scheme: dark; --bg: #0f1115; --card: #1a1d24; --text: #e8e8ea; --muted: #8a8f9c; --accent: #f5c518;
+      --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --gutter: var(--s4);
+      --t-meta: 12px; --t-body: 14px; --t-secao: 16px; --t-tela: 20px; --t-pagina: 22px;
+      --alvo: 44px; --largura-card: 112px;
+      --faixa-forte: #46c46e; --faixa-boa: var(--accent); --faixa-arriscado: #e8913a; --faixa-nao: var(--muted);
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 system-ui, sans-serif; }
-    header { padding: max(16px, env(safe-area-inset-top)) 16px 8px; }
-    h1 { margin: 0; font-size: 22px; }
-    #grid, #pessoa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; padding: 8px 16px; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body)/1.35 system-ui, sans-serif; }
+    header { padding: max(var(--s4), env(safe-area-inset-top)) var(--gutter) var(--s2); }
+    h1 { margin: 0; font-size: var(--t-tela); }
+    #grid, #pessoa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--largura-card), 1fr)); gap: var(--s4) var(--s3); padding: var(--s2) var(--gutter); }
+    /* The movie card: every line reserved, so the faixa sits at the same height on every card. */
+    .movie .titulo { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; height: 2.6em; margin-top: var(--s2); overflow: hidden; overflow-wrap: anywhere; font-size: var(--t-body); font-weight: 600; line-height: 1.3; }
+    .movie .ano, .movie .faixa { height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-meta); line-height: 1.4; }
+    .movie .ano { color: var(--muted); }
+    .faixa { font-weight: 600; color: var(--faixa-nao); }
+    .faixa[data-faixa="Aposta forte"] { color: var(--faixa-forte); }
+    .faixa[data-faixa="Boa chance"] { color: var(--faixa-boa); }
+    .faixa[data-faixa="Arriscado"] { color: var(--faixa-arriscado); }
+    .pill, .chip, .link, #notas button, #rodada-notas button, .pessoas button, .menu-items button { min-height: var(--alvo); }
+    .link { display: inline-flex; align-items: center; }
+    details.dica summary { display: flex; align-items: center; gap: var(--s2); min-height: var(--alvo); list-style: none; cursor: pointer; }
+    details.dica summary::-webkit-details-marker { display: none; }
+    details.dica summary::after { content: "ⓘ"; color: var(--muted); }
+    details.dica .hint { margin: 0; }
     .movie { min-width: 0; }
     .poster { width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--card); object-fit: cover; display: block; }
     .title { margin-top: 6px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -51,8 +71,10 @@
     .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
     #nota-prevista { margin-top: 8px; }
     #sinopse { margin: 16px 0 0; line-height: 1.5; }
-    .fileira { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; }
-    .fileira .movie { flex: none; width: 104px; }
+    /* Carousels bleed to the screen edge, with the gutter kept inside on both ends. */
+    .fileira { display: flex; gap: var(--s3); margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); }
+    .fileira > * { flex: none; scroll-snap-align: start; }
+    .fileira .movie { width: var(--largura-card); }
     .pessoas { display: flex; flex-wrap: wrap; gap: 8px; }
     .pessoas button { padding: 8px 12px; border: 1px solid var(--card); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; text-align: left; }
     .pessoas button small { display: block; color: var(--muted); }
@@ -64,7 +86,7 @@
     #pessoa #pessoa-grid { padding: 8px 0; }
     #sou-fa.on { border-color: var(--accent); color: var(--accent); }
     #filme .poster { width: 120px; flex: none; }
-    #filme h1 { font-size: 20px; }
+    #filme h1 { font-size: var(--t-pagina); }
     #filme .original { white-space: normal; margin-top: 4px; }
     #filme .badge { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent); }
     #notas, #rodada-notas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 8px; }
@@ -78,7 +100,8 @@
     .menu-items { position: absolute; right: 0; z-index: 1; min-width: 200px; margin-top: 4px; padding: 4px 0; border-radius: 8px; background: var(--card); box-shadow: 0 4px 16px #0008; }
     .menu-items button { display: block; width: 100%; padding: 10px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
     .menu-items button.on { color: var(--accent); }
-    h2 { margin: 24px 0 8px; font-size: 16px; }
+    /* The section title, on every screen. */
+    h2 { margin: var(--s5) 0 var(--s2); font-size: var(--t-secao); font-weight: 600; }
     .credito { margin-top: 4px; font-size: 11px; color: var(--muted); }
     #onde-lista div { margin-top: 4px; font-size: 14px; }
     #onde-lista span { color: var(--muted); }
@@ -88,10 +111,9 @@
     #ajustes { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     .exibicao { font-size: 12px; color: var(--accent); }
     #revelacao { margin: 8px 0 0; color: var(--accent); }
-    #ajustes label { display: block; margin-top: 24px; font-weight: 600; }
+    #ajustes label, #ajustes details.dica { display: block; margin-top: var(--s5); font-weight: 600; }
     #ajustes select { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--muted); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
     #ajustes .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
-    #ajustes h2.secao { margin: 32px 0 4px; padding-top: 16px; border-top: 1px solid var(--card); font-size: 18px; }
     #resumo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 16px; border-radius: 12px; background: var(--card); }
     #resumo .numeros { display: flex; gap: 24px; min-width: 0; }
     #resumo strong { display: block; font-size: 22px; color: var(--accent); }
@@ -108,7 +130,7 @@
     #stats .colunas { display: flex; gap: 2px; align-items: flex-end; height: 80px; }
     #stats .colunas div { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--accent); }
     #stats .eixo { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-    #stats .link { display: block; margin-top: 4px; font-size: 13px; text-align: left; }
+    #stats .link { display: flex; margin-top: 4px; font-size: 13px; text-align: left; }
     #pesou { margin-top: 12px; }
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
@@ -132,8 +154,8 @@
     #fileiras .cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     #rodada { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
     #rodada p { color: var(--muted); }
-    #rodada-filme { max-width: 280px; margin: 16px auto 0; text-align: center; }
-    #rodada-filme .original { margin-top: 4px; }
+    #rodada-filme { max-width: 220px; margin: var(--s4) auto 0; text-align: center; }
+    #rodada-filme .movie .titulo { font-size: var(--t-secao); }
     #rodada-notas { max-width: 420px; margin: 16px auto 8px; }
     #rodada-nao-vi { display: block; margin: 0 auto; }
     #rodada-revelacao { text-align: center; font-size: 13px; min-height: 1.4em; }
@@ -168,28 +190,28 @@
   <section id="boas-vindas" hidden>
     <div class="passo" data-passo="importar">
       <h1>Bem-vindo ao Cinelens</h1>
-      <p>Já usa o MovieLens? Traga suas notas e o app já começa sabendo do que você gosta.</p>
+      <p>Traga suas notas do MovieLens.</p>
       <button class="pill" data-acao="importar">Importar do MovieLens</button>
       <p class="hint" data-resultado hidden></p>
     </div>
     <div class="passo" data-passo="servicos" hidden>
       <h1>Seus serviços</h1>
-      <p>Quais você assina? Assim o app mostra o que dá para ver agora.</p>
+      <p>Quais você assina?</p>
       <div class="seletor-servicos"></div>
     </div>
     <div class="passo" data-passo="google" hidden>
       <h1>Sincronizar</h1>
-      <p>Entre com Google para ter suas notas em todos os seus aparelhos. Elas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</p>
+      <details class="dica"><summary>Suas notas em todos os aparelhos.</summary><p class="hint">Elas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</p></details>
       <button class="pill" data-acao="google">Entrar com Google</button>
       <p class="hint" data-resultado hidden></p>
     </div>
     <div class="passo" data-passo="rodada" hidden>
       <h1>Rodada rápida</h1>
-      <p>Dê nota a alguns filmes que você viu e pule os que não viu. Cada resposta ensina o app sobre o seu gosto.</p>
+      <p>Dê nota aos que viu e pule os outros.</p>
       <button class="pill" data-acao="rodada">Começar a rodada</button>
     </div>
     <div id="bv-rodape">
-      <span class="hint">Dá para fazer tudo isso depois, no Perfil.</span>
+      <span class="hint">Tudo isso fica no Perfil.</span>
       <button id="bv-seguir" class="pill">Pular</button>
     </div>
   </section>
@@ -201,12 +223,12 @@
   </section>
   <section id="rodada" hidden>
     <h1>Rodada</h1>
-    <p>Dê nota aos filmes que você viu; os que não viu, pule. Cada resposta ensina o app sobre o seu gosto.</p>
+    <p>Dê nota aos que viu e pule os outros.</p>
     <div id="rodada-filme"></div>
     <div id="rodada-notas"></div>
     <button id="rodada-nao-vi" class="chip">Não vi</button>
     <p id="rodada-revelacao"></p>
-    <p id="rodada-vazio" hidden>Nenhum filme para a rodada agora. Volte depois que o modelo for baixado.</p>
+    <p id="rodada-vazio" hidden>Nenhum filme agora. Volte mais tarde.</p>
   </section>
   <div id="explorar" hidden>
     <header>
@@ -351,9 +373,9 @@
       <button id="ver-minhas-notas" class="pill">Minhas notas ›</button>
     </div>
     <div id="modelo-hint" class="hint aviso" hidden></div>
-    <h2 class="secao" id="stats-titulo">Estatísticas</h2>
+    <h2 id="stats-titulo">Estatísticas</h2>
     <div id="stats"></div>
-    <h2 class="secao">Ajustes</h2>
+    <h2>Ajustes</h2>
     <label for="display-mode">Mostrar previsão como</label>
     <select id="display-mode">
       <option value="Faixa">Faixa (Aposta forte, Boa chance…)</option>
@@ -375,11 +397,11 @@
     <div id="servicos" class="seletor-servicos"></div>
     <div class="hint">Lista de serviços: JustWatch.</div>
     <div class="checks"><label><input id="perguntar-pesou" type="checkbox"> Perguntar o que pesou depois de dar nota</label></div>
-    <div class="checks"><label><input id="notificacao" type="checkbox"> Avisar de um lançamento Aposta forte, no máximo uma vez por semana</label></div>
-    <h2 class="secao">Sincronizar e importar</h2>
-    <label>Sincronizar entre aparelhos</label>
+    <div class="checks"><label><input id="notificacao" type="checkbox"> Avisar de lançamento Aposta forte</label></div>
+    <h2>Sincronizar e importar</h2>
+    <details class="dica"><summary>Sincronizar entre aparelhos</summary><p class="hint">Suas notas e marcas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</p></details>
     <button id="google" class="pill">Entrar com Google</button>
-    <div id="google-hint" class="hint">Suas notas e marcas ficam só no seu Google Drive, numa pasta que só o Cinelens vê.</div>
+    <div id="google-hint" class="hint" hidden></div>
     <label>Notas do MovieLens</label>
     <button id="import" class="pill">Importar do MovieLens</button>
     <input id="import-files" type="file" multiple hidden>
@@ -429,24 +451,22 @@
       return `★ ${decimal(p.nota)} (${decimal(p.meia_estrela)}) · ${confianca}`;
     }
 
+    // The faixa alone, colored by faixa; an empty line when there is none, so it keeps its place.
+    function faixaEl(exibicao) {
+      const el = Object.assign(document.createElement('div'), { className: 'faixa', textContent: exibicao?.faixa || '\u00a0' });
+      if (exibicao?.faixa) el.dataset.faixa = exibicao.faixa;
+      return el;
+    }
+
+    // The one movie card: poster, title (2 lines), year, faixa.
     function card(m) {
       const el = document.createElement('article');
       el.className = 'movie';
       el.addEventListener('click', () => openMovie(m.tmdb_id));
-      const poster = posterOf(m);
-      const title = document.createElement('div');
-      title.className = 'title';
-      title.textContent = m.title;
-      const original = document.createElement('div');
-      original.className = 'original';
-      original.textContent = m.year ? `${m.original_title} · ${m.year}` : m.original_title;
-      el.append(poster, title, original);
-      if (m.exibicao) {
-        const exibicao = document.createElement('div');
-        exibicao.className = 'exibicao';
-        exibicao.textContent = exibicaoText(m.exibicao);
-        el.append(exibicao);
-      }
+      el.append(posterOf(m),
+        Object.assign(document.createElement('div'), { className: 'titulo', textContent: m.title }),
+        Object.assign(document.createElement('div'), { className: 'ano', textContent: m.year || '\u00a0' }),
+        faixaEl(m.exibicao));
       return el;
     }
 
@@ -467,7 +487,7 @@
       const vazio = document.getElementById('vazio');
       vazio.hidden = page > 0 || result.movies.length > 0;
       vazio.textContent = filtro.no_meu_streaming
-        ? 'Nenhum filme com esses filtros nos serviços escolhidos em Ajustes.' : 'Nenhum filme com esses filtros.';
+        ? 'Nenhum filme nos seus serviços com esses filtros.' : 'Nenhum filme com esses filtros.';
       page += 1;
     }
 
@@ -632,13 +652,10 @@
     // Answered but maybe not saved yet, so a refill must not bring them back.
     const rodadaRespondidos = new Set();
     botoesNota(rodadaNotasEl);
+    // No faixa here, so the prediction never anchors the nota.
     function rodadaItem(m) {
-      const el = document.createElement('div');
-      const poster = posterOf(m);
-      poster.loading = 'eager';
-      const titulo = Object.assign(document.createElement('h2'), { textContent: m.title });
-      el.append(poster, titulo);
-      if (m.original_title !== m.title) el.append(Object.assign(document.createElement('div'), { className: 'original', textContent: m.original_title }));
+      const el = card({ ...m, exibicao: null });
+      el.querySelector('.poster').loading = 'eager';
       return { m, el };
     }
     function mostrarRodada() {
@@ -976,10 +993,10 @@
       colunas(e.distribuicao, '½', '5 ★');
       if (e.vs_publico !== null) {
         const d = e.vs_publico;
-        hint(Math.abs(d) < 0.05 ? 'Você dá as mesmas notas que o público, em média.'
-          : `Você dá ${estrelas(Math.abs(d))} estrela a ${d < 0 ? 'menos' : 'mais'} que o público (TMDB), em média: ${d < 0 ? 'mais exigente' : 'menos exigente'}.`);
+        hint(Math.abs(d) < 0.05 ? 'Como o público, em média.'
+          : `${estrelas(Math.abs(d))} ★ ${d < 0 ? 'abaixo' : 'acima'} do público, em média.`);
       }
-      if (e.acerto) hint(`O app erra por ${estrelas(e.acerto.mae)} estrela em média nas ${e.acerto.notas} notas que você deu aqui, comparando com a previsão de antes da nota.`);
+      if (e.acerto) hint(`O app erra ${estrelas(e.acerto.mae)} ★ em média em ${e.acerto.notas} notas.`);
       if (e.por_mes.length) {
         const meses = e.por_mes.slice(-24);
         titulo(meses.length < e.por_mes.length ? 'Filmes avaliados por mês (últimos 24)' : 'Filmes avaliados por mês');
@@ -1008,7 +1025,9 @@
     async function showGoogle() {
       const conectado = await invoke('google_conectado');
       googleEl.hidden = conectado;
-      if (conectado) document.getElementById('google-hint').textContent = 'Sincronizando com o seu Google Drive.';
+      const hint = document.getElementById('google-hint');
+      hint.hidden = !conectado;
+      if (conectado) hint.textContent = 'Sincronizando com o seu Google Drive.';
     }
     // Signs in from Perfil or the boas-vindas, with what went wrong in `hint`.
     async function entrarGoogle(button, hint) {
@@ -1128,10 +1147,10 @@
       try {
         const s = await invoke('import_movielens', { files });
         stale = true;
-        importResult.textContent = `Importadas ${s.notas} notas: ${s.matched} encontradas no catálogo, ${s.unmatched} não encontradas. ${s.quero_assistir} filmes em quero assistir.`;
+        importResult.textContent = `${s.notas} notas e ${s.quero_assistir} quero assistir; ${s.unmatched} fora do catálogo.`;
         importResult.dispatchEvent(new Event('importado'));
       } catch (e) {
-        importResult.textContent = `Não deu para importar (${e}). Escolha os arquivos de notas e de logs do export do MovieLens.`;
+        importResult.textContent = `Não deu para importar (${e}).`;
       }
     });
 
