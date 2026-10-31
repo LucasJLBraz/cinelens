@@ -102,7 +102,7 @@ impl<'a> Matcher<'a> {
             (min.is_none() && max.is_none()) || v.is_some_and(|v| min.is_none_or(|min| v >= min) && max.is_none_or(|max| v <= max))
         };
         let previsto = core.previstas[i];
-        let rated = core.rated(m.tmdb_id);
+        let rated = core.rated(m.id);
         let shown = |mostrar: Mostrar, marked: bool| match mostrar {
             Mostrar::Todos => true,
             Mostrar::Esconder => !marked,
@@ -118,7 +118,7 @@ impl<'a> Matcher<'a> {
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
             && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa(p, &core.ranked) <= min))
-            && (!f.em_alta || core.em_alta.contains(&m.tmdb_id))
+            && (!f.em_alta || core.em_alta.contains(&m.id))
             && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
             && f.votos_max.is_none_or(|max| m.vote_count <= max)
             && f.media_tmdb_min.is_none_or(|min| m.vote_average >= min)
@@ -128,8 +128,8 @@ impl<'a> Matcher<'a> {
             })
             && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
             && shown(f.com_nota, rated)
-            && shown(f.ja_vi, owner.ja_vi.contains(&m.tmdb_id))
-            && shown(f.quero_assistir, owner.quero_assistir.contains(&m.tmdb_id))
+            && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
+            && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
             && (!f.no_meu_streaming
                 || watch.is_some_and(|w| w.flatrate.iter().any(|p| owner.settings.servicos.contains(p))))
         {

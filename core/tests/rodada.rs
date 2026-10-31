@@ -1,5 +1,6 @@
 //! Rodada rápida: one movie at a time to rate or skip as "não vi", the most informative first.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Marca};
 
 /// All equally well known but 5 (little seen) and 6 (not in the model: content only).
@@ -34,7 +35,7 @@ fn core() -> Core {
 }
 
 fn rodada(core: &Core) -> Vec<u32> {
-    core.rodada(10).iter().map(|m| m.tmdb_id).collect()
+    core.rodada(10).iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
@@ -46,18 +47,18 @@ fn divisive_well_known_movies_come_first() {
 #[test]
 fn a_nota_moves_the_rodada_to_what_the_model_still_does_not_know() {
     let mut core = core();
-    core.rate(1, 4.5, NOW).unwrap();
+    core.rate(ObraId::filme(1), 4.5, NOW).unwrap();
     // The first direction is known now, so 3 tells less than 2.
     assert_eq!(rodada(&core)[0], 2);
     // And the nota is like any other.
-    assert_eq!(core.movie(1).unwrap().nota, Some(4.5));
+    assert_eq!(core.movie(ObraId::filme(1)).unwrap().nota, Some(4.5));
     assert!(!rodada(&core).contains(&1));
 }
 
 #[test]
 fn nao_vi_skips_a_movie_for_good() {
     let mut core = core();
-    core.nao_vi(1);
+    core.nao_vi(ObraId::filme(1));
     assert_eq!(rodada(&core)[0], 3);
 
     let mut reopened = Core::open(CATALOG.as_bytes()).unwrap();
@@ -69,8 +70,8 @@ fn nao_vi_skips_a_movie_for_good() {
 #[test]
 fn movies_already_seen_or_dismissed_are_left_out() {
     let mut core = core();
-    core.marcar(1, Marca::JaVi, true, NOW);
-    core.marcar(3, Marca::NaoMeInteressa, true, NOW);
+    core.marcar(ObraId::filme(1), Marca::JaVi, true, NOW);
+    core.marcar(ObraId::filme(3), Marca::NaoMeInteressa, true, NOW);
     assert_eq!(rodada(&core), [2, 5, 4]);
 }
 

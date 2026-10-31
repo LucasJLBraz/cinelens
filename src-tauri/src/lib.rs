@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -162,7 +162,7 @@ fn import_movielens(
 }
 
 #[tauri::command]
-fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Option<MoviePage> {
+fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Option<MoviePage> {
     core.read().unwrap().movie(tmdb_id)
 }
 
@@ -185,7 +185,7 @@ fn set_fa(app: AppHandle, core: tauri::State<RwLock<Core>>, person_id: u32, on: 
 fn rate(
     app: AppHandle,
     core: tauri::State<RwLock<Core>>,
-    tmdb_id: u32,
+    tmdb_id: ObraId,
     nota: f32,
 ) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
     let mut core = core.write().unwrap();
@@ -201,24 +201,24 @@ fn rodada(core: tauri::State<RwLock<Core>>, n: usize) -> Vec<MovieCard> {
 }
 
 #[tauri::command]
-fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Result<(), String> {
+fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Result<(), String> {
     let mut core = core.write().unwrap();
     core.nao_vi(tmdb_id);
     save_owner(&app, &core)
 }
 
 #[tauri::command]
-fn parecidos(core: tauri::State<RwLock<Core>>, tmdb_id: u32, desde: usize) -> Vec<MovieCard> {
+fn parecidos(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, desde: usize) -> Vec<MovieCard> {
     core.read().unwrap().parecidos(tmdb_id, desde)
 }
 
 #[tauri::command]
-fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
+fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, direcao: Direcao) -> Vec<MovieCard> {
     core.read().unwrap().parecidos_mas(tmdb_id, direcao)
 }
 
 #[tauri::command]
-fn set_pesou(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32, aspectos: Vec<Aspecto>) -> Result<(), String> {
+fn set_pesou(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, aspectos: Vec<Aspecto>) -> Result<(), String> {
     let mut core = core.write().unwrap();
     core.set_pesou(tmdb_id, &aspectos, now());
     save_owner(&app, &core)
@@ -241,7 +241,7 @@ fn set_pesou_oculto(app: AppHandle, core: tauri::State<RwLock<Core>>, oculto: bo
 fn marcar(
     app: AppHandle,
     core: tauri::State<RwLock<Core>>,
-    tmdb_id: u32,
+    tmdb_id: ObraId,
     marca: Marca,
     on: bool,
 ) -> Result<Option<MoviePage>, String> {
@@ -285,7 +285,7 @@ fn notify(app: &AppHandle) -> Result<(), String> {
     notification.builder().title("Lançamento para você").body(due.texto).show().map_err(|e| e.to_string())?;
     let state = app.state::<RwLock<Core>>();
     let mut core = state.write().unwrap();
-    core.notificado(due.tmdb_id, now());
+    core.notificado(due.id, now());
     save_owner(app, &core)
 }
 

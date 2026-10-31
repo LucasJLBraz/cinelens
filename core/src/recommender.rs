@@ -13,10 +13,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::Deserialize;
 
-use crate::{Error, NotaEntry};
+use crate::{Error, NotaEntry, ObraId};
 
 /// The owner's notas by movie, each history in time order.
-type Notas = BTreeMap<u32, Vec<NotaEntry>>;
+type Notas = BTreeMap<ObraId, Vec<NotaEntry>>;
 
 /// The model artifact format this core reads; the training job writes the same.
 pub const MODEL_FORMAT_VERSION: u32 = 2;
@@ -132,7 +132,7 @@ pub(crate) struct Model {
     global_mean: f32,
     lambda: f32,
     dim: usize,
-    movies: HashMap<u32, Item>,
+    movies: HashMap<ObraId, Item>,
     /// Content feature → (bias, factors).
     content: HashMap<String, (f32, Vec<f32>)>,
     /// Per `GENOME_ASPECTS` aspect, its mean over the movies with a score; 0 when none has one.
@@ -180,14 +180,14 @@ impl Model {
         if artifact.lambda.is_nan() || artifact.lambda <= 0.0 {
             return Err(invalid(format!("lambda {} is not positive", artifact.lambda)));
         }
-        let mut movies: HashMap<u32, Item> =
-            artifact.movies.into_iter().map(|m| (m.tmdb_id, Item::collaborative(m))).collect();
+        let mut movies: HashMap<ObraId, Item> =
+            artifact.movies.into_iter().map(|m| (ObraId::filme(m.tmdb_id), Item::collaborative(m))).collect();
         if let Some(genome) = artifact.genome {
             // Matched by name, so an artifact with fewer or reordered aspects still loads.
             let columns: Vec<Option<usize>> =
                 GENOME_ASPECTS.iter().map(|(name, _)| genome.aspects.iter().position(|a| a == name)).collect();
             for row in genome.movies {
-                if let Some(item) = movies.get_mut(&row.tmdb_id) {
+                if let Some(item) = movies.get_mut(&ObraId::filme(row.tmdb_id)) {
                     let score = |c: &Option<usize>| c.and_then(|c| row.scores.get(c).copied()).unwrap_or(f32::NAN);
                     item.genome = Some(columns.iter().map(score).collect());
                 }
@@ -213,8 +213,8 @@ impl Model {
     /// Fold-in: the owner's factors given the fixed movie factors. With a half-life, a nota
     /// weighs half as much for every `half_life_days` it is older than the most recent one.
     /// `negatives` (não me interessa) are weak low notas that leave the owner's mean alone.
-    pub fn profile(&self, notas: &Notas, negatives: &BTreeSet<u32>, half_life_days: Option<u32>) -> Profile {
-        let current: Vec<(u32, &NotaEntry)> = notas.iter().filter_map(|(&id, h)| Some((id, h.last()?))).collect();
+    pub fn profile(&self, notas: &Notas, negatives: &BTreeSet<ObraId>, half_life_days: Option<u32>) -> Profile {
+        let current: Vec<(ObraId, &NotaEntry)> = notas.iter().filter_map(|(&id, h)| Some((id, h.last()?))).collect();
         let latest = current.iter().map(|(_, e)| e.at).max().unwrap_or(0);
         let weight = |e: &NotaEntry| match half_life_days {
             None => 1.0,
@@ -241,8 +241,8 @@ impl Model {
 
     /// The movie's collaborative factors, else the mean of its mapped content features';
     /// `None` when neither is known.
-    pub fn item(&self, tmdb_id: u32, features: &[String]) -> Option<Item> {
-        if let Some(item) = self.movies.get(&tmdb_id) {
+    pub fn item(&self, id: ObraId, features: &[String]) -> Option<Item> {
+        if let Some(item) = self.movies.get(&id) {
             return Some(item.clone());
         }
         // ponytail: plain mean of feature centroids; a learned weight per feature kind (genre vs
@@ -272,12 +272,12 @@ impl Model {
 }
 
 /// The owner's most recent notas, hidden from the fold-in, and the rest. `fraction` is 0–1;
-/// same-second notas are held out in tmdb_id order.
+/// same-second notas are held out in id order.
 pub(crate) fn hold_out(
     notas: &Notas,
     fraction: f32,
-) -> (Notas, Vec<(u32, NotaEntry)>) {
-    let mut by_recency: Vec<(u32, NotaEntry)> =
+) -> (Notas, Vec<(ObraId, NotaEntry)>) {
+    let mut by_recency: Vec<(ObraId, NotaEntry)> =
         notas.iter().filter_map(|(&id, h)| Some((id, h.last()?.clone()))).collect();
     by_recency.sort_by_key(|(_, e)| std::cmp::Reverse(e.at));
     let n = ((by_recency.len() as f32 * fraction).round() as usize).min(by_recency.len());
@@ -291,12 +291,12 @@ pub(crate) fn hold_out(
 pub(crate) fn errors<'a>(
     model: &Model,
     known: &Notas,
-    hidden: &'a [(u32, NotaEntry)],
+    hidden: &'a [(ObraId, NotaEntry)],
     half_life_days: Option<u32>,
-    item: impl Fn(u32) -> Option<Item>,
+    item: impl Fn(ObraId) -> Option<Item>,
 ) -> Vec<(f32, &'a NotaEntry)> {
     let profile = model.profile(known, &BTreeSet::new(), half_life_days);
-    let error = |id: u32, e: &NotaEntry| Some((model.predict(&profile, &item(id)?) - e.nota).abs());
+    let error = |id: ObraId, e: &NotaEntry| Some((model.predict(&profile, &item(id)?) - e.nota).abs());
     hidden.iter().filter_map(|(id, e)| Some((error(*id, e)?, e))).collect()
 }
 

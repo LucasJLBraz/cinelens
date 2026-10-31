@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::{filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry};
+use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry};
 
 /// Movies in each of Perfil's lists.
 const LISTA: usize = 10;
@@ -116,7 +116,7 @@ fn grupos(pares: impl Iterator<Item = (String, f32)>) -> Vec<Grupo> {
 
 impl Core {
     pub fn estatisticas(&self) -> Estatisticas {
-        let atuais: Vec<(u32, f32)> =
+        let atuais: Vec<(ObraId, f32)> =
             self.owner.notas.iter().filter_map(|(&id, h)| Some((id, h.last()?.nota))).filter(|&(_, nota)| is_valid_nota(nota)).collect();
         let mut distribuicao = [0; 10];
         atuais.iter().for_each(|&(_, nota)| distribuicao[(nota * 2.0) as usize - 1] += 1);
@@ -127,7 +127,7 @@ impl Core {
         let por_direcao = grupos(no_catalogo.iter().flat_map(|&(m, nota)| m.directors.iter().map(move |p| (p.name.clone(), nota))));
         let decadas = no_catalogo.iter().filter_map(|&(m, nota)| Some((m.year? / 10 * 10, nota)));
         let por_decada = agrupar(decadas).into_iter().map(|(d, notas, media)| Grupo { nome: d.to_string(), notas, media }).collect();
-        let mut meses: BTreeMap<i64, BTreeSet<u32>> = BTreeMap::new();
+        let mut meses: BTreeMap<i64, BTreeSet<ObraId>> = BTreeMap::new();
         for (&id, h) in &self.owner.notas {
             h.iter().for_each(|e| _ = meses.entry(mes(e.at)).or_default().insert(id));
         }

@@ -10,6 +10,7 @@ mod estatisticas;
 mod filtro;
 mod listas;
 mod movielens;
+mod obra;
 mod recommender;
 mod sync;
 
@@ -17,6 +18,7 @@ pub use delta::{apply_catalog_delta, catalog_delta};
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar};
+pub use obra::ObraId;
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 pub use sync::SyncStorage;
 use recommender::Model;
@@ -100,7 +102,7 @@ struct CatalogArtifact {
     #[serde(default)]
     providers: Vec<Provider>,
     #[serde(default)]
-    trending: Vec<u32>,
+    trending: Vec<ObraId>,
     movies: Vec<Movie>,
 }
 
@@ -150,7 +152,8 @@ struct Watch {
 
 #[derive(Deserialize)]
 struct Movie {
-    tmdb_id: u32,
+    #[serde(rename = "tmdb_id")]
+    id: ObraId,
     title: String,
     original_title: String,
     year: Option<u16>,
@@ -232,13 +235,14 @@ pub fn content_features(catalog_artifact: &[u8]) -> Result<Vec<(u32, Vec<String>
     Ok(artifact
         .movies
         .iter()
-        .map(|m| (m.tmdb_id, m.content_features()))
+        .map(|m| (m.id.tmdb_id(), m.content_features()))
         .collect())
 }
 
 #[derive(Debug, Serialize)]
 pub struct MovieCard {
-    pub tmdb_id: u32,
+    #[serde(rename = "tmdb_id")]
+    pub id: ObraId,
     pub title: String,
     pub original_title: String,
     pub year: Option<u16>,
@@ -323,7 +327,8 @@ pub struct Destaque {
 /// The weekly notification: a new release the owner would likely love.
 #[derive(Debug, Serialize)]
 pub struct Notificacao {
-    pub tmdb_id: u32,
+    #[serde(rename = "tmdb_id")]
+    pub id: ObraId,
     /// "Saiu X, Aposta forte", shown as the display mode shows a nota prevista.
     pub texto: String,
 }
@@ -482,27 +487,27 @@ struct Settings {
 /// Everything the owner has told the app; saved and loaded by the shell as one blob.
 #[derive(Default, Serialize, Deserialize)]
 struct OwnerData {
-    notas: BTreeMap<u32, Vec<NotaEntry>>,
-    quero_assistir: BTreeSet<u32>,
+    notas: BTreeMap<ObraId, Vec<NotaEntry>>,
+    quero_assistir: BTreeSet<ObraId>,
     #[serde(default)]
-    ja_vi: BTreeSet<u32>,
+    ja_vi: BTreeSet<ObraId>,
     #[serde(default)]
-    nao_me_interessa: BTreeSet<u32>,
+    nao_me_interessa: BTreeSet<ObraId>,
     /// Movie → until when (Unix seconds) it stays out of the destaque.
     #[serde(default)]
-    agora_nao: BTreeMap<u32, i64>,
+    agora_nao: BTreeMap<ObraId, i64>,
     /// Person ids the owner is fã of.
     #[serde(default)]
     fas: BTreeSet<u32>,
     /// Movie → what weighed in its nota.
     #[serde(default)]
-    pesou: BTreeMap<u32, BTreeSet<Aspecto>>,
+    pesou: BTreeMap<ObraId, BTreeSet<Aspecto>>,
     /// Movies skipped in the rodada rápida as não vi: never asked again.
     #[serde(default)]
-    nao_vi: BTreeSet<u32>,
+    nao_vi: BTreeSet<ObraId>,
     /// Movie → when (Unix seconds) the weekly notification announced it.
     #[serde(default)]
-    notificados: BTreeMap<u32, i64>,
+    notificados: BTreeMap<ObraId, i64>,
     #[serde(default)]
     settings: Settings,
     /// When (Unix seconds) each mark or setting last changed on any device, removals included,
@@ -512,8 +517,8 @@ struct OwnerData {
 }
 
 impl OwnerData {
-    fn add_nota(&mut self, tmdb_id: u32, entry: NotaEntry) {
-        let history = self.notas.entry(tmdb_id).or_default();
+    fn add_nota(&mut self, id: ObraId, entry: NotaEntry) {
+        let history = self.notas.entry(id).or_default();
         if !history.contains(&entry) {
             history.push(entry);
             // Stable: same-second notas keep the order they were given in.
@@ -535,8 +540,8 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 pub struct Core {
     data_version: Option<String>,
     movies: Vec<Movie>,
-    /// tmdb_id → index into `movies`.
-    index: HashMap<u32, usize>,
+    /// id → index into `movies`.
+    index: HashMap<ObraId, usize>,
     generos: Vec<Genero>,
     provedores: Vec<Provedor>,
     /// Aligned with `movies`: what search matches against.
@@ -544,7 +549,7 @@ pub struct Core {
     /// Aligned with `movies`: 0 (no votes) to 1 (the most voted), on a log scale.
     popularidade: Vec<f32>,
     /// TMDB trending this week.
-    em_alta: HashSet<u32>,
+    em_alta: HashSet<ObraId>,
     /// Some movie has a critics' score.
     tem_critica: bool,
     owner: OwnerData,
@@ -589,7 +594,7 @@ impl Core {
         let most = artifact.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
         self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
         self.movies = artifact.movies;
-        self.index = self.movies.iter().enumerate().map(|(i, m)| (m.tmdb_id, i)).collect();
+        self.index = self.movies.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
         self.em_alta = artifact.trending.into_iter().collect();
         self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
         self.generos = artifact.genres;
@@ -652,7 +657,7 @@ impl Core {
             Some(model) => self
                 .movies
                 .iter()
-                .map(|m| model.item(m.tmdb_id, &m.content_features()))
+                .map(|m| model.item(m.id, &m.content_features()))
                 .collect(),
         };
         self.recompute();
@@ -667,7 +672,7 @@ impl Core {
         self.previstas = match (&self.model, &self.profile) {
             (Some(model), Some(profile)) => {
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
-                    if self.rated(m.tmdb_id) {
+                    if self.rated(m.id) {
                         None
                     } else {
                         item.as_ref()
@@ -693,17 +698,17 @@ impl Core {
 
     /// A recomendação: predicted, neither já vi nor não me interessa.
     fn recomendavel(&self, i: usize) -> bool {
-        let id = self.movies[i].tmdb_id;
+        let id = self.movies[i].id;
         self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.dispensado(i)
     }
 
     /// Marked não me interessa.
     fn dispensado(&self, i: usize) -> bool {
-        self.owner.nao_me_interessa.contains(&self.movies[i].tmdb_id)
+        self.owner.nao_me_interessa.contains(&self.movies[i].id)
     }
 
-    fn rated(&self, tmdb_id: u32) -> bool {
-        self.owner.notas.get(&tmdb_id).is_some_and(|h| !h.is_empty())
+    fn rated(&self, id: ObraId) -> bool {
+        self.owner.notas.get(&id).is_some_and(|h| !h.is_empty())
     }
 
     /// What recomendações are ranked by: the nota prevista plus `boost`. Only for movies with a
@@ -747,12 +752,12 @@ impl Core {
     }
 
     /// Replaces what the owner said weighed in the movie's nota.
-    pub fn set_pesou(&mut self, tmdb_id: u32, aspectos: &[Aspecto], at: i64) {
-        self.owner.stamp(sync::key("pesou", tmdb_id), at);
+    pub fn set_pesou(&mut self, id: ObraId, aspectos: &[Aspecto], at: i64) {
+        self.owner.stamp(sync::key("pesou", id), at);
         if aspectos.is_empty() {
-            self.owner.pesou.remove(&tmdb_id);
+            self.owner.pesou.remove(&id);
         } else {
-            self.owner.pesou.insert(tmdb_id, aspectos.iter().copied().collect());
+            self.owner.pesou.insert(id, aspectos.iter().copied().collect());
         }
         self.recompute();
     }
@@ -794,7 +799,7 @@ impl Core {
             })
             .collect();
         let key = |i: usize| {
-            let nota = self.owner.notas.get(&self.movies[i].tmdb_id).and_then(|h| h.last()).map(|e| e.nota);
+            let nota = self.owner.notas.get(&self.movies[i].id).and_then(|h| h.last()).map(|e| e.nota);
             self.encolhida(i).or(nota).unwrap_or(f32::NEG_INFINITY)
         };
         found.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
@@ -809,8 +814,8 @@ impl Core {
     }
 
     /// Marks or unmarks a movie at `at` (Unix seconds), which also starts agora não's few weeks.
-    pub fn marcar(&mut self, tmdb_id: u32, marca: Marca, on: bool, at: i64) {
-        fn set(marks: &mut BTreeSet<u32>, id: u32, on: bool) {
+    pub fn marcar(&mut self, id: ObraId, marca: Marca, on: bool, at: i64) {
+        fn set(marks: &mut BTreeSet<ObraId>, id: ObraId, on: bool) {
             if on { marks.insert(id); } else { marks.remove(&id); }
         }
         let field = match marca {
@@ -819,13 +824,13 @@ impl Core {
             Marca::NaoMeInteressa => "nao_me_interessa",
             Marca::AgoraNao => "agora_nao",
         };
-        self.owner.stamp(sync::key(field, tmdb_id), at);
+        self.owner.stamp(sync::key(field, id), at);
         match marca {
-            Marca::QueroAssistir => set(&mut self.owner.quero_assistir, tmdb_id, on),
-            Marca::JaVi => set(&mut self.owner.ja_vi, tmdb_id, on),
-            Marca::NaoMeInteressa => set(&mut self.owner.nao_me_interessa, tmdb_id, on),
-            Marca::AgoraNao if on => _ = self.owner.agora_nao.insert(tmdb_id, at + AGORA_NAO_SECS),
-            Marca::AgoraNao => _ = self.owner.agora_nao.remove(&tmdb_id),
+            Marca::QueroAssistir => set(&mut self.owner.quero_assistir, id, on),
+            Marca::JaVi => set(&mut self.owner.ja_vi, id, on),
+            Marca::NaoMeInteressa => set(&mut self.owner.nao_me_interessa, id, on),
+            Marca::AgoraNao if on => _ = self.owner.agora_nao.insert(id, at + AGORA_NAO_SECS),
+            Marca::AgoraNao => _ = self.owner.agora_nao.remove(&id),
         }
         if matches!(marca, Marca::JaVi | Marca::NaoMeInteressa) {
             self.recompute();
@@ -839,7 +844,7 @@ impl Core {
 
     /// The top `n` recomendações not set aside with agora não, best first.
     fn destaques(&self, at: i64, n: usize) -> impl Iterator<Item = usize> + '_ {
-        let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].tmdb_id).is_some_and(|&until| at < until);
+        let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].id).is_some_and(|&until| at < until);
         self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
     }
 
@@ -847,19 +852,19 @@ impl Core {
     /// seconds). `sorteio` 0 shows the best of each; any other draws others from the top
     /// `SORTEIO`, so a refresh shows different movies that are still good bets.
     pub fn inicio(&self, at: i64, sorteio: u64) -> Inicio {
-        let tmdb_id = |&i: &usize| self.movies[i].tmdb_id;
-        let destaques = sortear(self.destaques(at, SORTEIO).collect(), DESTAQUES, sorteio, tmdb_id);
+        let id = |&i: &usize| self.movies[i].id;
+        let destaques = sortear(self.destaques(at, SORTEIO).collect(), DESTAQUES, sorteio, id);
         let destaques = destaques.into_iter().map(|i| Destaque {
             card: self.card(i),
             porque: self.porque(i),
-            quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].tmdb_id),
+            quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].id),
         });
         let fileiras = listas::listas(at, self.tem_critica).into_iter().map(|(nome, filtro)| {
             let mut movies = self.explorar(&filtro, 0).movies;
             // Only recomendações are drawn: past them, Explorar lists the rest in catálogo order.
             let recomendacoes = movies.iter().take_while(|m| m.nota_prevista.is_some()).count();
             movies.truncate(recomendacoes.max(FILEIRA));
-            let movies = sortear(movies, FILEIRA, sorteio, |m| m.tmdb_id);
+            let movies = sortear(movies, FILEIRA, sorteio, |m| m.id);
             Fileira { nome: nome.to_string(), filtro, movies }
         });
         Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
@@ -876,7 +881,7 @@ impl Core {
         let mut scored: Vec<(f32, usize)> = (0..self.movies.len())
             .filter_map(|i| {
                 let item = self.items[i].as_ref().filter(|item| item.collaborative)?;
-                let id = self.movies[i].tmdb_id;
+                let id = self.movies[i].id;
                 let asked = self.rated(id) || self.owner.ja_vi.contains(&id) || self.owner.nao_vi.contains(&id);
                 (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.popularidade[i], i))
             })
@@ -887,11 +892,11 @@ impl Core {
     }
 
     /// Skips the movie in the rodada rápida for good; it teaches nothing about taste.
-    pub fn nao_vi(&mut self, tmdb_id: u32) {
-        self.owner.nao_vi.insert(tmdb_id);
+    pub fn nao_vi(&mut self, id: ObraId) {
+        self.owner.nao_vi.insert(id);
     }
 
-    fn half_life(&self, model: Option<&Model>, notas: &BTreeMap<u32, Vec<NotaEntry>>) -> Option<u32> {
+    fn half_life(&self, model: Option<&Model>, notas: &BTreeMap<ObraId, Vec<NotaEntry>>) -> Option<u32> {
         match (self.owner.settings.decay, model) {
             (Decay::Off, _) | (Decay::Auto, None) => None,
             (Decay::HalfLifeDays(days), _) => Some(days),
@@ -936,19 +941,19 @@ impl Core {
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, &self.ranked) == Faixa::ApostaForte);
-            alta && novo(m) && !self.owner.notificados.contains_key(&m.tmdb_id)
+            alta && novo(m) && !self.owner.notificados.contains_key(&m.id)
         })?;
         let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {
             DisplayMode::Faixa => format!("Saiu {}, Aposta forte", m.title),
             DisplayMode::Oculto => format!("Saiu {}", m.title),
         };
-        Some(Notificacao { tmdb_id: m.tmdb_id, texto })
+        Some(Notificacao { id: m.id, texto })
     }
 
     /// The owner was shown the notification about the movie at `at`: the week starts over.
-    pub fn notificado(&mut self, tmdb_id: u32, at: i64) {
-        self.owner.notificados.insert(tmdb_id, at);
+    pub fn notificado(&mut self, id: ObraId, at: i64) {
+        self.owner.notificados.insert(id, at);
     }
 
     /// Every service some catálogo movie is on in Brazil, those with the most movies on
@@ -978,7 +983,7 @@ impl Core {
     /// imported are not added again, and a nota given in the app since stays current.
     pub fn import_movielens(&mut self, files: &[&str]) -> Result<ImportSummary, Error> {
         let export = movielens::read(files)?;
-        let in_catalog: HashSet<u32> = self.movies.iter().map(|m| m.tmdb_id).collect();
+        let in_catalog: HashSet<ObraId> = self.movies.iter().map(|m| m.id).collect();
         let mut summary = ImportSummary {
             notas: export.notas.len(),
             matched: 0,
@@ -986,42 +991,42 @@ impl Core {
             quero_assistir: export.quero_assistir.len(),
         };
         for nota in export.notas {
-            let Some(tmdb_id) = nota.tmdb_id else {
+            let Some(id) = nota.tmdb_id.map(ObraId::filme) else {
                 summary.unmatched += 1;
                 continue;
             };
-            if in_catalog.contains(&tmdb_id) {
+            if in_catalog.contains(&id) {
                 summary.matched += 1;
             } else {
                 summary.unmatched += 1;
             }
             for entry in nota.history {
-                self.owner.add_nota(tmdb_id, entry);
+                self.owner.add_nota(id, entry);
             }
         }
-        self.owner.quero_assistir.extend(export.quero_assistir);
+        self.owner.quero_assistir.extend(export.quero_assistir.into_iter().map(ObraId::filme));
         self.recompute();
         Ok(summary)
     }
 
     /// Gives or changes the owner's nota; the previous one stays in the history. Returns what
     /// the app predicted for it, in the chosen display mode, to reveal now that it is given.
-    pub fn rate(&mut self, tmdb_id: u32, nota: f32, at: i64) -> Result<Option<Exibicao>, Error> {
+    pub fn rate(&mut self, id: ObraId, nota: f32, at: i64) -> Result<Option<Exibicao>, Error> {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
-        let card = self.index.get(&tmdb_id).map(|&i| self.card(i));
+        let card = self.index.get(&id).map(|&i| self.card(i));
         let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
-        self.owner.add_nota(tmdb_id, NotaEntry { nota, at, movielens_pred: None, prevista });
+        self.owner.add_nota(id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
         Ok(revealed)
     }
 
     /// The movie page, or `None` if the movie is not in the catálogo.
-    pub fn movie(&self, tmdb_id: u32) -> Option<MoviePage> {
-        let i = *self.index.get(&tmdb_id)?;
+    pub fn movie(&self, id: ObraId) -> Option<MoviePage> {
+        let i = *self.index.get(&id)?;
         let m = &self.movies[i];
-        let history = self.owner.notas.get(&tmdb_id).cloned().unwrap_or_default();
+        let history = self.owner.notas.get(&id).cloned().unwrap_or_default();
         let people = |list: &[Person]| list.iter().map(|p| self.pessoa_card(p.id, p.name.clone())).collect();
         let genre = |id: &u32| self.generos.iter().find(|g| g.id == *id).map(|g| g.name.clone());
         Some(MoviePage {
@@ -1039,31 +1044,31 @@ impl Core {
             elenco: people(&m.cast),
             trilha: people(&m.composers),
             porque: self.porque(i),
-            parecidos: self.parecidos(tmdb_id, 0),
+            parecidos: self.parecidos(id, 0),
             nota: history.last().map(|e| e.nota),
             history,
-            quero_assistir: self.owner.quero_assistir.contains(&tmdb_id),
-            ja_vi: self.owner.ja_vi.contains(&tmdb_id),
-            nao_me_interessa: self.owner.nao_me_interessa.contains(&tmdb_id),
+            quero_assistir: self.owner.quero_assistir.contains(&id),
+            ja_vi: self.owner.ja_vi.contains(&id),
+            nao_me_interessa: self.owner.nao_me_interessa.contains(&id),
             onde_assistir: self.movies[i].watch.as_ref().map(|w| {
                 let named = |ids: &[u32]| ids.iter().filter_map(|id| self.provedores.iter().find(|p| p.id == *id).cloned()).collect();
                 OndeAssistir { link: w.link.clone(), assinatura: named(&w.flatrate), aluguel: named(&w.rent), compra: named(&w.buy) }
             }),
-            pesou: self.owner.pesou.get(&tmdb_id).map_or_else(Vec::new, |a| a.iter().copied().collect()),
+            pesou: self.owner.pesou.get(&id).map_or_else(Vec::new, |a| a.iter().copied().collect()),
         })
     }
 
     /// The next parecidos after the first `desde`, most alike first: "ver mais" pages through them.
-    pub fn parecidos(&self, tmdb_id: u32, desde: usize) -> Vec<MovieCard> {
-        let Some(&i) = self.index.get(&tmdb_id) else { return Vec::new() };
+    pub fn parecidos(&self, id: ObraId, desde: usize) -> Vec<MovieCard> {
+        let Some(&i) = self.index.get(&id) else { return Vec::new() };
         self.alike(i, desde + PARECIDOS).into_iter().skip(desde).map(|j| self.card(j)).collect()
     }
 
     /// "Parecidos, mas…": of the movies most alike to this one, those further in `direcao` than
     /// it, most alike first. A movie with no value to compare (no genome scores, no runtime)
     /// compares against its parecidos' median; parecidos without one are left out.
-    pub fn parecidos_mas(&self, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
-        let Some(&i) = self.index.get(&tmdb_id) else { return Vec::new() };
+    pub fn parecidos_mas(&self, id: ObraId, direcao: Direcao) -> Vec<MovieCard> {
+        let Some(&i) = self.index.get(&id) else { return Vec::new() };
         let genome = |j: usize, a: usize| self.items[j].as_ref()?.genome_score(a);
         let value = |j: usize| match direcao {
             Direcao::MaisLeve => genome(j, recommender::LEVE),
@@ -1221,7 +1226,7 @@ impl Core {
     fn card(&self, i: usize) -> MovieCard {
         let m = &self.movies[i];
         MovieCard {
-            tmdb_id: m.tmdb_id,
+            id: m.id,
             title: m.title.clone(),
             original_title: m.original_title.clone(),
             year: m.year,
@@ -1234,15 +1239,15 @@ impl Core {
     }
 }
 
-/// `n` of `pool`, in pool order: the first `n` for `sorteio` 0, else those whose tmdb_id
+/// `n` of `pool`, in pool order: the first `n` for `sorteio` 0, else those whose id
 /// hashes lowest with it, so a movie leaving the pool frees only its own place.
-fn sortear<T>(pool: Vec<T>, n: usize, sorteio: u64, tmdb_id: impl Fn(&T) -> u32) -> Vec<T> {
+fn sortear<T>(pool: Vec<T>, n: usize, sorteio: u64, id: impl Fn(&T) -> ObraId) -> Vec<T> {
     if sorteio == 0 || pool.len() <= n {
         return pool.into_iter().take(n).collect();
     }
     // SplitMix64's finalizer.
     let hash = |x: &T| {
-        let mut z = (sorteio ^ u64::from(tmdb_id(x))).wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = (sorteio ^ u64::from(id(x).tmdb_id())).wrapping_add(0x9e37_79b9_7f4a_7c15);
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         z ^ (z >> 31)

@@ -1,5 +1,6 @@
 //! Início: the destaque, and the listas prontas its rows and chips open in Explorar.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, Marca};
 
 /// Genres: 12 Aventura, 35 Comédia, 10751 Família, 18 Drama, 878 Ficção científica.
@@ -45,7 +46,7 @@ fn core() -> Core {
 fn fileira(core: &Core, nome: &str) -> Vec<u32> {
     let inicio = core.inicio(NOW, 0);
     let fileira = inicio.fileiras.iter().find(|f| f.nome == nome).unwrap_or_else(|| panic!("no row {nome}"));
-    fileira.movies.iter().map(|m| m.tmdb_id).collect()
+    fileira.movies.iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
@@ -68,8 +69,8 @@ fn every_row_is_explorar_with_its_listas_filtro() {
         ]
     );
     for f in &inicio.fileiras {
-        let explorar: Vec<u32> = core.explorar(&f.filtro, 0).movies.iter().map(|m| m.tmdb_id).collect();
-        let row: Vec<u32> = f.movies.iter().map(|m| m.tmdb_id).collect();
+        let explorar: Vec<u32> = core.explorar(&f.filtro, 0).movies.iter().map(|m| m.id.tmdb_id()).collect();
+        let row: Vec<u32> = f.movies.iter().map(|m| m.id.tmdb_id()).collect();
         assert_eq!(row, explorar[..row.len()], "{}", f.nome);
     }
 }
@@ -110,7 +111,7 @@ fn sessao_da_tarde_is_family_fare_rated_up_to_12_from_1980_to_2010() {
 fn classicos_are_before_1980_well_rated_by_the_public_and_unseen() {
     let mut core = core();
     assert_eq!(fileira(&core, "Clássicos que você não viu"), [4]);
-    core.marcar(4, Marca::JaVi, true, NOW);
+    core.marcar(ObraId::filme(4), Marca::JaVi, true, NOW);
     assert!(fileira(&core, "Clássicos que você não viu").is_empty());
 }
 
@@ -119,7 +120,7 @@ fn para_rever_lists_ja_vi_movies_with_a_high_nota_prevista() {
     let mut core = core();
     assert!(fileira(&core, "Para rever").is_empty());
     for id in [6, 2, 8] {
-        core.marcar(id, Marca::JaVi, true, NOW);
+        core.marcar(ObraId::filme(id), Marca::JaVi, true, NOW);
     }
     assert_eq!(fileira(&core, "Para rever"), [6, 2]);
 }
@@ -127,19 +128,19 @@ fn para_rever_lists_ja_vi_movies_with_a_high_nota_prevista() {
 #[test]
 fn the_destaque_swipes_through_the_top_recomendacoes_not_set_aside() {
     let mut core = core();
-    let ids = |core: &Core| core.inicio(NOW, 0).destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    let ids = |core: &Core| core.inicio(NOW, 0).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     assert_eq!(ids(&core), [6, 7, 2, 1, 3]);
 
-    core.marcar(7, Marca::AgoraNao, true, NOW);
-    core.marcar(1, Marca::JaVi, true, NOW);
+    core.marcar(ObraId::filme(7), Marca::AgoraNao, true, NOW);
+    core.marcar(ObraId::filme(1), Marca::JaVi, true, NOW);
     assert_eq!(ids(&core), [6, 2, 3, 4, 5]);
 }
 
 #[test]
 fn rows_leave_out_movies_already_rated_or_seen() {
     let mut core = core();
-    core.rate(6, 4.0, NOW).unwrap();
-    core.marcar(8, Marca::JaVi, true, NOW);
+    core.rate(ObraId::filme(6), 4.0, NOW).unwrap();
+    core.marcar(ObraId::filme(8), Marca::JaVi, true, NOW);
     assert!(fileira(&core, "Em alta, do seu jeito").is_empty());
     assert!(fileira(&core, "Cabe numa noite").is_empty());
 }
@@ -192,15 +193,15 @@ fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
     let core = many_good_bets();
     // The owner's top 100 recomendações among a lista's movies.
     let top = |filtro: &Filtro| -> Vec<u32> {
-        (0..4).flat_map(|page| core.explorar(filtro, page).movies).take(100).map(|m| m.tmdb_id).collect()
+        (0..4).flat_map(|page| core.explorar(filtro, page).movies).take(100).map(|m| m.id.tmdb_id()).collect()
     };
     let (first, second) = (core.inicio(NOW, 1), core.inicio(NOW, 2));
 
-    let destaques = |inicio: &cinelens_core::Inicio| inicio.destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    let destaques = |inicio: &cinelens_core::Inicio| inicio.destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     assert_ne!(destaques(&first), destaques(&second));
     let fileira = |inicio: &cinelens_core::Inicio| {
         let f = inicio.fileiras.iter().find(|f| f.nome == "Cabe numa noite").unwrap();
-        f.movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>()
+        f.movies.iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>()
     };
     assert_ne!(fileira(&first), fileira(&second));
 
@@ -209,7 +210,7 @@ fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
         assert!(destaques(inicio).iter().all(|id| best.contains(id)), "{:?}", destaques(inicio));
         for f in &inicio.fileiras {
             let best = top(&f.filtro);
-            assert!(f.movies.iter().all(|m| best.contains(&m.tmdb_id)), "{}", f.nome);
+            assert!(f.movies.iter().all(|m| best.contains(&m.id.tmdb_id())), "{}", f.nome);
         }
     }
 }
@@ -217,10 +218,10 @@ fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
 #[test]
 fn setting_a_drawn_destaque_aside_replaces_only_it() {
     let mut core = many_good_bets();
-    let destaques = |core: &Core| core.inicio(NOW, 7).destaques.iter().map(|d| d.card.tmdb_id).collect::<Vec<_>>();
+    let destaques = |core: &Core| core.inicio(NOW, 7).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     let before = destaques(&core);
 
-    core.marcar(before[1], Marca::AgoraNao, true, NOW);
+    core.marcar(ObraId::filme(before[1]), Marca::AgoraNao, true, NOW);
     let after = destaques(&core);
     assert_eq!(after.iter().filter(|id| before.contains(id)).count(), before.len() - 1, "{before:?} → {after:?}");
 }

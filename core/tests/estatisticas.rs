@@ -1,5 +1,6 @@
 //! Perfil's statistics, on a fixture history.
 
+use cinelens_core::ObraId;
 use cinelens_core::Core;
 
 /// Genres: 18 Drama, 35 Comédia, 878 Ficção científica. Movie 4 has too few votes for its
@@ -73,7 +74,7 @@ fn harsher_or_more_generous_than_the_public() {
 #[test]
 fn biggest_disagreements_with_the_public_first() {
     let e = core().estatisticas();
-    let d: Vec<(u32, f32, f32)> = e.discordancias.iter().map(|d| (d.card.tmdb_id, d.nota, d.publico)).collect();
+    let d: Vec<(u32, f32, f32)> = e.discordancias.iter().map(|d| (d.card.id.tmdb_id(), d.nota, d.publico)).collect();
     assert_eq!(d, [(3, 1.0, 3.5), (1, 5.0, 4.0), (2, 4.0, 3.0)]);
 }
 
@@ -83,7 +84,7 @@ fn taste_over_time_from_the_nota_history() {
     // Every nota given counts in its year, movie 1's old 3.0 in 2025 too.
     let anos: Vec<(i64, usize, f32)> = e.por_ano.iter().map(|a| (a.ano, a.notas, a.media)).collect();
     assert_eq!(anos, [(2025, 3, 3.0), (2026, 3, 3.5)]);
-    let mudancas: Vec<(u32, f32, f32)> = e.mudancas.iter().map(|m| (m.card.tmdb_id, m.de, m.para)).collect();
+    let mudancas: Vec<(u32, f32, f32)> = e.mudancas.iter().map(|m| (m.card.id.tmdb_id(), m.de, m.para)).collect();
     assert_eq!(mudancas, [(1, 3.0, 5.0)]);
 }
 
@@ -103,8 +104,8 @@ fn accuracy_keeps_the_prediction_stored_at_rating_time() {
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
     assert!(core.estatisticas().acerto.is_none(), "no notas given in the app");
     core.load_model(model(0.5).as_bytes()).unwrap();
-    let prevista = core.movie(1).unwrap().card.nota_prevista.unwrap();
-    core.rate(1, 5.0, MAR_2026).unwrap();
+    let prevista = core.movie(ObraId::filme(1)).unwrap().card.nota_prevista.unwrap();
+    core.rate(ObraId::filme(1), 5.0, MAR_2026).unwrap();
     // A new model predicts differently; what was revealed then still stands.
     core.load_model(model(-1.0).as_bytes()).unwrap();
 
@@ -124,12 +125,12 @@ fn a_nota_out_of_range_in_the_owner_data_is_left_out() {
 #[test]
 fn minhas_notas_lists_the_most_recently_rated_first() {
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
-    core.rate(1, 4.0, JAN_2025).unwrap();
-    core.rate(2, 3.0, JAN_2025 + 60).unwrap();
-    core.rate(999, 2.0, JAN_2025 + 90).unwrap();
+    core.rate(ObraId::filme(1), 4.0, JAN_2025).unwrap();
+    core.rate(ObraId::filme(2), 3.0, JAN_2025 + 60).unwrap();
+    core.rate(ObraId::filme(999), 2.0, JAN_2025 + 90).unwrap();
     // Changing movie 1's nota makes it the most recent again.
-    core.rate(1, 5.0, MAR_2026).unwrap();
-    let notas: Vec<(u32, f32, i64)> = core.minhas_notas().iter().map(|n| (n.card.tmdb_id, n.nota, n.at)).collect();
+    core.rate(ObraId::filme(1), 5.0, MAR_2026).unwrap();
+    let notas: Vec<(u32, f32, i64)> = core.minhas_notas().iter().map(|n| (n.card.id.tmdb_id(), n.nota, n.at)).collect();
     // Movie 999 is outside the catálogo: nothing to show or open.
     assert_eq!(notas, [(1, 5.0, MAR_2026), (2, 3.0, JAN_2025 + 60)]);
 }

@@ -1,5 +1,6 @@
 //! Time decay: older notas weigh less in the fold-in, at a speed calibrated on the owner's notas.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Decay};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
@@ -14,22 +15,22 @@ fn with_model() -> Core {
 }
 
 fn prevista(core: &Core, tmdb_id: u32) -> f32 {
-    core.movie(tmdb_id).unwrap().card.nota_prevista.unwrap()
+    core.movie(ObraId::filme(tmdb_id)).unwrap().card.nota_prevista.unwrap()
 }
 
 /// Loved sci-fi and disliked drama five years ago; the other way round in the last weeks.
 fn changed_taste(core: &mut Core) {
     for id in [603, 157336] {
-        core.rate(id, 5.0, 0).unwrap();
+        core.rate(ObraId::filme(id), 5.0, 0).unwrap();
     }
     for id in [278, 769] {
-        core.rate(id, 1.0, 0).unwrap();
+        core.rate(ObraId::filme(id), 1.0, 0).unwrap();
     }
     let now = 5 * 365 * DAY;
-    core.rate(27205, 1.0, now).unwrap();
-    core.rate(11, 1.0, now).unwrap();
-    core.rate(238, 5.0, now).unwrap();
-    core.rate(240, 5.0, now).unwrap();
+    core.rate(ObraId::filme(27205), 1.0, now).unwrap();
+    core.rate(ObraId::filme(11), 1.0, now).unwrap();
+    core.rate(ObraId::filme(238), 5.0, now).unwrap();
+    core.rate(ObraId::filme(240), 5.0, now).unwrap();
 }
 
 #[test]
@@ -51,7 +52,7 @@ fn disabling_decay_gives_every_nota_the_same_weight() {
     let mut undated = with_model();
     undated.set_decay(Decay::HalfLifeDays(180), 0);
     for (id, nota) in [(603, 5.0), (157336, 5.0), (278, 1.0), (769, 1.0), (27205, 1.0), (11, 1.0), (238, 5.0), (240, 5.0)] {
-        undated.rate(id, nota, 0).unwrap();
+        undated.rate(ObraId::filme(id), nota, 0).unwrap();
     }
     for id in [424, 693134] {
         assert!((prevista(&core, id) - prevista(&undated, id)).abs() < 1e-5, "{id}");
@@ -65,10 +66,10 @@ fn decay_is_calibrated_on_the_owners_notas_by_default() {
 
     // Ten notas of a taste that flipped: five old ones, five recent of the opposite taste.
     for (k, (id, nota)) in [(603, 5.0), (27205, 5.0), (157336, 5.0), (238, 1.0), (240, 1.0)].into_iter().enumerate() {
-        core.rate(id, nota, k as i64 * DAY).unwrap();
+        core.rate(ObraId::filme(id), nota, k as i64 * DAY).unwrap();
     }
     for (k, (id, nota)) in [(693134, 1.0), (11, 1.0), (278, 5.0), (769, 5.0), (424, 5.0)].into_iter().enumerate() {
-        core.rate(id, nota, (2000 + k as i64) * DAY).unwrap();
+        core.rate(ObraId::filme(id), nota, (2000 + k as i64) * DAY).unwrap();
     }
 
     assert!(core.decay().half_life_days.is_some(), "a flipped taste calls for decay");
@@ -77,8 +78,8 @@ fn decay_is_calibrated_on_the_owners_notas_by_default() {
 #[test]
 fn few_notas_are_not_enough_to_calibrate() {
     let mut core = with_model();
-    core.rate(603, 5.0, 0).unwrap();
-    core.rate(278, 1.0, 1000 * DAY).unwrap();
+    core.rate(ObraId::filme(603), 5.0, 0).unwrap();
+    core.rate(ObraId::filme(278), 1.0, 1000 * DAY).unwrap();
     assert_eq!(core.decay().half_life_days, None);
 }
 

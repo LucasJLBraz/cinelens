@@ -1,5 +1,6 @@
 //! The tag genome subset in the model: "parecidos, mas…" and o que pesou.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Aspecto, Core, Direcao, Filtro};
 
 /// 1–5 are sci-fi, most alike to 1 in id order; 6–8 are dramas.
@@ -42,7 +43,7 @@ fn core() -> Core {
 }
 
 fn ids(core: &Core, tmdb_id: u32, direcao: Direcao) -> Vec<u32> {
-    core.parecidos_mas(tmdb_id, direcao).iter().map(|m| m.tmdb_id).collect()
+    core.parecidos_mas(ObraId::filme(tmdb_id), direcao).iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
@@ -59,11 +60,11 @@ fn a_movie_without_genome_data_compares_against_its_parecidos() {
     let core = core();
     // Quatro has no fotografia score: what beats its parecidos' median (0.7) is better.
     assert_eq!(ids(&core, 4, Direcao::MelhorFotografia), [2, 6]);
-    assert!(core.parecidos_mas(999, Direcao::MaisLeve).is_empty());
+    assert!(core.parecidos_mas(ObraId::filme(999), Direcao::MaisLeve).is_empty());
 }
 
 fn para_voce(core: &Core) -> Vec<u32> {
-    core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect()
+    core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 fn before(ranked: &[u32], a: u32, b: u32) -> bool {
@@ -73,30 +74,30 @@ fn before(ranked: &[u32], a: u32, b: u32) -> bool {
 #[test]
 fn o_que_pesou_pulls_recomendacoes_toward_movies_strong_in_it() {
     let mut core = core();
-    core.rate(1, 5.0, 100).unwrap();
-    let prevista = core.movie(3).unwrap().card.nota_prevista;
+    core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+    let prevista = core.movie(ObraId::filme(3)).unwrap().card.nota_prevista;
     assert!(before(&para_voce(&core), 2, 3));
 
-    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
+    core.set_pesou(ObraId::filme(1), &[Aspecto::Atuacoes], 0);
 
     assert!(before(&para_voce(&core), 3, 2), "Três is strong in atuações");
-    assert_eq!(core.movie(3).unwrap().card.nota_prevista, prevista, "the nota prevista itself stays");
-    assert_eq!(core.movie(1).unwrap().pesou, [Aspecto::Atuacoes]);
+    assert_eq!(core.movie(ObraId::filme(3)).unwrap().card.nota_prevista, prevista, "the nota prevista itself stays");
+    assert_eq!(core.movie(ObraId::filme(1)).unwrap().pesou, [Aspecto::Atuacoes]);
     // Quatro has no genome data: still ranked, just not pulled either way.
     assert!(para_voce(&core).contains(&4));
 
-    core.set_pesou(1, &[], 0);
+    core.set_pesou(ObraId::filme(1), &[], 0);
     assert!(before(&para_voce(&core), 2, 3));
 }
 
 #[test]
 fn o_que_pesou_never_lifts_a_movie_the_owner_would_probably_not_like() {
     let mut core = core();
-    core.rate(1, 5.0, 100).unwrap();
-    core.rate(6, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(6), 1.0, 100).unwrap();
     assert!(before(&para_voce(&core), 8, 7));
 
-    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
+    core.set_pesou(ObraId::filme(1), &[Aspecto::Atuacoes], 0);
 
     // Sete is the strongest in atuações, but a drama, which this owner rates low.
     assert!(before(&para_voce(&core), 8, 7));
@@ -106,14 +107,14 @@ fn o_que_pesou_never_lifts_a_movie_the_owner_would_probably_not_like() {
 fn o_que_pesou_and_hiding_its_prompt_survive_a_restart() {
     let mut core = core();
     assert!(!core.pesou_oculto());
-    core.rate(1, 5.0, 100).unwrap();
-    core.set_pesou(1, &[Aspecto::Atuacoes, Aspecto::Fotografia], 0);
+    core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+    core.set_pesou(ObraId::filme(1), &[Aspecto::Atuacoes, Aspecto::Fotografia], 0);
     core.set_pesou_oculto(true, 0);
 
     let mut restarted = Core::open(CATALOG.as_bytes()).unwrap();
     restarted.load_model(MODEL.as_bytes()).unwrap();
     restarted.load_owner_data(&core.owner_data()).unwrap();
-    assert_eq!(restarted.movie(1).unwrap().pesou, [Aspecto::Fotografia, Aspecto::Atuacoes]);
+    assert_eq!(restarted.movie(ObraId::filme(1)).unwrap().pesou, [Aspecto::Fotografia, Aspecto::Atuacoes]);
     assert!(restarted.pesou_oculto());
     assert_eq!(para_voce(&restarted), para_voce(&core));
 }
@@ -123,10 +124,10 @@ fn a_model_without_genome_still_loads_and_ranks() {
     let model = MODEL.split(r#""genome""#).next().unwrap().trim_end().trim_end_matches(',').to_string() + "}";
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
     core.load_model(model.as_bytes()).unwrap();
-    core.rate(1, 5.0, 100).unwrap();
+    core.rate(ObraId::filme(1), 5.0, 100).unwrap();
     let ranked = para_voce(&core);
-    core.set_pesou(1, &[Aspecto::Atuacoes], 0);
+    core.set_pesou(ObraId::filme(1), &[Aspecto::Atuacoes], 0);
     assert_eq!(para_voce(&core), ranked);
-    assert!(core.parecidos_mas(1, Direcao::MelhorFotografia).is_empty());
+    assert!(core.parecidos_mas(ObraId::filme(1), Direcao::MelhorFotografia).is_empty());
     assert_eq!(ids(&core, 1, Direcao::MaisRecente), [3, 4, 6]);
 }

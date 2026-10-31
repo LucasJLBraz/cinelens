@@ -1,5 +1,6 @@
 //! The full movie page: details, parecidos, the reason line, people, filmographies and sou fã.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, Marca};
 
 /// Keanu Reeves (20) is in 1, 2, 3 and 8; the Wachowskis (10) directed 1 and 2. 8 is not in the model.
@@ -43,8 +44,8 @@ const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean":
 fn owner() -> Core {
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
     core.load_model(MODEL.as_bytes()).unwrap();
-    core.rate(4, 5.0, 100).unwrap();
-    core.rate(5, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(4), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(5), 1.0, 100).unwrap();
     core
 }
 
@@ -53,12 +54,12 @@ fn names(people: &[cinelens_core::Pessoa]) -> Vec<&str> {
 }
 
 fn para_voce(core: &Core) -> Vec<u32> {
-    core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect()
+    core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
 fn the_page_carries_every_detail_of_the_movie() {
-    let page = owner().movie(1).unwrap();
+    let page = owner().movie(ObraId::filme(1)).unwrap();
 
     assert_eq!(page.backdrop_url.as_deref(), Some("https://image.tmdb.org/t/p/w780/bm.jpg"));
     assert_eq!(page.card.poster_url.as_deref(), Some("https://image.tmdb.org/t/p/w342/m.jpg"));
@@ -77,18 +78,18 @@ fn the_page_carries_every_detail_of_the_movie() {
 #[test]
 fn the_page_shows_the_publics_score_in_stars_and_the_critics_score() {
     let core = owner();
-    let matrix = core.movie(1).unwrap();
+    let matrix = core.movie(ObraId::filme(1)).unwrap();
     assert_eq!((matrix.publico, matrix.critica), (Some(4.1), Some(73)));
 
     // Too few TMDB votes to say what the public thinks; no critics' score in the catálogo.
-    let reloaded = core.movie(2).unwrap();
+    let reloaded = core.movie(ObraId::filme(2)).unwrap();
     assert_eq!((reloaded.publico, reloaded.critica), (None, None));
 }
 
 #[test]
 fn parecidos_are_the_movies_most_alike_in_who_liked_them() {
     let mut core = owner();
-    let parecidos = |core: &Core| core.movie(2).unwrap().parecidos.iter().map(|m| m.tmdb_id).collect::<Vec<_>>();
+    let parecidos = |core: &Core| core.movie(ObraId::filme(2)).unwrap().parecidos.iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>();
 
     let found = parecidos(&core);
     assert_eq!(found[..3], [1, 4, 3], "the other sci-fi first, then John Wick");
@@ -96,30 +97,30 @@ fn parecidos_are_the_movies_most_alike_in_who_liked_them() {
     assert!(!found.contains(&8), "nor movies outside the model");
     assert!(found.iter().position(|&m| m == 3) < found.iter().position(|&m| m == 6));
 
-    core.marcar(4, Marca::NaoMeInteressa, true, 200);
+    core.marcar(ObraId::filme(4), Marca::NaoMeInteressa, true, 200);
     assert!(!parecidos(&core).contains(&4));
 }
 
 #[test]
 fn ver_mais_goes_on_with_the_next_most_alike_parecidos() {
     let core = owner();
-    let page: Vec<u32> = core.movie(2).unwrap().parecidos.iter().map(|m| m.tmdb_id).collect();
-    let from = |desde| core.parecidos(2, desde).iter().map(|m| m.tmdb_id).collect::<Vec<_>>();
+    let page: Vec<u32> = core.movie(ObraId::filme(2)).unwrap().parecidos.iter().map(|m| m.id.tmdb_id()).collect();
+    let from = |desde| core.parecidos(ObraId::filme(2), desde).iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>();
 
     assert_eq!(from(0), page);
     assert_eq!(from(3), page[3..], "past the first three, the rest in order of likeness");
     assert!(from(page.len()).is_empty());
-    assert!(core.parecidos(999, 0).is_empty(), "no one outside the catálogo");
+    assert!(core.parecidos(ObraId::filme(999), 0).is_empty(), "no one outside the catálogo");
 }
 
 #[test]
 fn the_reason_line_names_movies_the_owner_rated_highly() {
     let core = owner();
-    assert_eq!(core.movie(2).unwrap().porque, ["Interestelar"]);
+    assert_eq!(core.movie(ObraId::filme(2)).unwrap().porque, ["Interestelar"]);
     // The owner disliked the only drama they rated, so a drama has no reason to give.
-    assert!(core.movie(6).unwrap().porque.is_empty());
+    assert!(core.movie(ObraId::filme(6)).unwrap().porque.is_empty());
     // Barely alike is no reason either: Cidade de Deus shares almost nothing with Interestelar.
-    assert!(core.movie(7).unwrap().porque.is_empty());
+    assert!(core.movie(ObraId::filme(7)).unwrap().porque.is_empty());
 }
 
 #[test]
@@ -128,14 +129,14 @@ fn a_persons_filmography_is_ordered_by_nota_prevista() {
     let keanu = core.pessoa(20).unwrap();
 
     assert_eq!(keanu.pessoa.name, "Keanu Reeves");
-    assert_eq!(keanu.movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), [1, 2, 3, 8]);
+    assert_eq!(keanu.movies.iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>(), [1, 2, 3, 8]);
     assert!(core.pessoa(999).is_none());
 }
 
 #[test]
 fn sou_fa_raises_a_persons_movies_in_the_ranking() {
     let mut core = owner();
-    let goodfellas = core.movie(6).unwrap().card.nota_prevista;
+    let goodfellas = core.movie(ObraId::filme(6)).unwrap().card.nota_prevista;
     let before = para_voce(&core);
     assert!(before.iter().position(|&m| m == 6) > before.iter().position(|&m| m == 7));
 
@@ -143,8 +144,8 @@ fn sou_fa_raises_a_persons_movies_in_the_ranking() {
 
     let after = para_voce(&core);
     assert!(after.iter().position(|&m| m == 6) < after.iter().position(|&m| m == 7), "{after:?}");
-    assert_eq!(core.movie(6).unwrap().card.nota_prevista, goodfellas, "the nota prevista itself stays");
-    assert!(core.movie(6).unwrap().direcao[0].fa);
+    assert_eq!(core.movie(ObraId::filme(6)).unwrap().card.nota_prevista, goodfellas, "the nota prevista itself stays");
+    assert!(core.movie(ObraId::filme(6)).unwrap().direcao[0].fa);
     assert!(core.pessoa(14).unwrap().pessoa.fa);
 
     core.set_fa(14, false, 0);

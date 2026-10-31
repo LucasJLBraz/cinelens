@@ -1,5 +1,6 @@
 //! The weekly notification about a new release with a high nota prevista.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, DisplayMode};
 
 /// 2026-10-26 00:00 UTC.
@@ -37,8 +38,8 @@ fn core(fillers: u32) -> Core {
 
 /// The notification due at `at`, shown.
 fn notified(core: &mut Core, at: i64) -> Option<u32> {
-    let id = core.notificacao_devida(at)?.tmdb_id;
-    core.notificado(id, at);
+    let id = core.notificacao_devida(at)?.id.tmdb_id();
+    core.notificado(ObraId::filme(id), at);
     Some(id)
 }
 
@@ -56,7 +57,7 @@ fn the_best_new_release_with_a_high_nota_prevista_at_most_once_a_week() {
 #[test]
 fn a_notification_not_shown_stays_due() {
     let mut core = core(40);
-    assert_eq!(core.notificacao_devida(HOJE).map(|n| n.tmdb_id), Some(1));
+    assert_eq!(core.notificacao_devida(HOJE).map(|n| n.id.tmdb_id()), Some(1));
     assert_eq!(notified(&mut core, HOJE + DIA), Some(1));
 }
 
@@ -70,8 +71,8 @@ fn not_for_a_new_release_below_aposta_forte() {
 #[test]
 fn not_for_a_release_the_owner_rated_or_saw() {
     let mut core = core(40);
-    core.rate(1, 4.0, HOJE).unwrap();
-    core.marcar(2, cinelens_core::Marca::JaVi, true, HOJE);
+    core.rate(ObraId::filme(1), 4.0, HOJE).unwrap();
+    core.marcar(ObraId::filme(2), cinelens_core::Marca::JaVi, true, HOJE);
     assert_eq!(notified(&mut core, HOJE), None);
 }
 

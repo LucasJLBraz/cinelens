@@ -1,6 +1,7 @@
 //! Movies without collaborative data get a nota prevista from their content, and every nota
 //! prevista carries a confiança.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro};
 
 /// 1–3 sci-fi by director 900, 4–6 drama by director 901, all in the model. 7 is a new sci-fi
@@ -39,15 +40,15 @@ const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean":
 fn sci_fi_lover() -> Core {
     let mut core = Core::open(CATALOG.as_bytes()).unwrap();
     core.load_model(MODEL.as_bytes()).unwrap();
-    core.rate(2, 5.0, 100).unwrap();
-    core.rate(5, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(2), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(5), 1.0, 100).unwrap();
     core
 }
 
 #[test]
 fn a_movie_absent_from_the_training_data_still_gets_a_nota_prevista() {
     let core = sci_fi_lover();
-    let (new_sci_fi, new_drama) = (core.movie(7).unwrap().card, core.movie(8).unwrap().card);
+    let (new_sci_fi, new_drama) = (core.movie(ObraId::filme(7)).unwrap().card, core.movie(ObraId::filme(8)).unwrap().card);
 
     assert!(new_sci_fi.nota_prevista.unwrap() > new_drama.nota_prevista.unwrap() + 1.0);
 }
@@ -55,8 +56,8 @@ fn a_movie_absent_from_the_training_data_still_gets_a_nota_prevista() {
 #[test]
 fn content_only_predictions_have_lower_confianca_than_well_rated_classics() {
     let core = sci_fi_lover();
-    let classic = core.movie(1).unwrap().card.confianca.unwrap();
-    let new_release = core.movie(7).unwrap().card.confianca.unwrap();
+    let classic = core.movie(ObraId::filme(1)).unwrap().card.confianca.unwrap();
+    let new_release = core.movie(ObraId::filme(7)).unwrap().card.confianca.unwrap();
 
     assert!(new_release < classic, "{new_release} vs {classic}");
     assert!(classic > 0.9 && classic <= 1.0, "{classic}");
@@ -70,7 +71,7 @@ fn every_nota_prevista_has_a_confianca() {
             card.nota_prevista.is_some(),
             card.confianca.is_some(),
             "{}",
-            card.tmdb_id
+            card.id.tmdb_id()
         );
     }
 }
@@ -78,18 +79,18 @@ fn every_nota_prevista_has_a_confianca() {
 #[test]
 fn a_movie_with_unknown_content_has_no_nota_prevista() {
     let core = sci_fi_lover();
-    let card = core.movie(9).unwrap().card;
+    let card = core.movie(ObraId::filme(9)).unwrap().card;
     assert_eq!((card.nota_prevista, card.confianca), (None, None));
 }
 
 #[test]
 fn held_out_notas_outside_the_model_are_measured_apart_from_its_content() {
     let mut core = sci_fi_lover();
-    core.rate(1, 5.0, 100).unwrap();
-    core.rate(4, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(4), 1.0, 100).unwrap();
     // The most recent notas: a sci-fi in the model and the new sci-fi release outside it.
-    core.rate(3, 5.0, 200).unwrap();
-    core.rate(7, 5.0, 200).unwrap();
+    core.rate(ObraId::filme(3), 5.0, 200).unwrap();
+    core.rate(ObraId::filme(7), 5.0, 200).unwrap();
 
     let accuracy = core.accuracy(2.0 / 6.0).unwrap();
     assert_eq!((accuracy.held_out, accuracy.notas, accuracy.content_notas), (2, 1, 1));

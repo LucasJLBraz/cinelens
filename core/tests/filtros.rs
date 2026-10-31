@@ -1,5 +1,6 @@
 //! Explorar: filters, search and Populares ↔ Garimpo, alone and combined.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, Marca, Mostrar};
 
 /// Nolan (11) directed 2 and 6; 8 has no year, runtime nor nota prevista.
@@ -43,7 +44,7 @@ fn core() -> Core {
 }
 
 fn ids(core: &Core, filtro: Filtro) -> Vec<u32> {
-    core.explorar(&filtro, 0).movies.iter().map(|m| m.tmdb_id).collect()
+    core.explorar(&filtro, 0).movies.iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
@@ -100,9 +101,9 @@ fn minimum_nota_prevista_and_confianca() {
 #[test]
 fn rated_ja_vi_and_quero_assistir_can_be_hidden_or_shown_alone() {
     let mut core = core();
-    core.rate(2, 4.0, 100).unwrap();
-    core.marcar(3, Marca::JaVi, true, 100);
-    core.marcar(5, Marca::QueroAssistir, true, 100);
+    core.rate(ObraId::filme(2), 4.0, 100).unwrap();
+    core.marcar(ObraId::filme(3), Marca::JaVi, true, 100);
+    core.marcar(ObraId::filme(5), Marca::QueroAssistir, true, 100);
 
     assert_eq!(ids(&core, Filtro { com_nota: Mostrar::So, ..Default::default() }), [2]);
     assert!(!ids(&core, Filtro { com_nota: Mostrar::Esconder, ..Default::default() }).contains(&2));
@@ -115,7 +116,7 @@ fn rated_ja_vi_and_quero_assistir_can_be_hidden_or_shown_alone() {
 #[test]
 fn nao_me_interessa_movies_show_only_when_asked_for_so_they_can_be_restored() {
     let mut core = core();
-    core.marcar(6, Marca::NaoMeInteressa, true, 100);
+    core.marcar(ObraId::filme(6), Marca::NaoMeInteressa, true, 100);
 
     assert!(!ids(&core, Filtro::default()).contains(&6));
     assert_eq!(ids(&core, Filtro { nao_me_interessa: true, ..Default::default() }), [6]);

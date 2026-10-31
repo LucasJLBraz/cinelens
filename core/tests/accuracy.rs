@@ -1,6 +1,7 @@
 //! Accuracy harness: MAE of the nota prevista on the owner's most recent notas, hidden from the
 //! fold-in. CI runs it on fixtures only; `cinelens-accuracy` runs it on the owner's real export.
 
+use cinelens_core::ObraId;
 use cinelens_core::Core;
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
@@ -10,13 +11,13 @@ const MODEL: &[u8] = include_bytes!("../fixtures/model.json");
 fn owner_with_recent_notas() -> Core {
     let mut core = Core::open(CATALOG).unwrap();
     core.load_model(MODEL).unwrap();
-    core.rate(603, 5.0, 100).unwrap();
-    core.rate(157336, 5.0, 100).unwrap();
-    core.rate(278, 1.5, 100).unwrap();
-    core.rate(769, 1.5, 100).unwrap();
+    core.rate(ObraId::filme(603), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(157336), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(278), 1.5, 100).unwrap();
+    core.rate(ObraId::filme(769), 1.5, 100).unwrap();
     // The most recent notas, the ones held out.
-    core.rate(27205, 5.0, 200).unwrap();
-    core.rate(238, 1.0, 200).unwrap();
+    core.rate(ObraId::filme(27205), 5.0, 200).unwrap();
+    core.rate(ObraId::filme(238), 1.0, 200).unwrap();
     core
 }
 
@@ -55,7 +56,7 @@ fn movielens_prediction_on_the_same_notas_is_the_baseline() {
 fn notas_outside_the_model_are_left_out_of_the_measure() {
     let mut core = owner_with_recent_notas();
     // Clube da Luta is not in the model: it is the most recent nota but cannot be predicted.
-    core.rate(550, 4.0, 300).unwrap();
+    core.rate(ObraId::filme(550), 4.0, 300).unwrap();
 
     let accuracy = core.accuracy(3.0 / 7.0).unwrap();
     assert_eq!((accuracy.held_out, accuracy.notas), (3, 2));
@@ -64,7 +65,7 @@ fn notas_outside_the_model_are_left_out_of_the_measure() {
 #[test]
 fn no_measure_without_a_model_or_notas() {
     let mut core = Core::open(CATALOG).unwrap();
-    core.rate(603, 5.0, 100).unwrap();
+    core.rate(ObraId::filme(603), 5.0, 100).unwrap();
     assert!(core.accuracy(1.0).is_none(), "no model");
 
     let mut core = Core::open(CATALOG).unwrap();
@@ -75,7 +76,7 @@ fn no_measure_without_a_model_or_notas() {
 #[test]
 fn measuring_leaves_the_predictions_unchanged() {
     let core = owner_with_recent_notas();
-    let before = core.movie(693134).unwrap().card.nota_prevista;
+    let before = core.movie(ObraId::filme(693134)).unwrap().card.nota_prevista;
     core.accuracy(1.0 / 3.0);
-    assert_eq!(core.movie(693134).unwrap().card.nota_prevista, before);
+    assert_eq!(core.movie(ObraId::filme(693134)).unwrap().card.nota_prevista, before);
 }
