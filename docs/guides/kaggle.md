@@ -1,6 +1,8 @@
 # Guia: token do Kaggle para a base Letterboxd
 
-O modelo de recomendação é treinado uma vez por mês no GitHub Actions com duas bases públicas: MovieLens `ml-latest` (baixada direto do GroupLens) e a amostra Letterboxd de abril de 2026, que cobre os filmes de 2023 até abril de 2026. A amostra Letterboxd fica no Kaggle, e o Kaggle só libera o download com um token da sua conta. **O token fica só nos secrets do repositório; nunca vai para dentro do app.**
+O modelo de recomendação é treinado uma vez por mês no GitHub Actions com duas bases públicas: MovieLens `ml-latest` e a amostra Letterboxd de abril de 2026, que cobre os filmes de 2023 até abril de 2026. A amostra Letterboxd fica no Kaggle, e o Kaggle só libera o download com um token da sua conta. **O token fica só nos secrets do repositório; nunca vai para dentro do app.**
+
+No estado atual (ADR 0002), a base Letterboxd está **desligada** porque piorou o MAE. Só configure `KAGGLE_API_TOKEN` quando uma medição nova mostrar MAE do modelo com Letterboxd menor ou igual à baseline MovieLens-only.
 
 Faça isto uma vez. Enquanto o secret não existir, o workflow **Model** treina só com o MovieLens.
 
