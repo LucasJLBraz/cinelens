@@ -23,10 +23,12 @@ Preencher e manter no git:
 
 | Medida | Meta | Resultado |
 |---|---|---|
-| Abrir app pronto para uso | < 1 s | ✅ pass |
-| Trocar aba / abrir página de filme | < 100 ms | ✅ pass |
-| Trocar filtro | < 100 ms | ✅ pass |
-| Depois de dar nota | < 200 ms | ✅ pass |
+| Abrir app pronto para uso | < 1 s | Aprovado pelo dono, sem cronômetro |
+| Trocar aba / abrir página de filme | < 100 ms | Aprovado pelo dono, sem cronômetro |
+| Trocar filtro | < 100 ms | Aprovado pelo dono, sem cronômetro |
+| Depois de dar nota | < 200 ms | Aprovado pelo dono, sem cronômetro |
+
+Avaliação do dono no próprio celular em 2026-10-31: sem latência perceptível, tudo imediato. Não há tempos medidos.
 
 ## 3) CI verde (testes + benchmarks)
 
