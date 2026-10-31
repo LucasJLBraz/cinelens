@@ -4,13 +4,33 @@ A personal, single-user replacement for MovieLens: rate movies, get predictions 
 
 ## Language
 
+**Obra** (Work):
+Anything the app can recommend: a filme or a série.
+_Avoid_: título, item, conteúdo
+
+**Série** (Series):
+A scripted series, miniseries or documentary series, rated as a whole; not reality, talk shows, news, daily telenovelas or anime.
+_Avoid_: show, programa, seriado
+
 **Nota** (Rating):
-A score the owner gives a movie, from 0.5 to 5 in half-star steps.
+A score the owner gives an obra, from 0.5 to 5 in half-star steps.
 _Avoid_: avaliação, score, estrela
 
+**Reação** (Reaction):
+A quick verdict on a whole série, up to where the owner has seen it: Não gostei, Gostei or Amei; it counts as a fixed nota. The owner may give a série a nota in stars instead.
+_Avoid_: joinha, like, curtida
+
+**Assistindo** (Watching):
+A mark that the owner is partway through a série; it takes the série out of recomendações and teaches nothing about taste.
+_Avoid_: em andamento (that is the série's own situação), progresso
+
 **Nota prevista** (Predicted rating):
-The score the recommender expects the owner would give a movie not yet rated; a continuous number, not restricted to half stars.
+The score the recommender expects the owner would give an obra not yet rated; a continuous number, not restricted to half stars.
 _Avoid_: previsão, match, recomendação
+
+**Nota do público** (Public score):
+The average of other people's votes on an obra, shown as it is and never mixed into the nota prevista. Séries in the lowest quarter of it do not become recomendações.
+_Avoid_: nota (alone), nota da crítica
 
 **Confiança** (Confidence):
 How certain the recommender is about a nota prevista, shown alongside it as a range or level.
@@ -21,11 +41,11 @@ A nota prevista shown as one of four ordinal bands (Aposta forte, Boa chance, Ar
 _Avoid_: categoria, nível
 
 **Recomendação** (Recommendation):
-A movie surfaced to the owner because its nota prevista is high and it passes the active filters.
+An obra surfaced to the owner because its nota prevista is high and it passes the active filters.
 _Avoid_: top pick, sugestão
 
 **Catálogo** (Catalog):
-The set of all movies the app knows about, including recent releases.
+The set of all obras the app knows about, including recent releases.
 _Avoid_: base, acervo
 
 **Quero assistir** (Watchlist):
@@ -45,7 +65,7 @@ A named, app-defined combination of filters and ranking, such as "Sessão da Tar
 _Avoid_: filtro salvo, coleção, playlist
 
 **Parecidos** (Similar titles):
-Movies that people who liked a given movie also liked, shown from that movie's page.
+Obras close to a given obra and of the same type, shown from its page: for a filme, those that people who liked it also liked; for a série, those with the closest content.
 _Avoid_: relacionados, mais como este
 
 **Populares ↔ Garimpo** (Popularity bias):
