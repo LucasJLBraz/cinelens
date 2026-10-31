@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-mod delta;
 mod display;
 mod estatisticas;
 mod filtro;
@@ -14,7 +13,6 @@ mod obra;
 mod recommender;
 mod sync;
 
-pub use delta::{apply_catalog_delta, catalog_delta};
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar};

@@ -390,32 +390,16 @@ async fn download_model(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Brings the catálogo up to date with the published one through its daily deltas, or the
-/// full catálogo if they do not reach (the app was too long without updating). Only once
-/// there is a catálogo: the first one is the setup's download, with its progress shown.
+/// Brings the catálogo up to date with the published one, downloading it whole. Only once there
+/// is a catálogo: the first one is the setup's download, with its progress shown.
 fn update_catalog(app: &AppHandle) -> Result<(), String> {
-    let Some(mut version) = app.state::<RwLock<Core>>().read().unwrap().data_version().map(str::to_string) else { return Ok(()) };
+    let Some(version) = app.state::<RwLock<Core>>().read().unwrap().data_version().map(str::to_string) else { return Ok(()) };
     let Some(latest) = fetch(&catalog_release("catalog-version.txt"))? else { return Ok(()) };
-    let latest = String::from_utf8_lossy(&latest).trim().to_string();
-    if version == latest {
+    if version == String::from_utf8_lossy(&latest).trim() {
         return Ok(());
     }
-    let mut json = std::fs::read(catalog_file(app)).map_err(|e| e.to_string())?;
-    while version != latest {
-        let Some(delta) = fetch(&catalog_release(&format!("catalog-delta-{version}.json.gz")))? else { break };
-        json = cinelens_core::apply_catalog_delta(&json, &gunzip(&delta)?).map_err(|e| e.to_string())?;
-        // ponytail: a full parse per delta just for its version; fine for the few days an app
-        // falls behind, read the version alone if long chains get slow.
-        let next = Core::open(&json).map_err(|e| e.to_string())?.data_version().unwrap_or_default().to_string();
-        if next == version {
-            break; // A delta that goes nowhere: fall back to the full catálogo.
-        }
-        version = next;
-    }
-    if version != latest {
-        json = download(app, &catalog_url())?;
-        Core::open(&json).map_err(|e| e.to_string())?;
-    }
+    let json = download(app, &catalog_url())?;
+    Core::open(&json).map_err(|e| e.to_string())?;
     write_atomically(&catalog_file(app), &json).map_err(|e| e.to_string())?;
     app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())?;
     let _ = app.emit("atualizado", ());

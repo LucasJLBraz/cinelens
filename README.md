@@ -11,7 +11,7 @@ Na primeira abertura o app baixa o catálogo, uma vez só. Dá para importar o h
 ## Como funciona
 
 - **Local-first** ([ADR 0001](docs/adr/0001-local-first-split-model.md)): catálogo, notas e modelo ficam no aparelho; o sync passa só pelo Google Drive do dono.
-- **Catálogo:** montado todo dia no GitHub Actions a partir do TMDB e do OMDb e publicado como release (`catalog-v*`). O app baixa sozinho, em deltas.
+- **Catálogo:** montado todo dia no GitHub Actions a partir do TMDB e do OMDb e publicado como release (`catalog-v*`). O app baixa sozinho.
 - **Modelo:** fatores de filmes treinados no GitHub Actions com o MovieLens `ml-latest` e publicados como release (`model-v*`). O perfil do dono é recalculado no aparelho a cada nota, e as notas nunca saem do aparelho e do Drive dele.
 - **Precisão:** a nota prevista precisa errar no máximo tanto quanto o MovieLens erra sobre o dono. As medições estão em [docs/guides/accuracy.md](docs/guides/accuracy.md).
 

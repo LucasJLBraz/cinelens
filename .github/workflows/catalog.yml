@@ -2,8 +2,7 @@ name: Catalog
 
 # Builds the full catálogo from TMDB every day and publishes it as the asset
 # `catalog.json.gz` of the release `catalog-v<format version>`, with `catalog-version.txt`
-# (its data version) and `catalog-delta-<yesterday's data version>.json.gz`, the changes since
-# the catálogo published before: the app checks the version and downloads only the deltas.
+# (its data version): the app checks the version and downloads the catálogo when it changed.
 # See docs/guides/tmdb.md and docs/guides/omdb.md.
 on:
   schedule:
@@ -48,15 +47,10 @@ jobs:
           key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: omdb-
 
-      - name: Download previous catálogo
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Release tag
         run: |
           FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
           echo "TAG=catalog-v$FORMAT" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/previous"
-          # None on the first run: then no delta is published.
-          gh release download "catalog-v$FORMAT" -p catalog.json.gz -D "$RUNNER_TEMP/previous" || true
 
       - name: Build catálogo
         env:
@@ -71,9 +65,7 @@ jobs:
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)" \
             --extra-ids training-ids.txt \
-            --omdb-cache omdb-cache.json \
-            --previous "$RUNNER_TEMP/previous/catalog.json.gz" \
-            --delta-dir deltas
+            --omdb-cache omdb-cache.json
 
       - uses: actions/cache/save@v4
         with:
@@ -90,8 +82,7 @@ jobs:
           gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Catálogo (formato $FORMAT)" --notes "$NOTES"
           echo -n "$TODAY" > catalog-version.txt
           # The version last, so an app never sees it before the files it names.
-          shopt -s nullglob
-          gh release upload "$TAG" catalog.json.gz deltas/*.json.gz --clobber
+          gh release upload "$TAG" catalog.json.gz --clobber
           gh release upload "$TAG" catalog-version.txt --clobber
           # Deltas older than 60 days: an app that far behind downloads the full catálogo.
           CUTOFF=$(date -u -d '-60 days' +%F)
