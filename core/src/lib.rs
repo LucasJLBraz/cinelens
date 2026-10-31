@@ -211,9 +211,9 @@ impl Movie {
 
     /// `g<genre id>`, `d<director id>`, `c<cast member id>`, `l<original language>`: the keys of
     /// the content mapping in the model.
-    // ponytail: no TMDB keywords (the catalog job does not fetch them) nor synopsis words; add
-    // them as features if content-only predictions of new releases miss. The public score and the
-    // decade were measured and left out (`docs/guides/accuracy.md`).
+    // ponytail: no synopsis words; add them as features if content-only predictions of new
+    // releases miss. TMDB keywords, the public score and the decade were measured and left out
+    // (`docs/guides/accuracy.md`).
     fn content_features(&self) -> Vec<String> {
         let genres = self.genre_ids.iter().map(|g| format!("g{g}"));
         let directors = self.directors.iter().map(|p| format!("d{}", p.id));
