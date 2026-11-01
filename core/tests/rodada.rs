@@ -2,7 +2,7 @@
 //! and that teach the most first.
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Marca};
+use cinelens_core::{Core, Marca, Tipo};
 
 /// All equally well known but 5 (little seen) and 6 (not in the model: content only).
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "movies": [
@@ -36,7 +36,7 @@ fn core() -> Core {
 }
 
 fn rodada(core: &Core) -> Vec<u32> {
-    core.rodada(10).iter().map(|m| m.id.tmdb_id()).collect()
+    core.rodada(Tipo::Filme, 10).iter().map(|m| m.id.tmdb_id()).collect()
 }
 
 #[test]
@@ -80,8 +80,81 @@ fn movies_already_seen_or_dismissed_are_left_out() {
 #[test]
 fn the_next_movies_come_ready_to_show() {
     let core = core();
-    let next = core.rodada(2);
+    let next = core.rodada(Tipo::Filme, 2);
     assert_eq!(next.len(), 2);
     assert_eq!(next[0].title, "Um");
     assert_eq!(next[0].poster_url.as_deref(), Some("https://image.tmdb.org/t/p/w342/1.jpg"));
+}
+
+mod series {
+    use cinelens_core::{Core, Marca, ObraId, Reacao, Tipo};
+
+    /// A filme to give the fold-in something, and séries through content: S1 and S2 along the
+    /// first taste direction, S3 along the second, S4 as divisive as S3 but little seen, S5
+    /// outside what the model knows.
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "F", "original_title": "F", "year": 2000, "poster_path": null, "genre_ids": [18], "vote_count": 99000}
+    ]}"#;
+
+    const SERIES: &str = r#"{"format_version": 1, "data_version": "s", "movies": [
+        {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "genre_ids": [18], "vote_count": 5000},
+        {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "genre_ids": [18], "vote_count": 4000},
+        {"tmdb_id": 2147483651, "title": "S3", "original_title": "S3", "year": 2020, "poster_path": null, "genre_ids": [35], "vote_count": 3000},
+        {"tmdb_id": 2147483652, "title": "S4", "original_title": "S4", "year": 2020, "poster_path": null, "genre_ids": [35], "vote_count": 20},
+        {"tmdb_id": 2147483653, "title": "S5", "original_title": "S5", "year": 2020, "poster_path": null, "genre_ids": [99], "vote_count": 9000}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [{"tmdb_id": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 50000}],
+        "content": [
+            {"feature": "g18", "bias": 0.0, "factors": [1.0, 0.0]},
+            {"feature": "g35", "bias": 0.0, "factors": [0.0, 1.0]}
+        ]}"#;
+
+    fn core() -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), Some(MODEL.as_bytes()));
+        core
+    }
+
+    fn rodada(core: &Core) -> Vec<u32> {
+        core.rodada(Tipo::Serie, 10).iter().map(|m| m.id.tmdb_id()).collect()
+    }
+
+    #[test]
+    fn well_known_series_the_model_can_read_come_first() {
+        assert_eq!(rodada(&core()), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn it_is_scored_against_the_series_profile() {
+        let mut core = core();
+        // The first direction is known now, so S3 tells more than S2, though less voted.
+        core.reagir(ObraId::serie(1), Reacao::Amei, 100).unwrap();
+        assert_eq!(rodada(&core), [3, 2, 4]);
+    }
+
+    #[test]
+    fn a_nota_on_a_filme_also_moves_it() {
+        let mut core = core();
+        core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+        assert_eq!(rodada(&core)[0], 3);
+    }
+
+    #[test]
+    fn nao_vi_and_marks_leave_it() {
+        let mut core = core();
+        core.nao_vi(ObraId::serie(1));
+        core.marcar(ObraId::serie(2), Marca::JaVi, true, 100);
+        core.marcar(ObraId::serie(3), Marca::Assistindo, true, 100);
+        assert_eq!(rodada(&core), [4]);
+    }
+
+    #[test]
+    fn the_rodada_of_filmes_asks_no_serie() {
+        let core = core();
+        let filmes: Vec<u32> = core.rodada(Tipo::Filme, 10).iter().map(|m| m.id.tmdb_id()).collect();
+        assert_eq!(filmes, [1]);
+        assert!(core.rodada(Tipo::Filme, 10).iter().all(|m| !m.id.is_serie()));
+    }
 }

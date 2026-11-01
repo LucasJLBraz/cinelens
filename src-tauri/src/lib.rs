@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Reacao, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Reacao, Rejeicao, SyncStorage, Tipo, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -243,8 +243,8 @@ fn remover_nota(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraI
 
 /// The rodada rápida's next `n` movies.
 #[tauri::command]
-fn rodada(core: tauri::State<RwLock<Core>>, n: usize) -> Vec<MovieCard> {
-    core.read().unwrap().rodada(n)
+fn rodada(core: tauri::State<RwLock<Core>>, tipo: Tipo, n: usize) -> Vec<MovieCard> {
+    core.read().unwrap().rodada(tipo, n)
 }
 
 #[tauri::command]

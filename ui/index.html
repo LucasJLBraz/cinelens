@@ -185,6 +185,8 @@
     #rodada-filme .movie .titulo { font-size: var(--t-secao); }
     #rodada-notas { max-width: 420px; margin: 16px auto 8px; }
     #rodada-nao-vi { display: block; margin: 0 auto; }
+    #rodada-tipos, #rodada-reacoes { justify-content: center; }
+    #rodada-reacoes { margin: 16px auto 8px; }
     #rodada-revelacao { text-align: center; font-size: 13px; min-height: 1.4em; }
     .busca-servico { width: 100%; margin-top: 8px; padding: 10px 14px; border: 1px solid var(--card); border-radius: 20px; background: var(--card); color: var(--text); font: inherit; }
     .servicos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
@@ -253,11 +255,20 @@
   <section id="rodada" hidden>
     <h1>Rodada</h1>
     <p>Dê nota aos que viu e pule os outros.</p>
+    <div id="rodada-tipos" class="chips">
+      <button class="chip" data-valor="Filme">Filmes</button>
+      <button class="chip" data-valor="Serie">Séries</button>
+    </div>
     <div id="rodada-filme"></div>
     <div id="rodada-notas"></div>
+    <div id="rodada-reacoes" class="chips">
+      <button class="chip" data-reacao="NaoGostei">Não gostei</button>
+      <button class="chip" data-reacao="Gostei">Gostei</button>
+      <button class="chip" data-reacao="Amei">Amei</button>
+    </div>
     <button id="rodada-nao-vi" class="chip">Não vi</button>
     <p id="rodada-revelacao"></p>
-    <p id="rodada-vazio" hidden>Nenhum filme agora. Volte mais tarde.</p>
+    <p id="rodada-vazio" hidden>Nada para perguntar agora. Volte mais tarde.</p>
   </section>
   <div id="explorar" hidden>
     <header>
@@ -726,6 +737,11 @@
     const rodadaFilmeEl = document.getElementById('rodada-filme');
     const rodadaNotasEl = document.getElementById('rodada-notas');
     const rodadaNaoViEl = document.getElementById('rodada-nao-vi');
+    const rodadaReacoesEl = document.getElementById('rodada-reacoes');
+    const rodadaTiposEl = document.getElementById('rodada-tipos');
+    // Filmes or Séries as the owner last chose.
+    let rodadaTipo = 'Filme';
+    try { rodadaTipo = localStorage.getItem('rodada-tipo') || 'Filme'; } catch {}
     const rodadaRevelacaoEl = document.getElementById('rodada-revelacao');
     let rodadaFila = [];
     let rodadaPedidos = 0;
@@ -741,14 +757,20 @@
     function mostrarRodada() {
       const atual = rodadaFila[0];
       rodadaFilmeEl.replaceChildren(...(atual ? [atual.el] : []));
-      rodadaNotasEl.hidden = rodadaNaoViEl.hidden = !atual;
+      rodadaNaoViEl.hidden = !atual;
+      rodadaNotasEl.hidden = !atual || rodadaTipo === 'Serie';
+      rodadaReacoesEl.hidden = !atual || rodadaTipo !== 'Serie';
+      for (const chip of rodadaTiposEl.children) chip.classList.toggle('on', chip.dataset.valor === rodadaTipo);
       document.getElementById('rodada-vazio').hidden = Boolean(atual) || rodadaPedidos > 0;
     }
     // Keeps the shown movie and the next two queued, so quick answers never wait on a refill.
     async function encherRodada() {
       rodadaPedidos += 1;
+      const tipo = rodadaTipo;
       try {
-        const cards = await invoke('rodada', { n: 6 });
+        const cards = await invoke('rodada', { tipo, n: 6 });
+        // Switched meanwhile: these are of the other type.
+        if (tipo !== rodadaTipo) return;
         const na_fila = new Set([...rodadaFila.map(x => x.m.tmdb_id), ...rodadaRespondidos]);
         for (const m of cards) if (rodadaFila.length < 3 && !na_fila.has(m.tmdb_id)) rodadaFila.push(rodadaItem(m));
       } finally {
@@ -778,6 +800,23 @@
         const [, revealed] = await invoke('rate', { tmdbId: m.tmdb_id, nota });
         rodadaRevelacaoEl.textContent = revealed ? `${m.title}: o app achava ${revealed.faixa}` : '';
       });
+    });
+    rodadaReacoesEl.addEventListener('click', e => {
+      const reacao = e.target.dataset.reacao;
+      if (!reacao) return;
+      responderRodada(async m => {
+        const [, revealed] = await invoke('reagir', { tmdbId: m.tmdb_id, reacao });
+        rodadaRevelacaoEl.textContent = revealed ? `${m.title}: o app achava ${revealed.faixa}` : '';
+      });
+    });
+    rodadaTiposEl.addEventListener('click', e => {
+      const tipo = e.target.dataset.valor;
+      if (!tipo || tipo === rodadaTipo) return;
+      rodadaTipo = tipo;
+      try { localStorage.setItem('rodada-tipo', tipo); } catch {}
+      rodadaFila = [];
+      rodadaRevelacaoEl.textContent = '';
+      encherRodada();
     });
     rodadaNaoViEl.addEventListener('click', () => responderRodada(async m => {
       await invoke('nao_vi', { tmdbId: m.tmdb_id });

@@ -247,7 +247,7 @@ mod previsoes {
         let de_filmes = inicio.fileiras.iter().filter(|f| f.filtro.tipo == Some(Tipo::Filme));
         assert!(de_filmes.flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
         assert!(core.notificacao_devida(at).is_none_or(|n| !n.id.is_serie()));
-        assert!(core.rodada(10).iter().all(|m| !m.id.is_serie()));
+        assert!(core.rodada(Tipo::Filme, 10).iter().all(|m| !m.id.is_serie()));
     }
 
     fn fold_in_com(notas: &[(ObraId, f32)]) -> Core {

@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Filtro, Reacao};
+use cinelens_core::{Core, Filtro, Reacao, Tipo};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
@@ -82,7 +82,8 @@ fn main() {
     });
 
     failed |= !budget("rodada: next movies after a nota", Duration::from_millis(100), || {
-        assert_eq!(core.rodada(2).len(), 2);
+        assert_eq!(core.rodada(Tipo::Filme, 2).len(), 2);
+        assert_eq!(core.rodada(Tipo::Serie, 2).len(), 2);
     });
 
     failed |= !budget("série page: open", Duration::from_millis(100), || {

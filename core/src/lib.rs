@@ -1056,19 +1056,21 @@ impl Core {
         Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
     }
 
-    /// The rodada rápida's next `n` movies: those the owner most likely saw and whose nota would
-    /// move the owner's profile most. Only
-    /// movies with collaborative factors (a nota on any other teaches the fold-in nothing), and
-    /// none rated, já vi, não me interessa or skipped as não vi.
+    /// The rodada rápida's next `n` obras of `tipo`: those the owner most likely saw and whose
+    /// nota would move the owner's profile of that type most. Only filmes with collaborative
+    /// factors (a nota on any other teaches the fold-in nothing), any série the model can read,
+    /// and none rated, já vi, assistindo, não me interessa or skipped as não vi.
     // ponytail: TMDB votes, linear, stand in for the chance the owner has seen it; learn it from
     // the não vi answers if the rodada still asks about too many unseen movies.
-    pub fn rodada(&self, n: usize) -> Vec<MovieCard> {
-        let Some(profile) = &self.profile else { return Vec::new() };
+    pub fn rodada(&self, tipo: Tipo, n: usize) -> Vec<MovieCard> {
+        let series = tipo == Tipo::Serie;
+        let Some(profile) = (if series { &self.profile_series } else { &self.profile }) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = (0..self.movies.len())
             .filter_map(|i| {
-                let item = self.items[i].as_ref().filter(|item| item.collaborative)?;
                 let id = self.movies[i].id;
-                let asked = self.rated(id) || self.owner.ja_vi.contains(&id) || self.owner.nao_vi.contains(&id);
+                let item = self.items[i].as_ref().filter(|item| id.is_serie() == series && (series || item.collaborative))?;
+                let marcada = self.owner.ja_vi.contains(&id) || self.owner.assistindo.contains(&id);
+                let asked = self.rated(id) || marcada || self.owner.nao_vi.contains(&id);
                 (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.movies[i].vote_count as f32, i))
             })
             .collect();
