@@ -1,10 +1,11 @@
 //! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE]`
-//! `cinelens-catalog --series-up-to BYTES --out series.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
+//! `cinelens-catalog --series-up-to BYTES [--data-version VERSION] --out series.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
 //!
 //! `cinelens-catalog --animes-up-to BYTES --out animes.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
 //!
 //! `--series-up-to` and `--animes-up-to` build those assets instead, raising the vote cut until
-//! each fits in BYTES. Both read `Fribb/anime-lists`, and animes also AniList's popularity.
+//! each fits in BYTES. `--data-version` replaces the séries' version, which is otherwise `--today`:
+//! an app downloads séries only when the version changes. Both read `Fribb/anime-lists`, and animes also AniList's popularity.
 //! Reads the TMDB API Read Access Token from `TMDB_TOKEN` and the OMDb key from `OMDB_KEY`
 //! (without it, no critics' scores are fetched). `--extra-ids` is a file with one TMDB id per
 //! line (the training data); blank and non-numeric lines are ignored. `--omdb-cache` is a JSON
@@ -104,7 +105,11 @@ fn run() -> Result<(), String> {
         std::fs::write(out, bytes).map_err(|e| format!("{out}: {e}"))
     };
     if let Some(max) = series_up_to {
-        return up_to("Séries", build_series(&fetch, &config)?, max);
+        let mut series = build_series(&fetch, &config)?;
+        if let Some(version) = arg("--data-version") {
+            series.set_data_version(version);
+        }
+        return up_to("Séries", series, max);
     }
     if let Some(max) = animes_up_to {
         return up_to("Animes", build_animes(&fetch, &config)?, max);

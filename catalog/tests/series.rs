@@ -119,6 +119,15 @@ fn the_core_loads_the_asset_under_serie_ids() {
 }
 
 #[test]
+fn a_second_build_on_the_same_day_can_carry_its_own_version() {
+    let mut series = build_series(&tmdb(vec![serie(1, json!({}))]), &config()).unwrap();
+    series.set_data_version("2026-10-25.42");
+    let mut core = Core::default();
+    core.load_series(&serde_json::to_vec(&series).unwrap()).unwrap();
+    assert_eq!(core.series_version(), Some("2026-10-25.42"));
+}
+
+#[test]
 fn a_filme_catalogo_reader_never_sees_the_asset_as_filmes() {
     let artifact = serde_json::to_vec(&build_series(&tmdb(vec![serie(1, json!({}))]), &config()).unwrap()).unwrap();
     assert!(Core::open(&artifact).is_err());

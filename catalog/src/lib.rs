@@ -126,6 +126,10 @@ impl Artifact {
         self.movies.len()
     }
 
+    pub fn set_data_version(&mut self, version: &str) {
+        self.data_version = version.to_string();
+    }
+
     /// Raises the vote cut until `size` is at most `max`, dropping the obras below it (and below
     /// it in AniList users, for an anime), and returns the cut; `MIN_VOTES` when it already fits.
     pub fn raise_votes_to_fit(&mut self, max: usize, size: impl Fn(&Artifact) -> usize) -> u32 {

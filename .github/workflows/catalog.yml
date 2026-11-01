@@ -5,11 +5,18 @@ name: Catalog
 # (its data version): the app checks the version and downloads the catálogo when it changed.
 # Séries go out the same way as `series.json.gz` and `series-version.txt`, which an app without
 # séries never asks for, and animes as `animes.json.gz` and `animes-version.txt`.
+# A manual run can build séries alone, in minutes, under a version of its own so that apps that
+# already have today's séries download them again.
 # See docs/guides/tmdb.md and docs/guides/omdb.md.
 on:
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
+    inputs:
+      so_series:
+        description: "Só séries (mantém filmes e animes publicados)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -25,12 +32,13 @@ jobs:
       # Every movie in the training data enters the catálogo. MovieLens ml-latest is frozen,
       # so its TMDB ids are extracted once and kept in the cache.
       - uses: actions/cache@v4
+        if: ${{ !inputs.so_series }}
         id: training-ids
         with:
           path: training-ids.txt
           key: training-ids-ml-latest-v1
       - name: Extract training data ids
-        if: steps.training-ids.outputs.cache-hit != 'true'
+        if: ${{ !inputs.so_series && steps.training-ids.outputs.cache-hit != 'true' }}
         run: |
           # files.grouplens.org chains to emSign ECC Root CA - G3, which trust stores removed in
           # October 2026 after a security incident, so curl rejects it. ml-latest has not changed
@@ -44,6 +52,7 @@ jobs:
       # scores fill in over many runs. Caches are immutable, so each run saves a new one and
       # restores the latest.
       - uses: actions/cache/restore@v4
+        if: ${{ !inputs.so_series }}
         with:
           path: omdb-cache.json
           key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
@@ -53,15 +62,15 @@ jobs:
         run: |
           FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
           echo "TAG=catalog-v$FORMAT" >> "$GITHUB_ENV"
+          echo "TODAY=$(date -u +%F)" >> "$GITHUB_ENV"
 
       - name: Build catálogo
+        if: ${{ !inputs.so_series }}
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
           OMDB_KEY: ${{ secrets.OMDB_KEY }}
         run: |
           test -n "$TMDB_TOKEN" || { echo "::error::TMDB_TOKEN secret missing, see docs/guides/tmdb.md"; exit 1; }
-          TODAY=$(date -u +%F)
-          echo "TODAY=$TODAY" >> "$GITHUB_ENV"
           cargo run --release -p cinelens-catalog -- \
             --out catalog.json.gz \
             --today "$TODAY" \
@@ -70,6 +79,7 @@ jobs:
             --omdb-cache omdb-cache.json
 
       - uses: actions/cache/save@v4
+        if: ${{ !inputs.so_series }}
         with:
           path: omdb-cache.json
           key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
@@ -77,18 +87,31 @@ jobs:
       # At most a quarter of the filmes' download: the job raises the vote cut until it fits and
       # records the count. Trouble here never holds back the filmes.
       - name: Build séries
-        continue-on-error: true
+        continue-on-error: ${{ !inputs.so_series }}
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          SO_SERIES: ${{ inputs.so_series }}
         run: |
+          if [ "$SO_SERIES" = true ]; then
+            FILMES=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name == "catalog.json.gz") | .size')
+            test -n "$FILMES" || { echo "::error::catalog.json.gz is not published yet: run the full build"; exit 1; }
+            SERIES_VERSION="$TODAY.$GITHUB_RUN_ID"
+          else
+            FILMES=$(stat -c%s catalog.json.gz)
+            SERIES_VERSION="$TODAY"
+          fi
+          echo "SERIES_VERSION=$SERIES_VERSION" >> "$GITHUB_ENV"
           cargo run --release -p cinelens-catalog -- \
-            --series-up-to "$(( $(stat -c%s catalog.json.gz) / 4 ))" \
+            --series-up-to "$(( FILMES / 4 ))" \
+            --data-version "$SERIES_VERSION" \
             --out series.json.gz \
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)"
 
       # At most a quarter more on the first download, filmes and séries together; same terms.
       - name: Build animes
+        if: ${{ !inputs.so_series }}
         continue-on-error: true
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
@@ -108,12 +131,15 @@ jobs:
           NOTES="Catálogo completo, formato $FORMAT, dados de $TODAY. Baixado pelo app; não é uma versão do app."
           # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
           gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Catálogo (formato $FORMAT)" --notes "$NOTES"
-          echo -n "$TODAY" > catalog-version.txt
           # The version last, so an app never sees it before the files it names.
-          gh release upload "$TAG" catalog.json.gz --clobber
-          gh release upload "$TAG" catalog-version.txt --clobber
+          if [ -f catalog.json.gz ]; then
+            echo -n "$TODAY" > catalog-version.txt
+            gh release upload "$TAG" catalog.json.gz --clobber
+            gh release upload "$TAG" catalog-version.txt --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          fi
           if [ -f series.json.gz ]; then
-            echo -n "$TODAY" > series-version.txt
+            echo -n "$SERIES_VERSION" > series-version.txt
             gh release upload "$TAG" series.json.gz --clobber
             gh release upload "$TAG" series-version.txt --clobber
           fi
@@ -127,4 +153,3 @@ jobs:
           gh release view "$TAG" --json assets --jq '.assets[].name' | { grep -oP '^catalog-delta-\K[0-9-]+(?=\.json\.gz$)' || true; } | while read -r FROM; do
             if [[ "$FROM" < "$CUTOFF" ]]; then gh release delete-asset "$TAG" "catalog-delta-$FROM.json.gz" -y; fi
           done
-          gh release edit "$TAG" --notes "$NOTES"
