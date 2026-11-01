@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::time::Duration;
 
-use cinelens_catalog::{build_animes, build_series, build_sobre, AniList, Anterior, Artifact, Config, ANILIST_POPULAR};
+use cinelens_catalog::{build_animes, build_series, build_incremental, AniList, Anterior, Artifact, Config, ANILIST_POPULAR};
 use serde_json::Value;
 
 const API: &str = "https://api.themoviedb.org/3";
@@ -123,7 +123,7 @@ fn run() -> Result<(), String> {
             None
         }
     });
-    let artifact = build_sobre(&fetch, &omdb, &mut critica, &config, anterior)?;
+    let artifact = build_incremental(&fetch, &omdb, &mut critica, &config, anterior)?;
     if let Some(path) = cache_path {
         std::fs::write(path, serde_json::to_vec(&critica).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
     }

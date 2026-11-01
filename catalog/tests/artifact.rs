@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use cinelens_catalog::{build, build_sobre, Anterior, Config, Critica};
+use cinelens_catalog::{build, build_incremental, Anterior, Config, Critica};
 use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro};
 use serde_json::{json, Value};
@@ -230,7 +230,7 @@ fn build_seguinte(anterior: &[u8], today: &'static str, mudaram: Value) -> (Valu
     };
     let config = Config { today, ..config(0) };
     let anterior = Anterior::new(anterior).unwrap();
-    let artifact = build_sobre(&tmdb, &no_omdb, &mut BTreeMap::new(), &config, Some(anterior)).unwrap();
+    let artifact = build_incremental(&tmdb, &no_omdb, &mut BTreeMap::new(), &config, Some(anterior)).unwrap();
     let mut pedidos = pedidos.into_inner().unwrap();
     pedidos.sort();
     (serde_json::to_value(artifact).unwrap(), pedidos)
@@ -294,8 +294,36 @@ fn a_filme_gone_from_discover_leaves_with_its_provider() {
         fixture_tmdb(request)
     };
     let anterior = Anterior::new(&serde_json::to_vec(&anterior).unwrap()).unwrap();
-    let artifact = build_sobre(&tmdb, &no_omdb, &mut BTreeMap::new(), &Config { today: "2026-10-26", ..config }, Some(anterior)).unwrap();
+    let artifact = build_incremental(&tmdb, &no_omdb, &mut BTreeMap::new(), &Config { today: "2026-10-26", ..config }, Some(anterior)).unwrap();
     let artifact = serde_json::to_value(artifact).unwrap();
     assert!(artifact["movies"].as_array().unwrap().iter().all(|m| m["tmdb_id"] != 77));
     assert!(artifact["providers"].as_array().unwrap().iter().all(|p| p["id"] != 5));
+}
+
+#[test]
+fn a_provider_fetched_again_wins_over_the_last_build() {
+    let mut anterior: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
+    anterior["providers"].as_array_mut().unwrap().iter_mut().find(|p| p["id"] == 8).unwrap()["name"] = json!("Velho");
+    // 550, on Netflix, is due on this day.
+    let (artifact, _) = build_seguinte(&serde_json::to_vec(&anterior).unwrap(), "2026-10-26", json!([]));
+    assert!(artifact["providers"].as_array().unwrap().iter().any(|p| p["id"] == 8 && p["name"] == "Netflix"));
+}
+
+#[test]
+fn trouble_with_the_changes_api_fetches_every_filme() {
+    let pedidos = Mutex::new(0);
+    let tmdb = |request: &str| {
+        if request.starts_with("/movie/changes") {
+            return Err("HTTP 500".to_string());
+        }
+        if request.starts_with("/movie/") {
+            *pedidos.lock().unwrap() += 1;
+        }
+        fixture_tmdb(request)
+    };
+    let anterior = Anterior::new(&fixture_artifact()).unwrap();
+    let config = Config { today: "2026-10-26", ..config(0) };
+    let artifact = build_incremental(&tmdb, &no_omdb, &mut BTreeMap::new(), &config, Some(anterior)).unwrap();
+    assert_eq!(artifact.obras(), 4);
+    assert_eq!(*pedidos.lock().unwrap(), 5);
 }

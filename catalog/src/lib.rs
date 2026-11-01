@@ -453,12 +453,12 @@ pub fn build(
     critica: &mut BTreeMap<String, Critica>,
     config: &Config,
 ) -> Result<Artifact, String> {
-    build_sobre(fetch, omdb, critica, config, None)
+    build_incremental(fetch, omdb, critica, config, None)
 }
 
 /// `build`, fetching only the filmes `anterior` lacks, those TMDB says changed since it, and the
 /// share due for renewal.
-pub fn build_sobre(
+pub fn build_incremental(
     fetch: &impl Fetch,
     omdb: &impl Fetch,
     critica: &mut BTreeMap<String, Critica>,
@@ -482,14 +482,15 @@ pub fn build_sobre(
     ids.extend(discover(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
     let (pedir, reaproveitados, provedores_anteriores) = reaproveitar(fetch, anterior, ids, config.today)?;
-    let (mut movies, mut providers): (Vec<Movie>, Vec<Vec<Provider>>) =
+    let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
         details(fetch, &pedir, movie_request, |body| {
             serde_json::from_value::<Details>(body).map(|d| Some(movie(d)))
         })?
         .into_iter()
         .unzip();
     movies.extend(reaproveitados);
-    providers.push(provedores_anteriores);
+    // The previous ones first, as the last with an id wins: what was just fetched is the newest.
+    let providers: Vec<Vec<Provider>> = std::iter::once(provedores_anteriores).chain(providers).collect();
     let em_uso: BTreeSet<u32> = movies.iter().flat_map(|m| &m.watch).flat_map(|w| w.flatrate.iter().chain(&w.rent).chain(&w.buy)).copied().collect();
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
     critic_scores(omdb, critica, &movies, config);
@@ -522,9 +523,13 @@ fn reaproveitar(
     };
     let from = &anterior.data_version;
     let mudaram: BTreeSet<u32> =
-        discover_pages(fetch, from, today, |page| format!("/movie/changes?start_date={from}&end_date={today}&page={page}"))?
-            .into_iter()
-            .collect();
+        match discover_pages(fetch, from, today, |page| format!("/movie/changes?start_date={from}&end_date={today}&page={page}")) {
+            Ok(mudaram) => mudaram.into_iter().collect(),
+            Err(e) => {
+                eprintln!("::warning::TMDB changes: {e}; every filme is fetched");
+                return Ok((ids.into_iter().collect(), Vec::new(), Vec::new()));
+            }
+        };
     let vence = |id: u32| (0..intervalo).any(|atras| (dia - atras).rem_euclid(DIAS_RENOVACAO) == i64::from(id) % DIAS_RENOVACAO);
     let (reaproveitados, _): (Vec<Movie>, Vec<Movie>) = anterior.movies.into_iter().partition(|m| {
         let id = m.tmdb_id.tmdb_id();

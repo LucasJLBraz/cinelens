@@ -49,7 +49,7 @@ How certain the recommender is about a nota prevista, shown alongside it as a ra
 _Avoid_: certeza, precisão
 
 **Faixa** (Prediction band):
-A nota prevista shown as one of four ordinal bands (Aposta forte, Boa chance, Arriscado, Provavelmente não), set by where it falls among the owner's own predictions of that type, with a floor so that a high nota never reads as a verdict against the obra: from 4.0 at worst Boa chance, from 3.0 at worst Arriscado. The default way of showing a nota prevista.
+A nota prevista shown as one of four ordinal bands (Aposta forte, Boa chance, Arriscado, Provavelmente não), set by where it falls among the owner's own predictions of that type, except that a high nota never reads as a verdict against the obra: from 4.0 at worst Boa chance, from 3.0 at worst Arriscado. Listas prontas pick by position alone. The default way of showing a nota prevista.
 _Avoid_: categoria, nível
 
 **Recomendação** (Recommendation):
