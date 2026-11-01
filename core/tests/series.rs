@@ -243,7 +243,7 @@ mod previsoes {
     fn series_stay_out_of_the_listas_of_filmes_and_of_a_first_notification() {
         let core = with_series();
         let at = 1_800_000_000;
-        let inicio = core.inicio(at, 0);
+        let inicio = core.inicio(at, 0, Some(Tipo::Filme));
         let de_filmes = inicio.fileiras.iter().filter(|f| f.filtro.tipo == Some(Tipo::Filme));
         assert!(de_filmes.flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
         assert!(core.notificacao_devida(at).is_none_or(|n| !n.id.is_serie()));
@@ -433,7 +433,7 @@ fn a_page_links_to_tmdb_by_type_and_number() {
 }
 
 mod ranking_misto {
-    use cinelens_core::{Core, Filtro, Marca, ObraId};
+    use cinelens_core::{Core, Filtro, Marca, ObraId, Tipo};
 
     /// Filmes 1 > 2 > 3, all predicted above every série; séries 1 > 2 through content alone.
     const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
@@ -503,7 +503,7 @@ mod ranking_misto {
 
     #[test]
     fn the_destaque_mixes_filmes_and_series() {
-        let inicio = core().inicio(0, 0);
+        let inicio = core().inicio(0, 0, None);
         let ids: Vec<ObraId> = inicio.destaques.iter().map(|d| d.card.id).collect();
         assert_eq!(ids[..2], [ObraId::filme(1), S1]);
     }
@@ -520,7 +520,7 @@ mod ranking_misto {
     #[test]
     fn inicio_has_rows_of_series_set_to_the_serie_filter() {
         let core = core();
-        let inicio = core.inicio(0, 0);
+        let inicio = core.inicio(0, 0, Some(Tipo::Serie));
         let row = inicio.fileiras.iter().find(|f| f.nome == "Séries para você").unwrap();
         let ids: Vec<ObraId> = row.movies.iter().map(|m| m.id).collect();
         assert_eq!(ids, [S1, S2]);
@@ -588,7 +588,7 @@ mod piso {
     #[test]
     fn below_the_floor_a_serie_is_in_no_destaque_or_row() {
         let core = core();
-        let inicio = core.inicio(0, 0);
+        let inicio = core.inicio(0, 0, Some(Tipo::Serie));
         assert!(inicio.destaques.iter().all(|d| d.card.id != RUIM));
         assert!(inicio.fileiras.iter().flat_map(|f| &f.movies).all(|m| m.id != RUIM));
         // Not even as a row's filler, nor in what its "ver tudo" opens.
@@ -614,7 +614,7 @@ mod piso {
     fn the_cut_comes_from_the_catalogo() {
         // The same 5.0 is above the floor among worse séries; 3.0 is the one below it.
         let core = core_com([5.0, 3.0, 5.5, 6.0, 6.5]);
-        let inicio = core.inicio(0, 0);
+        let inicio = core.inicio(0, 0, None);
         let na_fileira = |id| inicio.fileiras.iter().flat_map(|f| &f.movies).any(|m| m.id == id);
         assert!(na_fileira(RUIM));
         assert!(!na_fileira(ObraId::serie(2)));
@@ -623,7 +623,7 @@ mod piso {
     #[test]
     fn with_fewer_than_50_votes_a_serie_escapes_the_floor() {
         let core = core();
-        let fileira = core.inicio(0, 0).fileiras.into_iter().find(|f| f.nome == "Séries para você").unwrap();
+        let fileira = core.inicio(0, 0, Some(Tipo::Serie)).fileiras.into_iter().find(|f| f.nome == "Séries para você").unwrap();
         assert!(fileira.movies.iter().any(|m| m.id == ObraId::serie(6)));
     }
 
@@ -667,7 +667,7 @@ mod assistindo {
     }
 
     fn fileira(core: &Core, nome: &str) -> Vec<ObraId> {
-        let fileira = core.inicio(0, 0).fileiras.into_iter().find(|f| f.nome == nome).unwrap();
+        let fileira = core.inicio(0, 0, Some(Tipo::Serie)).fileiras.into_iter().find(|f| f.nome == nome).unwrap();
         fileira.movies.iter().map(|m| m.id).collect()
     }
 
@@ -687,7 +687,7 @@ mod assistindo {
     fn it_takes_the_serie_out_of_recomendacoes() {
         let mut core = core();
         core.marcar(S1, Marca::Assistindo, true, 100);
-        let inicio = core.inicio(0, 0);
+        let inicio = core.inicio(0, 0, None);
         assert!(inicio.destaques.iter().all(|d| d.card.id != S1));
         assert_eq!(fileira(&core, "Séries para você"), [S2]);
         let series = Filtro { tipo: Some(Tipo::Serie), ..Default::default() };
@@ -738,7 +738,7 @@ mod assistindo {
         assert_eq!(fileira(&core, "Assistindo"), []);
         core.marcar(S1, Marca::Assistindo, true, 100);
         assert_eq!(fileira(&core, "Assistindo"), [S1]);
-        assert_eq!(core.inicio(0, 0).fileiras.last().unwrap().nome, "Assistindo");
+        assert_eq!(core.inicio(0, 0, None).fileiras.last().unwrap().nome, "Assistindo");
     }
 
     #[test]
@@ -911,7 +911,7 @@ mod listas_prontas {
     }
 
     fn fileira(core: &Core, nome: &str) -> Vec<ObraId> {
-        let inicio = core.inicio(HOJE, 0);
+        let inicio = core.inicio(HOJE, 0, None);
         inicio.fileiras.iter().find(|f| f.nome == nome).unwrap().movies.iter().map(|m| m.id).collect()
     }
 
@@ -947,9 +947,12 @@ mod listas_prontas {
     }
 
     #[test]
-    fn the_other_listas_prontas_stay_filmes_only() {
-        let inicio = core().inicio(HOJE, 0);
-        let filmes: Vec<&str> = inicio.fileiras.iter().filter(|f| f.filtro.tipo == Some(Tipo::Filme)).map(|f| f.nome.as_str()).collect();
-        assert_eq!(filmes, ["Em alta, do seu jeito", "Sessão da Tarde", "Cabe numa noite", "Clássicos que você não viu", "Aclamados pelo público"]);
+    fn the_filme_only_listas_stay_under_the_filmes_chip() {
+        let nomes = |tipo| core().inicio(HOJE, 0, tipo).fileiras.into_iter().map(|f| f.nome).collect::<Vec<_>>();
+        for filme in ["Filmes para você", "Sessão da Tarde", "Cabe numa noite", "Clássicos que você não viu"] {
+            assert!(nomes(Some(Tipo::Filme)).iter().any(|n| n == filme), "{filme}");
+            assert!(!nomes(None).iter().any(|n| n == filme), "{filme}");
+            assert!(!nomes(Some(Tipo::Serie)).iter().any(|n| n == filme), "{filme}");
+        }
     }
 }

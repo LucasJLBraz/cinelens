@@ -37,6 +37,22 @@
     .original { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #more, #parecidos-mais-filmes { display: block; min-height: var(--alvo); margin: var(--s4) auto max(var(--s5), env(safe-area-inset-bottom)); padding: 0 var(--s5); border: 1px solid var(--muted); border-radius: var(--s5); background: none; color: var(--text); font: inherit; }
     [hidden] { display: none !important; }
+    .movie, .destaque { position: relative; }
+    .selo { position: absolute; top: var(--s1); left: var(--s1); padding: 1px 6px; border-radius: 4px; background: var(--bg); font-size: var(--t-meta); }
+    #inicio-tipos, #quero-tipos { padding: var(--s3) var(--gutter) 0; overflow-x: auto; scrollbar-width: none; }
+    #inicio-tipos .chip.on, #quero-tipos .chip.on { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+    #blocos-titulo { margin: 0; padding: var(--s4) var(--gutter) var(--s2); font-size: var(--t-secao); }
+    #blocos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); padding: 0 var(--gutter) var(--s4); }
+    #blocos button { min-height: 72px; padding: var(--s3); border: 0; border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-weight: 600; text-align: left; }
+    #quero-lista { margin: var(--s2) 0 0; padding: 0 var(--gutter); list-style: none; }
+    #quero-lista li { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--card); }
+    #quero-lista .abrir { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--s3); min-height: var(--alvo); padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; }
+    #quero-lista .poster { width: 56px; flex: none; border-radius: 4px; }
+    #quero-lista .poster.missing { padding: 0; font-size: 0; }
+    #quero-lista .info { flex: 1; min-width: 0; }
+    #quero-lista .titulo { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    #quero-lista .tirar { width: var(--alvo); height: var(--alvo); flex: none; border: 1px solid #ffffff24; border-radius: 50%; background: none; color: var(--text); font: inherit; }
+    #quero-mais { display: block; margin: var(--s4) auto; }
     .poster.missing { display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
     #setup { padding: 32vh 32px 0; text-align: center; }
     #setup p { color: var(--muted); }
@@ -153,9 +169,10 @@
     #parecidos-mas { margin: 0 0 var(--s2); align-items: center; }
     #parecidos-mas .meta { flex: none; }
     footer { padding: 32px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
-    body:has(#abas:not([hidden])) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
-    #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border-top: 1px solid #ffffff14; padding-bottom: env(safe-area-inset-bottom); }
+    body:has(#abas:not([hidden])) { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+    #abas { position: fixed; bottom: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--card); border-top: 1px solid #ffffff14; padding-bottom: env(safe-area-inset-bottom); }
     #abas button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 8px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; }
+    #abas button { line-height: 1.1; text-align: center; }
     #abas svg { width: 56px; height: 28px; padding: 2px 16px; border-radius: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     #abas button.on { color: var(--accent); font-weight: 600; }
     #abas button.on svg { background: color-mix(in srgb, var(--accent) 16%, transparent); }
@@ -253,7 +270,12 @@
     <header><h1>Início</h1></header>
     <div id="destaques"></div>
     <div id="destaques-pontos" aria-hidden="true"></div>
-    <div id="atalhos" class="linha"></div>
+    <div id="inicio-tipos" class="chips">
+      <button class="chip" data-valor="">Tudo</button>
+      <button class="chip" data-valor="Filme">Filmes</button>
+      <button class="chip" data-valor="Serie">Séries</button>
+      <button class="chip" data-valor="Anime">Animes</button>
+    </div>
     <div id="fileiras"></div>
   </section>
   <section id="rodada" hidden>
@@ -276,11 +298,12 @@
     <p id="rodada-vazio" hidden>Nada para perguntar agora. Volte mais tarde.</p>
   </section>
   <div id="explorar" hidden>
-    <header>
+    <header style="display: flex; align-items: center; justify-content: space-between">
       <div>
-        <h1>Explorar</h1>
-        <div id="explorar-lista" class="original">Para você</div>
+        <h1>Buscar</h1>
+        <div id="explorar-lista" class="original"></div>
       </div>
+      <button id="limpar-topo" class="link" hidden>Limpar</button>
     </header>
     <div id="filtros">
       <input id="busca" type="search" placeholder="Título, direção ou elenco" data-campo="busca">
@@ -292,7 +315,7 @@
           <button class="chip" data-valor="Anime">Animes</button>
         </div>
       </div>
-      <div class="linha">
+      <div id="generos-linha" class="linha">
         <div id="generos" class="chips"></div>
       </div>
       <div class="linha">
@@ -333,11 +356,25 @@
         <span>Garimpo</span>
       </label>
     </div>
+    <h2 id="blocos-titulo">Por gênero</h2>
+    <div id="blocos"></div>
     <p id="grid-dica" class="meta">Toque na capa para ver a sinopse.</p>
     <main id="grid"></main>
     <p id="vazio" hidden>Nada com esses filtros.</p>
     <button id="more" hidden>Mais</button>
   </div>
+  <section id="quero" hidden>
+    <header><h1>Quero assistir</h1></header>
+    <div id="quero-tipos" class="chips">
+      <button class="chip on" data-valor="">Tudo</button>
+      <button class="chip" data-valor="Filme">Filmes</button>
+      <button class="chip" data-valor="Serie">Séries</button>
+      <button class="chip" data-valor="Anime">Animes</button>
+    </div>
+    <ul id="quero-lista"></ul>
+    <p id="quero-vazio" hidden>Nada aqui. Marque Quero assistir na página de uma obra.</p>
+    <button id="quero-mais" class="chip" hidden>Mais</button>
+  </section>
   <section id="filme" hidden>
     <div id="filme-fundo"></div>
     <button id="back" class="pill">‹ Voltar</button>
@@ -502,8 +539,9 @@
   </section>
   <nav id="abas" hidden>
     <button data-aba="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Início</button>
-    <button data-aba="explorar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Explorar</button>
+    <button data-aba="explorar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Buscar</button>
     <button data-aba="rodada"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>Rodada</button>
+    <button data-aba="quero"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>Quero assistir</button>
     <button data-aba="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>Perfil</button>
   </nav>
   <script>
@@ -544,10 +582,14 @@
     }
 
     // The one movie card: poster, title (2 lines), year, faixa.
+    const TIPOS = { Filme: 'Filme', Serie: 'Série', Anime: 'Anime' };
+
     function card(m) {
       const el = document.createElement('article');
       el.className = 'movie';
       el.addEventListener('click', () => openMovie(m.tmdb_id));
+      // A saved Início from before it has no tipo.
+      if (m.tipo) el.append(Object.assign(document.createElement('span'), { className: 'selo', textContent: TIPOS[m.tipo] }));
       el.append(posterOf(m),
         Object.assign(document.createElement('div'), { className: 'titulo', textContent: m.title }),
         Object.assign(document.createElement('div'), { className: 'ano', textContent: m.year || '\u00a0' }),
@@ -642,14 +684,15 @@
       reloadGrid();
     }
 
-    // Opens Explorar with `preset` as the only filters (Início's rows and chips, named `nome`);
+    // Opens Buscar with `preset` as the only filters (Início's rows and the blocos, named `nome`);
     // {} clears them.
     function abrirExplorar(preset, nome) {
+      listaAberta = nome || '';
       filtro = { ...preset };
-      // A lista pronta's own mix stands; only plain Explorar opens on the owner's choice.
+      // A lista pronta's own mix stands; only plain Buscar opens on the owner's choice.
       if (!nome && !filtro.tipo && tipoEscolhido) filtro.tipo = tipoEscolhido;
       extras = Object.fromEntries(Object.entries(preset).filter(([k]) => !controlados.has(k)));
-      document.getElementById('explorar-lista').textContent = nome || 'Para você';
+      document.getElementById('explorar-lista').textContent = listaAberta;
       showFiltro();
       reloadGrid();
     }
@@ -657,15 +700,25 @@
     for (const el of campos) el.addEventListener(['search', 'range', 'number'].includes(el.type) ? 'input' : 'change', applyFiltro);
     duracaoEl.addEventListener('change', applyFiltro);
     document.getElementById('streaming').addEventListener('click', e => { e.target.classList.toggle('on'); applyFiltro(); });
-    tiposEl.addEventListener('click', e => {
-      if (e.target === tiposEl) return;
-      tipoEscolhido = e.target.dataset.valor;
+    // One choice for Início and Buscar.
+    // From Início, a lista pronta open in Buscar keeps its own tipo.
+    function escolherTipo(valor, deBuscar) {
+      tipoEscolhido = valor;
       try { localStorage.setItem('tipo', tipoEscolhido); } catch {}
-      filtro = { ...filtro };
-      if (tipoEscolhido) filtro.tipo = tipoEscolhido; else delete filtro.tipo;
-      showFiltro();
-      reloadGrid();
-    });
+      if (deBuscar || !listaAberta) {
+        filtro = { ...filtro };
+        if (tipoEscolhido) filtro.tipo = tipoEscolhido; else delete filtro.tipo;
+        showFiltro();
+        reloadGrid();
+      }
+      showInicioTipo();
+      loadInicio();
+    }
+    const inicioTiposEl = document.getElementById('inicio-tipos');
+    const showInicioTipo = () => { for (const chip of inicioTiposEl.children) chip.classList.toggle('on', chip.dataset.valor === tipoEscolhido); };
+    showInicioTipo();
+    for (const el of [tiposEl, inicioTiposEl]) el.addEventListener('click', e => { if (e.target !== el) escolherTipo(e.target.dataset.valor, el === tiposEl); });
+    document.getElementById('limpar-topo').addEventListener('click', () => abrirExplorar({}));
     document.getElementById('mais-filtros').addEventListener('click', e => {
       const painel = document.getElementById('painel');
       painel.hidden = !painel.hidden;
@@ -687,6 +740,11 @@
 
     async function loadOpcoes() {
       const opcoes = await invoke('opcoes');
+      const preset = () => tipoEscolhido ? { tipo: tipoEscolhido } : {};
+      const bloco = (textContent, onclick) => Object.assign(document.createElement('button'), { textContent, onclick });
+      document.getElementById('blocos').replaceChildren(
+        bloco('Para você', () => abrirExplorar(preset(), 'Para você')),
+        ...opcoes.generos.map(g => bloco(g.name, () => abrirExplorar({ ...preset(), incluir: [g.id] }, g.name))));
       generosEl.replaceChildren(...opcoes.generos.map(g => {
         const chip = document.createElement('button');
         chip.className = 'chip';
@@ -737,10 +795,24 @@
       }
     }
 
+    // The lista pronta or bloco Buscar has open; none, and no filter set, it shows the blocos.
+    let listaAberta = '';
+    const semValor = v => v == null || v === false || v === 0 || v === '' || v === 'Todos' || (Array.isArray(v) && !v.length);
+    const soBlocos = () => !listaAberta && Object.entries(filtro).every(([k, v]) => k === 'tipo' || semValor(v));
+
     function reloadGrid() {
       generation += 1;
       page = 0;
       grid.replaceChildren();
+      const blocos = soBlocos();
+      for (const id of ['blocos', 'blocos-titulo']) document.getElementById(id).hidden = !blocos;
+      for (const id of ['grid', 'grid-dica', 'generos-linha', 'limpar-topo']) document.getElementById(id).hidden = blocos;
+      document.querySelector('#filtros .garimpo').hidden = blocos;
+      if (blocos) {
+        more.hidden = true;
+        document.getElementById('vazio').hidden = true;
+        return;
+      }
       load();
     }
 
@@ -866,7 +938,7 @@
 
     const pessoaEl = document.getElementById('pessoa');
     const abasEl = document.getElementById('abas');
-    const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes') };
+    const abas = { inicio: document.getElementById('inicio'), explorar: explorarEl, rodada: document.getElementById('rodada'), ajustes: document.getElementById('ajustes'), quero: document.getElementById('quero') };
     const minhasNotasEl = document.getElementById('minhas-notas');
     const telas = [...Object.values(abas), filmeEl, pessoaEl, minhasNotasEl, document.getElementById('parecidos-tela'), document.getElementById('boas-vindas')];
     function tela(el) {
@@ -883,6 +955,7 @@
         b.setAttribute('aria-current', b.dataset.aba === nome ? 'page' : 'false');
       }
       if (nome === 'ajustes') loadPerfil();
+      if (nome === 'quero') loadQuero();
       if (nome === 'rodada') {
         conferirRodada();
         if (rodadaFila.length < 3) encherRodada();
@@ -1591,6 +1664,7 @@
     function destaque(d) {
       const el = document.createElement('article');
       el.className = 'destaque';
+      if (d.tipo) el.append(Object.assign(document.createElement('span'), { className: 'selo', textContent: TIPOS[d.tipo] }));
       const info = Object.assign(document.createElement('div'), { className: 'info' });
       // The poster may turn into its placeholder, so the whole destaque but its actions opens the movie.
       el.addEventListener('click', e => e.target.closest('.acoes') || openMovie(d.tmdb_id));
@@ -1623,6 +1697,54 @@
       el.append(posterOf(d), info);
       return el;
     }
+
+    // Quero assistir: its own type chips, not Início's and Buscar's choice.
+    const queroListaEl = document.getElementById('quero-lista');
+    const queroMaisEl = document.getElementById('quero-mais');
+    const queroTiposEl = document.getElementById('quero-tipos');
+    let queroTipo = '';
+    let queroPage = 0;
+    let queroPedido = 0;
+    function queroItem(m) {
+      const li = document.createElement('li');
+      const abrir = Object.assign(document.createElement('button'), { className: 'abrir', onclick: () => openMovie(m.tmdb_id) });
+      const info = Object.assign(document.createElement('div'), { className: 'info' });
+      info.append(
+        Object.assign(document.createElement('div'), { className: 'titulo', textContent: m.title }),
+        Object.assign(document.createElement('div'), { className: 'ano', textContent: [TIPOS[m.tipo], m.year].filter(Boolean).join(' · ') }),
+        faixaEl(m.exibicao));
+      abrir.append(posterOf(m), info);
+      const tirar = Object.assign(document.createElement('button'), { className: 'tirar', textContent: '✕' });
+      tirar.setAttribute('aria-label', `Tirar ${m.title} de Quero assistir`);
+      tirar.onclick = async () => {
+        await invoke('marcar', { tmdbId: m.tmdb_id, marca: 'QueroAssistir', on: false });
+        li.remove();
+        stale = true;
+        // Pages are offsets: with more to load, one row less would skip an obra.
+        if (!queroMaisEl.hidden) return loadQuero();
+        document.getElementById('quero-vazio').hidden = queroListaEl.children.length > 0;
+      };
+      li.append(abrir, tirar);
+      return li;
+    }
+    async function loadQuero(mais) {
+      if (!mais) queroPage = 0;
+      const pedida = ++queroPedido;
+      const result = await invoke('explorar', { filtro: { quero_assistir: 'So', ...(queroTipo && { tipo: queroTipo }) }, page: queroPage });
+      if (pedida !== queroPedido) return;
+      const itens = result.movies.map(queroItem);
+      if (mais) queroListaEl.append(...itens); else queroListaEl.replaceChildren(...itens);
+      queroMaisEl.hidden = !result.has_more;
+      document.getElementById('quero-vazio').hidden = queroListaEl.children.length > 0;
+      queroPage += 1;
+    }
+    queroMaisEl.addEventListener('click', () => loadQuero(true));
+    queroTiposEl.addEventListener('click', e => {
+      if (e.target === queroTiposEl) return;
+      queroTipo = e.target.dataset.valor;
+      for (const chip of queroTiposEl.children) chip.classList.toggle('on', chip === e.target);
+      loadQuero();
+    });
 
     function verLista(f) {
       abrirExplorar(f.filtro, f.nome);
@@ -1670,7 +1792,7 @@
     });
 
     async function loadInicio() {
-      const inicio = await invoke('inicio', { sorteio });
+      const inicio = await invoke('inicio', { sorteio, tipo: tipoEscolhido || null });
       // What the next launch paints first, while the catálogo loads. Not another sorteio: the
       // launch's own list would replace it right away.
       if (!sorteio) try { localStorage.setItem('inicio', JSON.stringify(inicio)); } catch {}
@@ -1682,9 +1804,6 @@
       destaquesEl.scrollLeft = 0;
       pontosEl.replaceChildren(...inicio.destaques.map((_, i) => Object.assign(document.createElement('span'), { className: i ? '' : 'on' })));
       const fileiras = inicio.fileiras.filter(f => f.movies.length);
-      // Assistindo stays a row below the rest, with no chip at the top.
-      document.getElementById('atalhos').replaceChildren(...fileiras.filter(f => f.nome !== 'Assistindo').map(f =>
-        Object.assign(document.createElement('button'), { className: 'chip', textContent: f.nome, onclick: () => verLista(f) })));
       document.getElementById('fileiras').replaceChildren(...fileiras.map(f => {
         const section = document.createElement('section');
         const cabeca = document.createElement('div');
@@ -1698,6 +1817,17 @@
         section.append(cabeca, fileira);
         return section;
       }));
+      // Second, right below the first row: the most personal one. A saved Início from before it has none.
+      if (inicio.porque_amou) {
+        const section = document.createElement('section');
+        const cabeca = Object.assign(document.createElement('div'), { className: 'cabeca' });
+        cabeca.append(Object.assign(document.createElement('h2'), { textContent: inicio.porque_amou.nome }));
+        const fileira = Object.assign(document.createElement('div'), { className: 'fileira' });
+        fileira.append(...inicio.porque_amou.movies.map(card));
+        section.append(cabeca, fileira);
+        const primeira = document.getElementById('fileiras').children[0];
+        if (primeira) primeira.after(section); else document.getElementById('fileiras').append(section);
+      }
       // A plain reminder, absent when empty. A saved Início from before it has none.
       const proximas = inicio.proximas_temporadas || [];
       if (proximas.length) {
@@ -1768,7 +1898,7 @@
     async function start() {
       abrirAba('inicio');
       loadOpcoes();
-      load();
+      reloadGrid();
       loadInicio();
       notificacaoTocada();
       const [, model] = await invoke('status');

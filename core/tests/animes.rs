@@ -465,7 +465,7 @@ mod encontrar {
 
     #[test]
     fn inicio_has_rows_of_animes() {
-        let inicio = core().inicio(0, 0);
+        let inicio = core().inicio(0, 0, Some(Tipo::Anime));
         let fileira = inicio.fileiras.iter().find(|f| f.nome == "Animes para você").unwrap();
         assert_eq!(fileira.filtro.tipo, Some(Tipo::Anime));
         assert!(fileira.movies.iter().any(|m| m.id == id(10)));
@@ -474,14 +474,14 @@ mod encontrar {
     #[test]
     fn em_alta_goes_by_the_animes_trending() {
         let obras = ["\"vote_count\": 10".to_string(), "\"vote_count\": 20".to_string()];
-        let inicio = com_animes(&[], &obras).inicio(0, 0);
-        let fileira = inicio.fileiras.iter().find(|f| f.nome == "Animes em alta").unwrap();
+        let inicio = com_animes(&[], &obras).inicio(0, 0, None);
+        let fileira = inicio.fileiras.iter().find(|f| f.nome == "Em alta, do seu jeito").unwrap();
         assert_eq!(fileira.movies.iter().map(|m| m.id).collect::<Vec<_>>(), [id(200)]);
     }
 
     #[test]
     fn the_destaque_mixes_the_three_types_by_percentile() {
-        let inicio = core().inicio(0, 0);
+        let inicio = core().inicio(0, 0, None);
         let primeiros: Vec<ObraId> = inicio.destaques.iter().take(3).map(|d| d.card.id).collect();
         assert!(primeiros.iter().any(|m| !m.is_serie()), "{primeiros:?}");
         assert!(primeiros.contains(&SERIE), "{primeiros:?}");
@@ -495,9 +495,9 @@ mod encontrar {
         let mut core = com_animes(&[6.0, 7.0, 8.0, 9.0], &obras);
         core.load_anime_model(ANIME_MODEL.as_bytes()).unwrap();
         let ruim = id(200);
-        let recomendado = |core: &Core| core.inicio(0, 0).destaques.iter().any(|d| d.card.id == ruim);
+        let recomendado = |core: &Core| core.inicio(0, 0, None).destaques.iter().any(|d| d.card.id == ruim);
         assert!(!recomendado(&core));
-        assert!(core.inicio(0, 0).fileiras.iter().flat_map(|f| &f.movies).all(|m| m.id != ruim));
+        assert!(core.inicio(0, 0, None).fileiras.iter().flat_map(|f| &f.movies).all(|m| m.id != ruim));
         assert!(ids(core.explorar(&Filtro { tipo: Some(Tipo::Anime), ..Default::default() }, 0)).contains(&ruim));
         assert_eq!(ids(core.explorar(&Filtro { busca: "Anime 200".into(), acima_do_piso: true, ..Default::default() }, 0)), [ruim]);
     }
@@ -507,7 +507,7 @@ mod encontrar {
         let mut core = core();
         core.marcar(id(10), Marca::Assistindo, true, 100);
         core.marcar(SERIE, Marca::Assistindo, true, 100);
-        let inicio = core.inicio(0, 0);
+        let inicio = core.inicio(0, 0, None);
         let fileira = inicio.fileiras.last().unwrap();
         assert_eq!(fileira.nome, "Assistindo");
         let mut achados: Vec<ObraId> = fileira.movies.iter().map(|m| m.id).collect();
@@ -566,7 +566,7 @@ mod proxima_temporada {
     }
 
     fn proxima(core: &Core) -> Option<(String, String)> {
-        let inicio = core.inicio(EM_2022, 0);
+        let inicio = core.inicio(EM_2022, 0, None);
         inicio.proximas_temporadas.first().map(|p| (p.temporada.clone(), p.estreia.clone()))
     }
 
@@ -577,9 +577,9 @@ mod proxima_temporada {
     #[test]
     fn is_absent_with_no_nota_or_mark_and_on_a_bad_nota() {
         let mut core = core();
-        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        assert!(core.inicio(EM_2022, 0, None).proximas_temporadas.is_empty());
         core.reagir(id(200), Reacao::NaoGostei, EM_2020).unwrap();
-        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        assert!(core.inicio(EM_2022, 0, None).proximas_temporadas.is_empty());
     }
 
     #[test]
@@ -611,7 +611,7 @@ mod proxima_temporada {
         let mut core = core();
         core.rate(id(200), 5.0, EM_2020).unwrap();
         core.reagir_temporada(id(200), 2, Reacao::NaoGostei, EM_2022).unwrap();
-        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        assert!(core.inicio(EM_2022, 0, None).proximas_temporadas.is_empty());
     }
 
     #[test]
@@ -620,7 +620,7 @@ mod proxima_temporada {
         core.load_anime_model(ANIME_MODEL.as_bytes()).unwrap();
         assert!(core.movie(id(200)).unwrap().card.nota_prevista.is_some());
         core.marcar(id(200), Marca::Assistindo, true, EM_2020);
-        let inicio = core.inicio(EM_2022, 0);
+        let inicio = core.inicio(EM_2022, 0, None);
         let p = &inicio.proximas_temporadas[0];
         assert_eq!((p.temporada.as_str(), p.card.id), ("Temporada 2", id(200)));
         assert_eq!((p.card.nota_prevista, p.card.confianca), (None, None));
@@ -631,11 +631,11 @@ mod proxima_temporada {
     fn leaves_out_nao_me_interessa_and_a_temporada_without_a_date() {
         let mut core = core();
         core.rate_temporada(id(200), 3, 5.0, EM_2022).unwrap();
-        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        assert!(core.inicio(EM_2022, 0, None).proximas_temporadas.is_empty());
         core.remover_nota_temporada(id(200), 3, EM_2022);
         core.rate(id(200), 5.0, EM_2020).unwrap();
         core.marcar(id(200), Marca::NaoMeInteressa, true, EM_2022);
-        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        assert!(core.inicio(EM_2022, 0, None).proximas_temporadas.is_empty());
     }
 
     #[test]

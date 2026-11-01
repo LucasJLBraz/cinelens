@@ -11,12 +11,12 @@ Recomendações de filmes, séries e animes feitas para o seu gosto, que rodam n
 <table>
   <tr>
     <td align="center"><img src="docs/prints/inicio.png" alt="Início com destaques e listas prontas" width="240"></td>
-    <td align="center"><img src="docs/prints/explorar.png" alt="Explorar com busca, filtros e o controle Populares–Garimpo" width="240"></td>
+    <td align="center"><img src="docs/prints/explorar.png" alt="Buscar com busca, filtros e o controle Populares–Garimpo" width="240"></td>
     <td align="center"><img src="docs/prints/filme.png" alt="Página de filme com o motivo da recomendação e onde assistir" width="240"></td>
   </tr>
   <tr>
     <td align="center"><b>Início</b><br>O que ver hoje, já escolhido</td>
-    <td align="center"><b>Explorar</b><br>Do popular ao garimpo</td>
+    <td align="center"><b>Buscar</b><br>Do popular ao garimpo</td>
     <td align="center"><b>Filme</b><br>Por que ver e onde ver</td>
   </tr>
 </table>
@@ -35,7 +35,7 @@ Recomendações de filmes, séries e animes feitas para o seu gosto, que rodam n
 **Escolher o que ver**
 
 - **Início:** destaques do dia e listas prontas com filmes, séries e animes. Puxe a tela para ver outras sugestões.
-- **Explorar:** cerca de 91 mil filmes, 5,7 mil séries e 2,9 mil animes, com filtros e uma busca que perdoa erro de digitação.
+- **Buscar:** cerca de 91 mil filmes, 5,7 mil séries e 2,9 mil animes, com filtros e uma busca que perdoa erro de digitação.
 - **Populares ↔ Garimpo:** um controle que vai do que todo mundo viu às joias escondidas.
 - **Parecidos, mas…:** parta de um filme de que gostou e peça algo mais leve, mais curto ou mais recente.
 - **Onde assistir:** assinatura, aluguel ou compra no Brasil, e um filtro para os seus streamings.

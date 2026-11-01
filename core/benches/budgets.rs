@@ -96,7 +96,19 @@ fn main() {
     });
 
     failed |= !budget("início: destaques and every row", Duration::from_millis(100), || {
-        assert!(!core.inicio(0, 0).destaques.is_empty());
+        assert!(!core.inicio(0, 0, None).destaques.is_empty());
+    });
+
+    failed |= !budget("início: the Filmes chip, the most rows", Duration::from_millis(100), || {
+        assert!(!core.inicio(0, 0, Some(Tipo::Filme)).fileiras.is_empty());
+    });
+
+    failed |= !budget("início: the Séries chip", Duration::from_millis(100), || {
+        assert!(!core.inicio(0, 0, Some(Tipo::Serie)).fileiras.is_empty());
+    });
+
+    failed |= !budget("início: the Animes chip", Duration::from_millis(100), || {
+        assert!(!core.inicio(0, 0, Some(Tipo::Anime)).fileiras.is_empty());
     });
 
     failed |= !budget("rodada: next movies after a nota", Duration::from_millis(100), || {

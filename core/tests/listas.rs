@@ -1,7 +1,7 @@
-//! Início: the destaque, and the listas prontas its rows and chips open in Explorar.
+//! Início: the destaque, and the listas prontas its rows open in Buscar.
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Filtro, Marca};
+use cinelens_core::{Core, Filtro, Marca, Tipo};
 
 /// Genres: 12 Aventura, 35 Comédia, 10751 Família, 18 Drama, 878 Ficção científica.
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t", "trending": [8, 6],
@@ -44,7 +44,7 @@ fn core() -> Core {
 
 /// The movies of Início's row for the lista `nome`.
 fn fileira(core: &Core, nome: &str) -> Vec<u32> {
-    let inicio = core.inicio(NOW, 0);
+    let inicio = core.inicio(NOW, 0, Some(Tipo::Filme));
     let fileira = inicio.fileiras.iter().find(|f| f.nome == nome).unwrap_or_else(|| panic!("no row {nome}"));
     fileira.movies.iter().map(|m| m.id.tmdb_id()).collect()
 }
@@ -52,23 +52,19 @@ fn fileira(core: &Core, nome: &str) -> Vec<u32> {
 #[test]
 fn every_row_is_explorar_with_its_listas_filtro() {
     let core = core();
-    let inicio = core.inicio(NOW, 0);
+    let inicio = core.inicio(NOW, 0, None);
     let nomes: Vec<&str> = inicio.fileiras.iter().map(|f| f.nome.as_str()).collect();
     assert_eq!(
         nomes,
         [
             "Em alta, do seu jeito",
-            "Séries para você",
-            "Séries em alta",
-            "Animes para você",
-            "Animes em alta",
+            "Da sua lista, no seu streaming",
             "No seu streaming hoje",
             "Lançamentos para você",
+            "Com quem você é fã",
             "Joias escondidas",
-            "Sessão da Tarde",
-            "Cabe numa noite",
-            "Clássicos que você não viu",
             "Aclamados pela crítica",
+            "Feito no Brasil",
             "Para rever",
             "Assistindo",
         ]
@@ -94,11 +90,11 @@ fn cabe_numa_noite_is_under_1h40() {
 fn lancamentos_are_the_last_six_months_with_a_high_nota_prevista() {
     let core = core();
     assert_eq!(fileira(&core, "Lançamentos para você"), [7]);
-    let inicio = core.inicio(NOW, 0);
+    let inicio = core.inicio(NOW, 0, None);
     let filtro = &inicio.fileiras.iter().find(|f| f.nome == "Lançamentos para você").unwrap().filtro;
     assert_eq!(filtro.lancado_desde.as_deref(), Some("2026-04-26"));
     // Out of the window once six months have passed.
-    let later = core.inicio(NOW + 200 * DAY, 0);
+    let later = core.inicio(NOW + 200 * DAY, 0, None);
     assert!(later.fileiras.iter().find(|f| f.nome == "Lançamentos para você").unwrap().movies.is_empty());
 }
 
@@ -133,7 +129,7 @@ fn para_rever_lists_ja_vi_movies_with_a_high_nota_prevista() {
 #[test]
 fn the_destaque_swipes_through_the_top_recomendacoes_not_set_aside() {
     let mut core = core();
-    let ids = |core: &Core| core.inicio(NOW, 0).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
+    let ids = |core: &Core| core.inicio(NOW, 0, None).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     assert_eq!(ids(&core), [6, 7, 2, 1, 3]);
 
     core.marcar(ObraId::filme(7), Marca::AgoraNao, true, NOW);
@@ -170,7 +166,7 @@ fn aclamados_pela_critica_use_critic_scores_and_the_public_where_critics_are_mis
 fn without_any_critic_scores_the_list_is_aclamados_pelo_publico() {
     let mut core = Core::open(CATALOG.replace("critic_score", "unknown").as_bytes()).unwrap();
     core.load_model(MODEL.as_bytes()).unwrap();
-    let nomes: Vec<String> = core.inicio(NOW, 0).fileiras.into_iter().map(|f| f.nome).collect();
+    let nomes: Vec<String> = core.inicio(NOW, 0, None).fileiras.into_iter().map(|f| f.nome).collect();
     assert!(!nomes.iter().any(|n| n == "Aclamados pela crítica"));
     assert_eq!(fileira(&core, "Aclamados pelo público"), [4]);
 }
@@ -200,7 +196,7 @@ fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
     let top = |filtro: &Filtro| -> Vec<u32> {
         (0..4).flat_map(|page| core.explorar(filtro, page).movies).take(100).map(|m| m.id.tmdb_id()).collect()
     };
-    let (first, second) = (core.inicio(NOW, 1), core.inicio(NOW, 2));
+    let (first, second) = (core.inicio(NOW, 1, Some(Tipo::Filme)), core.inicio(NOW, 2, Some(Tipo::Filme)));
 
     let destaques = |inicio: &cinelens_core::Inicio| inicio.destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     assert_ne!(destaques(&first), destaques(&second));
@@ -223,7 +219,7 @@ fn another_draw_shows_other_movies_that_are_still_top_recomendacoes() {
 #[test]
 fn setting_a_drawn_destaque_aside_replaces_only_it() {
     let mut core = many_good_bets();
-    let destaques = |core: &Core| core.inicio(NOW, 7).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
+    let destaques = |core: &Core| core.inicio(NOW, 7, None).destaques.iter().map(|d| d.card.id.tmdb_id()).collect::<Vec<_>>();
     let before = destaques(&core);
 
     core.marcar(ObraId::filme(before[1]), Marca::AgoraNao, true, NOW);
@@ -245,8 +241,79 @@ fn a_draw_never_trades_recomendacoes_for_movies_without_a_nota_prevista() {
     core.load_model(model.as_bytes()).unwrap();
 
     for sorteio in 1..20 {
-        let inicio = core.inicio(NOW, sorteio);
+        let inicio = core.inicio(NOW, sorteio, Some(Tipo::Filme));
         let f = inicio.fileiras.iter().find(|f| f.nome == "Cabe numa noite").unwrap();
         assert!(f.movies.iter().all(|m| m.nota_prevista.is_some()), "sorteio {sorteio}");
     }
+}
+
+#[test]
+fn a_type_chip_keeps_its_own_lists_and_narrows_the_mixed_ones() {
+    let core = core();
+    let inicio = core.inicio(NOW, 0, Some(Tipo::Filme));
+    let nomes: Vec<&str> = inicio.fileiras.iter().map(|f| f.nome.as_str()).collect();
+    assert!(nomes.contains(&"Em alta, do seu jeito") && nomes.contains(&"Sessão da Tarde"));
+    assert!(!nomes.contains(&"Séries para você") && !nomes.contains(&"Animes curtos"));
+    assert!(inicio.fileiras.iter().all(|f| f.filtro.tipo == Some(Tipo::Filme)));
+    assert!(core.inicio(NOW, 0, Some(Tipo::Serie)).destaques.is_empty());
+}
+
+#[test]
+fn com_quem_voce_e_fa_shows_only_their_obras() {
+    let catalog = CATALOG.replace(r#""tmdb_id": 6, "#, r#""tmdb_id": 6, "cast": [{"id": 77, "name": "Atriz"}], "#);
+    let mut core = Core::open(catalog.as_bytes()).unwrap();
+    core.load_model(MODEL.as_bytes()).unwrap();
+    assert!(fileira(&core, "Com quem você é fã").is_empty());
+    core.set_fa(77, true, NOW);
+    assert_eq!(fileira(&core, "Com quem você é fã"), [6]);
+}
+
+#[test]
+fn da_sua_lista_is_quero_assistir_on_the_owners_streaming_only() {
+    let core = core();
+    let f = core.inicio(NOW, 0, None).fileiras.into_iter().find(|f| f.nome == "Da sua lista, no seu streaming").unwrap();
+    assert!(f.filtro.no_meu_streaming);
+    assert_eq!(serde_json::to_value(&f.filtro.quero_assistir).unwrap(), "So");
+}
+
+#[test]
+fn feito_no_brasil_filters_by_production_country() {
+    let catalog = CATALOG.replace(r#""tmdb_id": 3, "#, r#""tmdb_id": 3, "countries": ["BR"], "#);
+    let mut core = Core::open(catalog.as_bytes()).unwrap();
+    core.load_model(MODEL.as_bytes()).unwrap();
+    assert_eq!(fileira(&core, "Feito no Brasil"), [3]);
+}
+
+#[test]
+fn porque_amou_names_the_last_loved_obra_and_leaves_out_what_was_rated() {
+    let mut core = Core::open(CATALOG.as_bytes()).unwrap();
+    core.load_model(MODEL.replace("[0.0]", "[1.0]").as_bytes()).unwrap();
+    assert!(core.inicio(NOW, 0, None).porque_amou.is_none());
+    core.rate(ObraId::filme(1), 5.0, NOW - 10).unwrap();
+    core.rate(ObraId::filme(2), 5.0, NOW).unwrap();
+    let row = core.inicio(NOW, 0, None).porque_amou.unwrap();
+    assert_eq!(row.nome, "Porque você amou Comédia Pesada");
+    assert!(!row.movies.is_empty());
+    assert!(row.movies.iter().all(|m| ![1, 2].contains(&m.id.tmdb_id())));
+    assert!(core.inicio(NOW, 0, Some(Tipo::Serie)).porque_amou.is_none());
+}
+
+#[test]
+fn porque_amou_falls_back_on_an_earlier_loved_obra_with_a_row() {
+    // 7 has no factors, so nothing is like it; 1 is loved before it.
+    let mut core = Core::open(CATALOG.as_bytes()).unwrap();
+    let model = MODEL.replace("[0.0]", "[1.0]").replace(r#"{"tmdb_id": 7, "bias": 0.55, "factors": [1.0], "ratings": 50000},"#, "");
+    core.load_model(model.as_bytes()).unwrap();
+    core.rate(ObraId::filme(1), 5.0, NOW - 10).unwrap();
+    core.rate(ObraId::filme(7), 5.0, NOW).unwrap();
+    assert_eq!(core.inicio(NOW, 0, None).porque_amou.unwrap().nome, "Porque você amou Aventura Livre");
+}
+
+#[test]
+fn estreia_entre_counts_a_premiere_inside_the_days_only() {
+    let filtro = |de: &str, ate: &str| Filtro { estreia_entre: Some((de.into(), ate.into())), ..Default::default() };
+    let core = core();
+    let ids = |f: Filtro| core.explorar(&f, 0).movies.iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>();
+    assert_eq!(ids(filtro("2026-07-01", "2026-09-01")), [7]);
+    assert!(ids(filtro("2026-09-02", "2026-12-01")).is_empty());
 }

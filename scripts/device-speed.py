@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 APP = "io.github.lucasjlbraz.cinelens"
 # What only navigates. Add here only labels that change no data.
-PERMITIDOS = {"Início", "Explorar", "Perfil", "Tudo", "Animes"}
+PERMITIDOS = {"Início", "Buscar", "Perfil", "Tudo", "Animes", "Para você"}
 serial = sys.argv[1]
 
 
@@ -108,10 +108,11 @@ def main():
     shell("monkey", "-p", APP, "-c", "android.intent.category.LAUNCHER", "1")
     time.sleep(3)
 
-    abas = {nome: tocar(nome) for nome in ["Início", "Explorar", "Perfil"]}
-    print("abas", [medir(*abas[nome]) for nome in ["Início", "Perfil", "Explorar"] * 3])
+    abas = {nome: tocar(nome) for nome in ["Início", "Buscar", "Perfil"]}
+    print("abas", [medir(*abas[nome]) for nome in ["Início", "Perfil", "Buscar"] * 3])
 
-    # Explorar is open: its filters are on screen.
+    # Buscar is open on its blocos; Para você opens the grid, with the type chips on screen.
+    medir(*tocar("Para você"))
     animes, tudo = tocar("Animes"), tocar("Tudo")
     print("filtro para Animes e de volta para Tudo", [medir(*p) for p in [animes, tudo] * 3])
 

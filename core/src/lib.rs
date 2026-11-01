@@ -321,6 +321,7 @@ pub struct MovieCard {
     #[serde(rename = "tmdb_id")]
     pub id: ObraId,
     pub title: String,
+    pub tipo: Tipo,
     pub original_title: String,
     pub year: Option<u16>,
     pub poster_url: Option<String>,
@@ -453,12 +454,21 @@ pub struct Notificacao {
     pub texto: String,
 }
 
-/// One of Início's rows: the first movies Explorar shows with a lista pronta's filtro.
+/// One of Início's rows: the first movies Buscar shows with a lista pronta's filtro.
 #[derive(Debug, Serialize)]
 pub struct Fileira {
     pub nome: String,
-    /// What its chip and "ver tudo" open Explorar with.
+    /// What "ver tudo" opens Buscar with.
     pub filtro: Filtro,
+    pub movies: Vec<MovieCard>,
+}
+
+const PORQUE_AMOU_TENTATIVAS: usize = 5;
+
+/// A row with no lista pronta behind it, so nothing for "ver tudo" to open.
+#[derive(Debug, Serialize)]
+pub struct PorqueAmou {
+    pub nome: String,
     pub movies: Vec<MovieCard>,
 }
 
@@ -467,6 +477,8 @@ pub struct Inicio {
     pub destaques: Vec<Destaque>,
     /// Every lista pronta, in order; some may have no movies.
     pub fileiras: Vec<Fileira>,
+    /// Parecidos of what the owner loved last; absent with nothing to show.
+    pub porque_amou: Option<PorqueAmou>,
     /// A plain reminder, the latest premiere first; empty, the row is absent.
     pub proximas_temporadas: Vec<ProximaTemporada>,
 }
@@ -1262,27 +1274,28 @@ impl Core {
 
     /// The destaque, Início's featured pick: the top recomendação not set aside with agora não.
     pub fn destaque(&self, at: i64) -> Option<MovieCard> {
-        self.destaques(at, 1).next().map(|i| self.card(i))
+        self.destaques(at, 1, None).next().map(|i| self.card(i))
     }
 
-    /// The top `n` recomendações not set aside with agora não, best first.
-    fn destaques(&self, at: i64, n: usize) -> impl Iterator<Item = usize> + '_ {
+    /// The top `n` recomendações of `tipo` (`None` is Tudo) not set aside with agora não, best first.
+    fn destaques(&self, at: i64, n: usize, tipo: Option<Tipo>) -> impl Iterator<Item = usize> + '_ {
         let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].id).is_some_and(|&until| at < until);
-        self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
+        self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i) && tipo.is_none_or(|t| t == self.movies[i].tipo())).take(n)
     }
 
     /// Início: the destaques to swipe through and a row per lista pronta; `at` is now (Unix
     /// seconds). `sorteio` 0 shows the best of each; any other draws others from the top
-    /// `SORTEIO`, so a refresh shows different movies that are still good bets.
-    pub fn inicio(&self, at: i64, sorteio: u64) -> Inicio {
+    /// `SORTEIO`, so a refresh shows different movies that are still good bets. `tipo` is the
+    /// type chip; `None` is Tudo.
+    pub fn inicio(&self, at: i64, sorteio: u64, tipo: Option<Tipo>) -> Inicio {
         let id = |&i: &usize| self.movies[i].id;
-        let destaques = sortear(self.destaques(at, SORTEIO).collect(), DESTAQUES, sorteio, id);
+        let destaques = sortear(self.destaques(at, SORTEIO, tipo).collect(), DESTAQUES, sorteio, id);
         let destaques = destaques.into_iter().map(|i| Destaque {
             card: self.card(i),
             porque: self.porque(i),
             quero_assistir: self.owner.quero_assistir.contains(&self.movies[i].id),
         });
-        let fileiras = listas::listas(at, self.tem_critica).into_iter().map(|(nome, filtro)| {
+        let fileiras = listas::listas_de(at, self.tem_critica, tipo).into_iter().map(|(nome, filtro)| {
             let mut movies = self.explorar(&filtro, 0).movies;
             // Only recomendações are drawn: past them, Explorar lists the rest in catálogo order.
             let recomendacoes = movies.iter().take_while(|m| m.nota_prevista.is_some()).count();
@@ -1290,7 +1303,35 @@ impl Core {
             let movies = sortear(movies, FILEIRA, sorteio, |m| m.id);
             Fileira { nome: nome.to_string(), filtro, movies }
         });
-        Inicio { destaques: destaques.collect(), fileiras: fileiras.collect(), proximas_temporadas: self.proximas_temporadas() }
+        Inicio {
+            destaques: destaques.collect(),
+            fileiras: fileiras.collect(),
+            porque_amou: self.porque_amou(tipo),
+            proximas_temporadas: if tipo.is_none_or(|t| t == Tipo::Anime) { self.proximas_temporadas() } else { Vec::new() },
+        }
+    }
+
+    /// The recomendações most like the obra of `tipo` the owner loved last that has any; parecidos
+    /// are of the loved obra's own type.
+    fn porque_amou(&self, tipo: Option<Tipo>) -> Option<PorqueAmou> {
+        let mut amadas: Vec<(i64, usize)> = self
+            .owner
+            .notas
+            .iter()
+            .filter_map(|(id, h)| {
+                let e = h.last().filter(|e| e.nota >= LOVED)?;
+                Some((e.at, *self.index.get(id)?))
+            })
+            .filter(|&(_, i)| tipo.is_none_or(|t| t == self.movies[i].tipo()))
+            .collect();
+        amadas.sort_by_key(|&(at, i)| std::cmp::Reverse((at, self.movies[i].id)));
+        // ponytail: a few tries, each a scan of every obra; more if the row is often absent.
+        amadas.into_iter().take(PORQUE_AMOU_TENTATIVAS).find_map(|(_, i)| {
+            // More than a row: what the owner has already seen is left out after.
+            let movies: Vec<MovieCard> =
+                self.alike(i, FILEIRA * 4).into_iter().filter(|&j| self.recomendavel(j)).take(FILEIRA).map(|j| self.card(j)).collect();
+            (!movies.is_empty()).then(|| PorqueAmou { nome: format!("Porque você amou {}", self.movies[i].title), movies })
+        })
     }
 
     /// From the owner's own notas and marks and TMDB's dates only. A nota on a temporada has seen
@@ -1894,6 +1935,7 @@ impl Core {
         MovieCard {
             id: m.id,
             title: m.title.clone(),
+            tipo: m.tipo(),
             original_title: m.original_title.clone(),
             year: m.year,
             poster_url: m.poster_path.as_ref().map(|p| format!("{POSTER_BASE}{p}")),

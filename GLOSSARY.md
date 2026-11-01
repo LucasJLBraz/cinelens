@@ -61,7 +61,7 @@ The set of all obras the app knows about, including recent releases.
 _Avoid_: base, acervo
 
 **Quero assistir** (Watchlist):
-Movies the owner has marked to watch later.
+Obras the owner has marked to watch later, with a tab of their own where each shows its type and can be unmarked.
 _Avoid_: wishlist, lista de desejos
 
 **Importação** (Import):
@@ -73,7 +73,7 @@ Exchange of changes between the owner's devices through cloud storage; on confli
 _Avoid_: backup, upload
 
 **Lista pronta** (Preset list):
-A named, app-defined combination of filters and ranking, such as "Sessão da Tarde" or "Joias escondidas".
+A named, app-defined combination of filters and ranking, such as "Sessão da Tarde" or "Joias escondidas". Início also shows one row that is not a lista pronta: "Porque você amou X", the parecidos of the obra the owner loved last.
 _Avoid_: filtro salvo, coleção, playlist
 
 **Parecidos** (Similar titles):
@@ -123,12 +123,12 @@ _Avoid_: movie tuner, filtro de parecidos
 ## Screens
 
 **Início** (Home):
-The showcase screen of ready-made entry points (featured pick, preset lists, rows); it holds no filters.
+The showcase screen of ready-made entry points (featured pick, rows of listas prontas), mixing filmes, séries and animes; type chips narrow it, and it holds no other filters.
 _Avoid_: feed, dashboard, vitrine
 
-**Explorar** (Explore):
-The single filterable grid of the catalog, opened unfiltered or with a filter pre-set from Início; search lives here.
-_Avoid_: buscar, grade, catálogo (for the screen)
+**Buscar** (Search):
+The search screen and single filterable grid of the catalog. With nothing set it shows genre blocks; a block, a filter, a busca or a lista pronta from Início opens the grid. In code it is still `explorar`.
+_Avoid_: explorar, grade, catálogo (for the screen)
 
 **Minhas notas** (My ratings):
 The list of every movie the owner rated, the most recent nota first, opened from Perfil.

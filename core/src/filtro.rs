@@ -50,6 +50,14 @@ pub struct Filtro {
     pub idioma: Option<String>,
     /// Production country, ISO 3166-1.
     pub pais: Option<String>,
+    /// At most this many temporadas; only séries and animes have them.
+    pub temporadas_max: Option<u32>,
+    /// At most this many episódios in all; an anime with no count does not pass.
+    pub episodios_max: Option<u32>,
+    /// Premiered between these days (`YYYY-MM-DD`), itself or one of its temporadas.
+    pub estreia_entre: Option<(String, String)>,
+    /// Only obras with a person the owner is fã of.
+    pub com_fa: bool,
     pub nota_prevista_min: Option<f32>,
     pub confianca_min: Option<f32>,
     /// A nota prevista in this faixa or a better one, whatever the display mode.
@@ -136,6 +144,16 @@ impl<'a> Matcher<'a> {
             && (f.situacao.is_none() || f.situacao == m.situacao)
             && f.idioma.as_ref().is_none_or(|l| m.original_language.as_ref() == Some(l))
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
+            && f.temporadas_max.is_none_or(|max| m.number_of_seasons.is_some_and(|n| n <= max))
+            && f.episodios_max.is_none_or(|max| {
+                let episodios: u32 = m.temporadas.iter().filter_map(|t| t.episodios).sum();
+                episodios > 0 && episodios <= max
+            })
+            && f.estreia_entre.as_ref().is_none_or(|(de, ate)| {
+                let dentro = |d: &String| d >= de && d <= ate;
+                m.release_date.as_ref().is_some_and(dentro) || m.temporadas.iter().any(|t| t.estreia.as_ref().is_some_and(dentro))
+            })
+            && (!f.com_fa || m.people().any(|p| owner.fas.contains(&p.id)))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
             && (!f.em_alta || core.em_alta[m.tipo() as usize].contains(&m.id))
