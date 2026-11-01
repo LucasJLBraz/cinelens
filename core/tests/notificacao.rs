@@ -28,7 +28,8 @@ fn core(fillers: u32) -> Core {
     }
     let catalog = format!(r#"{{"format_version": 1, "data_version": "t", "movies": [{}]}}"#, movies.join(","));
     let model = format!(
-        r#"{{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "content": [], "movies": [{}]}}"#,
+        r#"{{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+            "content": [{{"feature": "g1", "bias": 1.0, "factors": [0.0]}}, {{"feature": "g2", "bias": -1.0, "factors": [0.0]}}], "movies": [{}]}}"#,
         model.join(",")
     );
     let mut core = Core::open(catalog.as_bytes()).unwrap();
@@ -121,4 +122,63 @@ fn a_notification_on_one_device_counts_on_the_others() {
 
     assert_eq!(notified(&mut tablet, HOJE + DIA), None);
     assert_eq!(notified(&mut tablet, HOJE + 7 * DIA), Some(2));
+}
+
+mod series {
+    use super::*;
+    use cinelens_core::Reacao;
+
+    const NOVA: ObraId = ObraId::serie(1);
+
+    /// `core(40)` plus série 1 as `nova` says and 40 low séries first aired long ago, all with
+    /// enough votes; the fillers set the floor at 7.
+    fn com_serie(nova: &str) -> Core {
+        let obra = |id: u32, resto: &str| format!(r#"{{"tmdb_id": {}, "title": "S{id}", "original_title": "S{id}", "poster_path": null, "vote_count": 100, {resto}}}"#, ObraId::serie(id));
+        let mut series = vec![obra(1, &format!(r#""genre_ids": [1], {nova}"#))];
+        series.extend((100..140).map(|id| obra(id, r#""genre_ids": [2], "vote_average": 7.0, "release_date": "2000-01-01""#)));
+        let mut core = core(40);
+        let asset = format!(r#"{{"format_version": 1, "data_version": "t", "movies": [{}]}}"#, series.join(","));
+        core.load_series(asset.as_bytes()).unwrap();
+        core
+    }
+
+    fn com_notas(mut core: Core, n: u32) -> Core {
+        (0..n).for_each(|k| _ = core.reagir(ObraId::serie(100 + k), Reacao::Gostei, HOJE).unwrap());
+        core
+    }
+
+    const BOA: &str = r#""vote_average": 8.0, "release_date": "2026-10-20""#;
+
+    #[test]
+    fn with_fewer_than_10_notas_on_series_only_filmes_are_notified() {
+        let core = com_notas(com_serie(BOA), 9);
+        assert_eq!(core.notificacao_devida(HOJE).map(|n| n.id), Some(ObraId::filme(1)));
+    }
+
+    #[test]
+    fn from_10_notas_on_series_a_new_serie_competes() {
+        let core = com_notas(com_serie(BOA), 10);
+        assert_eq!(core.notificacao_devida(HOJE).map(|n| n.id), Some(NOVA));
+    }
+
+    #[test]
+    fn a_serie_below_the_floor_is_never_notified() {
+        let core = com_notas(com_serie(r#""vote_average": 2.0, "release_date": "2026-10-20""#), 10);
+        assert_eq!(core.notificacao_devida(HOJE).map(|n| n.id), Some(ObraId::filme(1)));
+    }
+
+    #[test]
+    fn a_new_season_triggers_nothing() {
+        // Still airing, with a new season out, but its first episode is old.
+        let core = com_notas(com_serie(r#""vote_average": 8.0, "release_date": "2015-01-01", "situacao": "em_andamento""#), 10);
+        assert_eq!(core.notificacao_devida(HOJE).map(|n| n.id), Some(ObraId::filme(1)));
+    }
+
+    #[test]
+    fn at_most_one_notification_a_week_across_both_types() {
+        let mut core = com_notas(com_serie(BOA), 10);
+        core.notificado(NOVA, HOJE);
+        assert!(core.notificacao_devida(HOJE + 6 * DIA).is_none());
+        assert_eq!(core.notificacao_devida(HOJE + 7 * DIA).map(|n| n.id), Some(ObraId::filme(1)));
+    }
 }

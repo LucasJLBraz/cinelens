@@ -67,6 +67,8 @@ const MAE_FRACAO: f32 = 0.2;
 const NOTIFICACAO_SECS: i64 = 7 * 86_400;
 /// ...about a movie released at most this many days ago.
 const NOVO_DIAS: i64 = 30;
+/// Notas on séries before a série can be notified: until then its evidence is almost all filmes.
+const NOTIFICACAO_MIN_NOTAS_SERIES: usize = 10;
 
 #[derive(Debug)]
 pub enum Error {
@@ -1128,7 +1130,9 @@ impl Core {
     }
 
     /// The weekly notification, if one is due at `at` (Unix seconds): the best recomendação
-    /// released in the last `NOVO_DIAS` days, in Aposta forte and never announced before.
+    /// released in the last `NOVO_DIAS` days, in Aposta forte and never announced before. A série
+    /// competes once the owner has `NOTIFICACAO_MIN_NOTAS_SERIES` notas on séries; its release is
+    /// its first episode, so a new season announces nothing.
     pub fn notificacao_devida(&self, at: i64) -> Option<Notificacao> {
         let last = self.owner.notificados.values().max();
         if self.owner.settings.sem_notificacao || last.is_some_and(|&t| at - t < NOTIFICACAO_SECS) {
@@ -1136,10 +1140,11 @@ impl Core {
         }
         let (desde, hoje) = (listas::date(at - NOVO_DIAS * 86_400), listas::date(at));
         let novo = |m: &Movie| m.release_date.as_ref().is_some_and(|d| *d >= desde && *d <= hoje);
+        let series = self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count() >= NOTIFICACAO_MIN_NOTAS_SERIES;
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
-            let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, &self.ranked) == Faixa::ApostaForte);
-            alta && novo(m) && !m.id.is_serie() && !self.owner.notificados.contains_key(&m.id)
+            let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, self.ranked_de(i)) == Faixa::ApostaForte);
+            alta && novo(m) && (series || !m.id.is_serie()) && !self.owner.notificados.contains_key(&m.id)
         })?;
         let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {
