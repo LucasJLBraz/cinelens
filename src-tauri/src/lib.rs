@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Reacao, Rejeicao, SyncStorage, Tipo, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Reacao, Rejeicao, SyncStorage, Tipo, ANIME_MODEL_FORMAT_VERSION, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -28,6 +28,10 @@ fn catalog_release(asset: &str) -> String {
 
 fn model_release(asset: &str) -> String {
     format!("https://github.com/LucasJLBraz/cinelens/releases/download/model-v{MODEL_FORMAT_VERSION}/{asset}")
+}
+
+fn anime_model_release(asset: &str) -> String {
+    format!("https://github.com/LucasJLBraz/cinelens/releases/download/anime-model-v{ANIME_MODEL_FORMAT_VERSION}/{asset}")
 }
 
 fn catalog_url() -> String {
@@ -52,6 +56,14 @@ fn series_file(app: &AppHandle) -> PathBuf {
 
 fn model_file(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().expect("app data dir").join("model.json")
+}
+
+fn animes_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("animes.json")
+}
+
+fn anime_model_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("anime-model.json")
 }
 
 fn owner_file(app: &AppHandle) -> PathBuf {
@@ -215,6 +227,45 @@ fn reagir(
     let revealed = core.reagir(tmdb_id, reacao, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
+}
+
+/// `rate`, on one temporada of an anime.
+#[tauri::command]
+fn rate_temporada(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    tmdb_id: ObraId,
+    temporada: u32,
+    nota: f32,
+) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
+    let mut core = core.write().unwrap();
+    let revealed = core.rate_temporada(tmdb_id, temporada, nota, now()).map_err(|e| e.to_string())?;
+    save_owner(&app, &core)?;
+    Ok((core.movie(tmdb_id), revealed))
+}
+
+/// `reagir`, on one temporada of an anime.
+#[tauri::command]
+fn reagir_temporada(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    tmdb_id: ObraId,
+    temporada: u32,
+    reacao: Reacao,
+) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
+    let mut core = core.write().unwrap();
+    let revealed = core.reagir_temporada(tmdb_id, temporada, reacao, now()).map_err(|e| e.to_string())?;
+    save_owner(&app, &core)?;
+    Ok((core.movie(tmdb_id), revealed))
+}
+
+/// Forgets the nota on a temporada; returns the anime's page after.
+#[tauri::command]
+fn remover_nota_temporada(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, temporada: u32) -> Result<Option<MoviePage>, String> {
+    let mut core = core.write().unwrap();
+    core.remover_nota_temporada(tmdb_id, temporada, now());
+    save_owner(&app, &core)?;
+    Ok(core.movie(tmdb_id))
 }
 
 /// A poster's bytes, for the share card: drawn from these, a canvas can still be exported.
@@ -423,6 +474,9 @@ async fn download_catalog(app: AppHandle) -> Result<(), String> {
         if let Err(e) = update_series(&app) {
             eprintln!("séries update: {e}");
         }
+        if let Err(e) = update_animes(&app) {
+            eprintln!("animes update: {e}");
+        }
         Ok(())
     })
     .await
@@ -436,7 +490,11 @@ async fn download_model(app: AppHandle) -> Result<(), String> {
         let json = download(&app, &model_url())?;
         Core::default().load_model(&json).map_err(|e| e.to_string())?;
         write_atomically(&model_file(&app), &json).map_err(|e| e.to_string())?;
-        app.state::<RwLock<Core>>().write().unwrap().load_model(&json).map_err(|e| e.to_string())
+        app.state::<RwLock<Core>>().write().unwrap().load_model(&json).map_err(|e| e.to_string())?;
+        if let Err(e) = update_anime_model(&app) {
+            eprintln!("anime model update: {e}");
+        }
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -473,6 +531,39 @@ fn update_series(app: &AppHandle) -> Result<(), String> {
     Core::default().load_series(&json).map_err(|e| e.to_string())?;
     write_atomically(&series_file(app), &json).map_err(|e| e.to_string())?;
     app.state::<RwLock<Core>>().write().unwrap().load_series(&json).map_err(|e| e.to_string())?;
+    let _ = app.emit("atualizado", ());
+    Ok(())
+}
+
+/// Brings the animes up to date with the published ones, like the séries.
+fn update_animes(app: &AppHandle) -> Result<(), String> {
+    if app.state::<RwLock<Core>>().read().unwrap().data_version().is_none() {
+        return Ok(());
+    }
+    let Some(latest) = fetch(&catalog_release("animes-version.txt"))? else { return Ok(()) };
+    let version = app.state::<RwLock<Core>>().read().unwrap().animes_version().map(str::to_string);
+    if version.as_deref() == Some(String::from_utf8_lossy(&latest).trim()) {
+        return Ok(());
+    }
+    let json = download(app, &catalog_release("animes.json.gz"))?;
+    Core::default().load_animes(&json).map_err(|e| e.to_string())?;
+    write_atomically(&animes_file(app), &json).map_err(|e| e.to_string())?;
+    app.state::<RwLock<Core>>().write().unwrap().load_animes(&json).map_err(|e| e.to_string())?;
+    let _ = app.emit("atualizado", ());
+    Ok(())
+}
+
+/// Brings the anime model up to date; it trains only on demand, and has no accuracy gate (ADR 0004).
+fn update_anime_model(app: &AppHandle) -> Result<(), String> {
+    let Some(latest) = fetch(&anime_model_release("anime-model-version.txt"))? else { return Ok(()) };
+    let version = app.state::<RwLock<Core>>().read().unwrap().anime_model_version().map(str::to_string);
+    if version.as_deref() == Some(String::from_utf8_lossy(&latest).trim()) {
+        return Ok(());
+    }
+    let json = download(app, &anime_model_release("anime-model.json.gz"))?;
+    Core::default().load_anime_model(&json).map_err(|e| e.to_string())?;
+    write_atomically(&anime_model_file(app), &json).map_err(|e| e.to_string())?;
+    app.state::<RwLock<Core>>().write().unwrap().load_anime_model(&json).map_err(|e| e.to_string())?;
     let _ = app.emit("atualizado", ());
     Ok(())
 }
@@ -642,11 +733,13 @@ pub fn run() {
                     let _ = locked.send(());
                     let catalog = std::fs::read(catalog_file(&handle)).ok();
                     let series = std::fs::read(series_file(&handle)).ok();
+                    let animes = std::fs::read(animes_file(&handle)).ok();
                     let model = std::fs::read(model_file(&handle)).ok();
-                    core.load_saved(catalog.as_deref(), series.as_deref(), model.as_deref());
+                    let anime_model = std::fs::read(anime_model_file(&handle)).ok();
+                    core.load_saved(catalog.as_deref(), series.as_deref(), animes.as_deref(), model.as_deref(), anime_model.as_deref());
                 }
                 loop {
-                    let updates = [("catálogo", update_catalog(&handle)), ("séries", update_series(&handle)), ("model", update_model(&handle))];
+                    let updates = [("catálogo", update_catalog(&handle)), ("séries", update_series(&handle)), ("animes", update_animes(&handle)), ("model", update_model(&handle)), ("anime model", update_anime_model(&handle))];
                     for (what, result) in updates.into_iter().chain([("notification", notify(&handle))]) {
                         if let Err(e) = result {
                             eprintln!("{what} update: {e}");
@@ -680,6 +773,9 @@ pub fn run() {
             movie,
             rate,
             reagir,
+            rate_temporada,
+            reagir_temporada,
+            remover_nota_temporada,
             marcar,
             pessoa,
             set_fa,

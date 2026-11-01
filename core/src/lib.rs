@@ -79,6 +79,7 @@ pub enum Error {
     ReacaoEmFilme,
     InvalidOwnerData(String),
     Sync(String),
+    TemporadaSemNota,
 }
 
 impl std::fmt::Display for Error {
@@ -91,6 +92,7 @@ impl std::fmt::Display for Error {
             Error::ReacaoEmFilme => write!(f, "a reação is only for séries"),
             Error::InvalidOwnerData(msg) => write!(f, "invalid owner data: {msg}"),
             Error::Sync(msg) => write!(f, "sync: {msg}"),
+            Error::TemporadaSemNota => write!(f, "this temporada takes no nota of its own"),
         }
     }
 }
@@ -531,6 +533,22 @@ pub struct MoviePage {
     pub onde_assistir: Option<OndeAssistir>,
     /// What the owner said weighed in their nota.
     pub pesou: Vec<Aspecto>,
+    /// Animes only: TMDB's temporadas.
+    pub lista_temporadas: Vec<TemporadaPagina>,
+}
+
+/// One of an anime's temporadas on its page.
+#[derive(Debug, Serialize)]
+pub struct TemporadaPagina {
+    pub numero: u32,
+    pub nome: String,
+    pub episodios: Option<u32>,
+    pub ano: Option<u16>,
+    /// Takes a nota of its own: there are ratings behind it, and the anime has more than one entry.
+    pub avaliavel: bool,
+    pub nota: Option<f32>,
+    pub reacao: Option<Reacao>,
+    pub history: Vec<NotaEntry>,
 }
 
 /// What the owner can mark a movie with, and unmark.
@@ -613,6 +631,9 @@ struct Settings {
 #[derive(Default, Serialize, Deserialize)]
 struct OwnerData {
     notas: BTreeMap<ObraId, Vec<NotaEntry>>,
+    /// Anime → temporada → its notas; a nota here wins over the whole for that temporada.
+    #[serde(default)]
+    notas_temporada: BTreeMap<ObraId, BTreeMap<u32, Vec<NotaEntry>>>,
     quero_assistir: BTreeSet<ObraId>,
     #[serde(default)]
     ja_vi: BTreeSet<ObraId>,
@@ -661,6 +682,17 @@ impl OwnerData {
         }
     }
 
+    fn add_nota_temporada(&mut self, id: ObraId, temporada: u32, entry: NotaEntry) {
+        if self.changed.get(&sync::key_temporada(id, temporada)).is_some_and(|&at| entry.at <= at) {
+            return;
+        }
+        let history = self.notas_temporada.entry(id).or_default().entry(temporada).or_default();
+        if !history.contains(&entry) {
+            history.push(entry);
+            history.sort_by_key(|e| e.at);
+        }
+    }
+
     fn stamp(&mut self, key: String, at: i64) {
         self.changed.insert(key, at);
     }
@@ -693,10 +725,14 @@ pub struct Core {
     piso_series: f32,
     owner: OwnerData,
     model: Option<Model>,
+    /// Trained on MyAnimeList: predicts only animes, in factors of its own (ADR 0004).
+    anime_model: Option<Model>,
     /// The owner's side of the model for filmes, from the last fold-in: only notas on filmes.
     profile: Option<recommender::Profile>,
     /// The same for séries, always predicted through content.
     profile_series: Option<recommender::Profile>,
+    /// The same for animes: notas on animes and on filmes, none on séries.
+    profile_animes: Option<recommender::Profile>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
     items: Vec<Option<recommender::Item>>,
     /// Aligned with `movies`: (nota prevista, confiança).
@@ -710,6 +746,8 @@ pub struct Core {
     ranked: Vec<f32>,
     /// The same for séries.
     ranked_series: Vec<f32>,
+    /// The same for animes.
+    ranked_animes: Vec<f32>,
     /// In effect in the last fold-in.
     half_life_days: Option<u32>,
 }
@@ -802,14 +840,15 @@ impl Core {
 
     /// Loads what a launch finds on disk, parsing all of it at once to open faster. Whatever is
     /// missing or invalid stays out: the UI downloads it again.
-    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, series_artifact: Option<&[u8]>, animes_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
-        let (catalog, series, animes, model) = std::thread::scope(|s| {
+    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, series_artifact: Option<&[u8]>, animes_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>, anime_model_artifact: Option<&[u8]>) {
+        let (catalog, series, animes, model, anime_model) = std::thread::scope(|s| {
+            let anime_model = s.spawn(|| anime_model_artifact.and_then(|bytes| Model::parse_anime(bytes).ok()));
             let model = s.spawn(|| model_artifact.and_then(|bytes| Model::parse(bytes).ok()));
             let series = s.spawn(|| series_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Serie).ok()));
             let animes = s.spawn(|| animes_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Anime).ok()));
             let catalog = catalog_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Filme).ok());
             let joined = |what| format!("{what} parse does not panic");
-            (catalog, series.join().expect(&joined("series")), animes.join().expect(&joined("animes")), model.join().expect(&joined("model")))
+            (catalog, series.join().expect(&joined("series")), animes.join().expect(&joined("animes")), model.join().expect(&joined("model")), anime_model.join().expect(&joined("anime model")))
         });
         if let Some(catalog) = catalog {
             self.merge(catalog, Tipo::Filme);
@@ -823,6 +862,9 @@ impl Core {
         if model.is_some() {
             self.model = model;
         }
+        if anime_model.is_some() {
+            self.anime_model = anime_model;
+        }
         self.index_catalog();
         self.refresh_items();
     }
@@ -832,6 +874,18 @@ impl Core {
         self.model = Some(Model::parse(model_artifact)?);
         self.refresh_items();
         Ok(())
+    }
+
+    /// Replaces the anime model. On error the current one stays in place. No accuracy gate: the
+    /// owner's check is the informational MAE (ADR 0004).
+    pub fn load_anime_model(&mut self, model_artifact: &[u8]) -> Result<(), Error> {
+        self.anime_model = Some(Model::parse_anime(model_artifact)?);
+        self.refresh_items();
+        Ok(())
+    }
+
+    pub fn anime_model_version(&self) -> Option<&str> {
+        self.anime_model.as_ref().map(|m| m.data_version.as_str())
     }
 
     /// Replaces the model with a new version only if it predicts the owner's most recent notas
@@ -868,11 +922,21 @@ impl Core {
         self.model.as_ref().map(|m| m.data_version.as_str())
     }
 
+    /// What predicts an obra of `tipo`.
+    fn model_de(&self, tipo: Tipo) -> Option<&Model> {
+        if tipo == Tipo::Anime { self.anime_model.as_ref() } else { self.model.as_ref() }
+    }
+
+    fn profile_de(&self, tipo: Tipo) -> Option<&recommender::Profile> {
+        match tipo {
+            Tipo::Filme => self.profile.as_ref(),
+            Tipo::Serie => self.profile_series.as_ref(),
+            Tipo::Anime => self.profile_animes.as_ref(),
+        }
+    }
+
     fn refresh_items(&mut self) {
-        self.items = match &self.model {
-            None => vec![None; self.movies.len()],
-            Some(model) => par_map(&self.movies, |m| model.item(m.id, &m.content_features())),
-        };
+        self.items = par_map(&self.movies, |m| self.model_de(m.tipo())?.item(m.id, &m.content_features()));
         self.recompute();
     }
 
@@ -883,28 +947,26 @@ impl Core {
         self.half_life_days = self.half_life(self.model.as_ref(), &notas);
         self.profile = self.model.as_ref().map(|m| m.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days));
         self.profile_series = self.model.as_ref().map(|m| self.fold_in_series(m, &self.owner.notas, SERIE_WEIGHT));
-        self.previstas = match (&self.model, &self.profile, &self.profile_series) {
-            (Some(model), Some(filmes), Some(series)) => {
-                let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
-                    if self.rated(m.id) {
-                        None
-                    } else {
-                        let profile = if m.id.is_serie() { series } else { filmes };
-                        item.as_ref()
-                            .map(|item| (model.predict(profile, item), item.confianca))
-                    }
-                });
-                previstas.collect()
-            }
-            _ => vec![None; self.movies.len()],
-        };
-        let ranked = |series: bool| {
-            let of_type = self.movies.iter().zip(&self.previstas).filter(|(m, _)| m.id.is_serie() == series);
+        self.profile_animes = self.anime_model.as_ref().map(|m| self.fold_in_animes(m, None));
+        self.previstas = self
+            .movies
+            .iter()
+            .zip(&self.items)
+            .map(|(m, item)| {
+                if self.rated(m.id) {
+                    return None;
+                }
+                let (tipo, item) = (m.tipo(), item.as_ref()?);
+                Some((self.model_de(tipo)?.predict(self.profile_de(tipo)?, item), item.confianca))
+            })
+            .collect();
+        let ranked = |tipo: Tipo| {
+            let of_type = self.movies.iter().zip(&self.previstas).filter(|(m, _)| m.tipo() == tipo);
             let mut ranked: Vec<f32> = of_type.filter_map(|(_, p)| p.map(|(p, _)| p)).collect();
             ranked.sort_by(|a, b| b.total_cmp(a));
             ranked
         };
-        (self.ranked, self.ranked_series) = (ranked(false), ranked(true));
+        (self.ranked, self.ranked_series, self.ranked_animes) = (ranked(Tipo::Filme), ranked(Tipo::Serie), ranked(Tipo::Anime));
         let pesos = self.pesos();
         self.boost = (0..self.movies.len()).map(|i| self.fa_boost(i) + self.pesou_boost(i, &pesos)).collect();
         // The rest keep catálogo order, after the recomendações.
@@ -916,17 +978,17 @@ impl Core {
     }
 
     /// Orders `obras` by `score` within each type, then by place within their type, so that
-    /// filmes do not crowd out séries only because content-based predictions sit closer to the
+    /// filmes do not crowd out séries or animes only because content-based predictions sit closer to the
     /// mean. With one type it is the order by `score`; ties across types keep the order by score.
     fn por_percentil(&self, obras: &mut [usize], score: impl Fn(usize) -> f32) {
         obras.sort_by(|&a, &b| score(b).total_cmp(&score(a)));
-        let series = obras.iter().filter(|&&i| self.movies[i].id.is_serie()).count();
-        let total = [obras.len() - series, series];
-        let mut contados = [0usize; 2];
+        let mut total = [0usize; 3];
+        obras.iter().for_each(|&i| total[self.movies[i].tipo() as usize] += 1);
+        let mut contados = [0usize; 3];
         let mut lugares: Vec<(f32, usize)> = obras
             .iter()
             .map(|&i| {
-                let tipo = usize::from(self.movies[i].id.is_serie());
+                let tipo = self.movies[i].tipo() as usize;
                 contados[tipo] += 1;
                 ((contados[tipo] - 1) as f32 / total[tipo] as f32, i)
             })
@@ -945,18 +1007,62 @@ impl Core {
 
     /// How many séries the owner gave a nota.
     pub(crate) fn notas_em_series(&self) -> usize {
-        self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count()
+        self.owner.notas.iter().filter(|(&id, h)| self.tipo(id) == Tipo::Serie && !h.is_empty()).count()
     }
 
-    /// What predicts séries: notas on filmes and, through their content, notas on séries.
+    /// What predicts séries: notas on filmes and, through their content, notas on séries; an anime
+    /// reads as nothing, so its notas teach nothing here.
     fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>, peso: f32) -> recommender::Profile {
-        let item = |id: ObraId| self.items.get(*self.index.get(&id)?)?.as_ref();
+        let item = |id: ObraId| {
+            let i = *self.index.get(&id)?;
+            self.items.get(i)?.as_ref().filter(|_| self.movies[i].tipo() == Tipo::Serie)
+        };
         model.profile_series(notas, &self.owner.nao_me_interessa, self.half_life_days, peso, item)
+    }
+
+    /// What predicts animes: notas on filmes, through the features shared with MyAnimeList or else
+    /// their content, and notas on animes, leaving out `sem`'s. Nothing from séries.
+    fn fold_in_animes(&self, model: &Model, sem: Option<ObraId>) -> recommender::Profile {
+        let mut rows: Vec<(recommender::Item, f32, i64, f32)> = Vec::new();
+        for (&id, h) in self.owner.notas.iter().filter(|(id, _)| !id.is_serie()) {
+            let Some(e) = h.last() else { continue };
+            let item = model.item(id, &[]).or_else(|| model.item(id, &self.movies[*self.index.get(&id)?].content_features()));
+            if let Some(item) = item {
+                let peso = if item.collaborative { 1.0 } else { recommender::FILME_CONTEUDO_WEIGHT };
+                rows.push((item, e.nota, e.at, peso));
+            }
+        }
+        let vazio = BTreeMap::new();
+        let animes = self.owner.notas.keys().chain(self.owner.notas_temporada.keys()).copied().collect::<BTreeSet<_>>();
+        for id in animes.into_iter().filter(|&id| self.tipo(id) == Tipo::Anime && Some(id) != sem) {
+            let Some(base) = self.index.get(&id).and_then(|&i| self.items[i].as_ref()) else { continue };
+            let de_temporada = self.owner.notas_temporada.get(&id).unwrap_or(&vazio);
+            let com_fatores = model.temporadas.get(&id);
+            for (t, h) in de_temporada {
+                let Some(e) = h.last() else { continue };
+                let item = com_fatores.and_then(|f| f.get(t)).unwrap_or(base);
+                rows.push((item.clone(), e.nota, e.at, recommender::ANIME_WEIGHT));
+            }
+            let Some(e) = self.owner.notas.get(&id).and_then(|h| h.last()) else { continue };
+            // The whole speaks for the temporadas with no nota of their own, as one nota in all.
+            let resto: Vec<&recommender::Item> = com_fatores.iter().flat_map(|f| f.iter()).filter(|(t, _)| !de_temporada.contains_key(t)).map(|(_, item)| item).collect();
+            match (resto.len(), com_fatores) {
+                (0, Some(_)) => {}
+                (0, None) if !de_temporada.is_empty() => {}
+                (0, None) => rows.push((base.clone(), e.nota, e.at, recommender::ANIME_WEIGHT)),
+                (n, _) => rows.extend(resto.into_iter().map(|item| (item.clone(), e.nota, e.at, recommender::ANIME_WEIGHT / n as f32))),
+            }
+        }
+        model.profile_anime(&rows, self.half_life_days)
     }
 
     /// What the Faixa of obra `i` is relative to: its own type's predictions.
     pub(crate) fn ranked_de(&self, i: usize) -> &[f32] {
-        if self.movies[i].id.is_serie() { &self.ranked_series } else { &self.ranked }
+        match self.movies[i].tipo() {
+            Tipo::Filme => &self.ranked,
+            Tipo::Serie => &self.ranked_series,
+            Tipo::Anime => &self.ranked_animes,
+        }
     }
 
     /// A recomendação: predicted, not já vi, assistindo or não me interessa, not below the floor.
@@ -979,7 +1085,7 @@ impl Core {
     }
 
     fn rated(&self, id: ObraId) -> bool {
-        self.owner.notas.get(&id).is_some_and(|h| !h.is_empty())
+        self.owner.notas.get(&id).is_some_and(|h| !h.is_empty()) || self.owner.notas_temporada.contains_key(&id)
     }
 
     /// What recomendações are ranked by: the nota prevista plus `boost`. Only for movies with a
@@ -992,8 +1098,7 @@ impl Core {
     /// does not outrank a well-known 4.6; only the order uses it, never what is shown.
     fn encolhida(&self, i: usize) -> Option<f32> {
         let (p, c) = self.previstas[i]?;
-        let profile = if self.movies[i].id.is_serie() { &self.profile_series } else { &self.profile };
-        let mean = profile.as_ref().map_or(p, |profile| profile.mean);
+        let mean = self.profile_de(self.movies[i].tipo()).map_or(p, |profile| profile.mean);
         Some(mean + (p - mean) * c * c)
     }
 
@@ -1157,18 +1262,18 @@ impl Core {
     }
 
     /// The rodada rápida's next `n` obras of `tipo`: those the owner most likely saw and whose
-    /// nota would move the owner's profile of that type most. Only filmes with collaborative
-    /// factors (a nota on any other teaches the fold-in nothing), any série the model can read,
-    /// and none rated, já vi, assistindo, não me interessa or skipped as não vi.
+    /// nota would move the owner's profile of that type most. Only filmes and animes with
+    /// collaborative factors (a nota on any other teaches the fold-in little), any série the model
+    /// can read, and none rated, já vi, assistindo, não me interessa or skipped as não vi. Always
+    /// about the whole of an anime.
     // ponytail: TMDB votes, linear, stand in for the chance the owner has seen it; learn it from
     // the não vi answers if the rodada still asks about too many unseen movies.
     pub fn rodada(&self, tipo: Tipo, n: usize) -> Vec<MovieCard> {
-        let series = tipo == Tipo::Serie;
-        let Some(profile) = (if series { &self.profile_series } else { &self.profile }) else { return Vec::new() };
+        let Some(profile) = self.profile_de(tipo) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = (0..self.movies.len())
             .filter_map(|i| {
                 let id = self.movies[i].id;
-                let item = self.items[i].as_ref().filter(|item| id.is_serie() == series && (series || item.collaborative))?;
+                let item = self.items[i].as_ref().filter(|item| self.movies[i].tipo() == tipo && (tipo == Tipo::Serie || item.collaborative))?;
                 let marcada = self.owner.ja_vi.contains(&id) || self.owner.assistindo.contains(&id);
                 let asked = self.rated(id) || marcada || self.owner.nao_vi.contains(&id);
                 (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.movies[i].vote_count as f32, i))
@@ -1232,7 +1337,12 @@ impl Core {
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, self.ranked_de(i)) == Faixa::ApostaForte);
-            alta && novo(m) && (series_competem || !m.id.is_serie()) && !self.owner.notificados.contains_key(&m.id)
+            let compete = match m.tipo() {
+                Tipo::Filme => true,
+                Tipo::Serie => series_competem,
+                Tipo::Anime => false,
+            };
+            alta && novo(m) && compete && !self.owner.notificados.contains_key(&m.id)
         })?;
         let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {
@@ -1325,6 +1435,49 @@ impl Core {
         Ok(self.dar_nota(id, reacao.nota(), Some(reacao), at))
     }
 
+    /// Gives or changes the owner's nota on one temporada of an anime; it wins over the whole for
+    /// that temporada. Only a temporada with ratings behind it, of an anime with more than one.
+    pub fn rate_temporada(&mut self, id: ObraId, temporada: u32, nota: f32, at: i64) -> Result<Option<Exibicao>, Error> {
+        if !is_valid_nota(nota) {
+            return Err(Error::InvalidNota(nota));
+        }
+        self.dar_nota_temporada(id, temporada, nota, None, at)
+    }
+
+    /// `rate_temporada`, as a Reação.
+    pub fn reagir_temporada(&mut self, id: ObraId, temporada: u32, reacao: Reacao, at: i64) -> Result<Option<Exibicao>, Error> {
+        self.dar_nota_temporada(id, temporada, reacao.nota(), Some(reacao), at)
+    }
+
+    fn dar_nota_temporada(&mut self, id: ObraId, temporada: u32, nota: f32, reacao: Option<Reacao>, at: i64) -> Result<Option<Exibicao>, Error> {
+        let Some(&i) = self.index.get(&id).filter(|&&i| self.avaliavel(i, temporada)) else { return Err(Error::TemporadaSemNota) };
+        // Given after a removal even if this device's clock runs behind.
+        let at = self.owner.changed.get(&sync::key_temporada(id, temporada)).map_or(at, |removida| at.max(removida + 1));
+        let card = self.card(i);
+        self.owner.add_nota_temporada(id, temporada, NotaEntry { nota, at, movielens_pred: None, prevista: None, reacao });
+        self.recompute();
+        Ok(card.exibicao)
+    }
+
+    /// Forgets the nota on a temporada and its history, on every device.
+    pub fn remover_nota_temporada(&mut self, id: ObraId, temporada: u32, at: i64) {
+        let Some(de_anime) = self.owner.notas_temporada.get_mut(&id) else { return };
+        let Some(history) = de_anime.remove(&temporada) else { return };
+        if de_anime.is_empty() {
+            self.owner.notas_temporada.remove(&id);
+        }
+        let last = history.last().map_or(at, |e| e.at);
+        self.owner.stamp(sync::key_temporada(id, temporada), at.max(last));
+        self.recompute();
+    }
+
+    /// An anime with more than one entry, one of them this temporada's. Parts MyAnimeList splits a
+    /// temporada into count as one, and a long run has no entry per temporada.
+    fn avaliavel(&self, i: usize, temporada: u32) -> bool {
+        let t = &self.movies[i].temporadas;
+        t.iter().filter(|t| t.entrada).count() > 1 && t.iter().any(|t| t.numero == temporada && t.entrada)
+    }
+
     fn dar_nota(&mut self, id: ObraId, nota: f32, reacao: Option<Reacao>, at: i64) -> Option<Exibicao> {
         // Given after a removal even if this device's clock runs behind.
         let at = self.owner.removida(id).map_or(at, |removida| at.max(removida + 1));
@@ -1347,11 +1500,15 @@ impl Core {
     /// is what the app would expect and not an echo of the nota.
     fn prevista_sem_a_nota(&self, i: usize) -> Option<f32> {
         let id = self.movies[i].id;
-        let (model, item) = (self.model.as_ref()?, self.items[i].as_ref()?);
+        let tipo = self.movies[i].tipo();
+        let (model, item) = (self.model_de(tipo)?, self.items[i].as_ref()?);
         if !self.rated(id) {
             return None;
         }
-        if id.is_serie() {
+        if tipo == Tipo::Anime {
+            return Some(model.predict(&self.fold_in_animes(model, Some(id)), item));
+        }
+        if tipo == Tipo::Serie {
             let mut notas = self.owner.notas.clone();
             notas.remove(&id);
             return Some(model.predict(&self.fold_in_series(model, &notas, SERIE_WEIGHT), item));
@@ -1401,6 +1558,23 @@ impl Core {
                 OndeAssistir { link: w.link.clone(), assinatura: named(&w.flatrate), aluguel: named(&w.rent), compra: named(&w.buy) }
             }),
             pesou: self.owner.pesou.get(&id).map_or_else(Vec::new, |a| a.iter().copied().collect()),
+            lista_temporadas: m
+                .temporadas
+                .iter()
+                .map(|t| {
+                    let history = self.owner.notas_temporada.get(&id).and_then(|n| n.get(&t.numero)).cloned().unwrap_or_default();
+                    TemporadaPagina {
+                        numero: t.numero,
+                        nome: t.nome.clone(),
+                        episodios: t.episodios,
+                        ano: t.ano,
+                        avaliavel: self.avaliavel(i, t.numero),
+                        nota: history.last().map(|e| e.nota),
+                        reacao: history.last().and_then(|e| e.reacao),
+                        history,
+                    }
+                })
+                .collect(),
         })
     }
 
@@ -1433,19 +1607,19 @@ impl Core {
         pool.into_iter().filter(|&(_, v)| v > base).take(PARECIDOS).map(|(j, _)| self.card(j)).collect()
     }
 
-    /// Item-item among movies with collaborative factors, or among séries through the factors of
-    /// their content: the `n` most like this one's, weighed by confiança so sparsely rated movies
+    /// Item-item among movies with collaborative factors, or among séries or among animes through
+    /// their factors, of content or their own: the `n` most like this one's, weighed by confiança so sparsely rated movies
     /// do not crowd the top, most alike first. Not those marked não me interessa.
     fn alike(&self, i: usize, n: usize) -> Vec<usize> {
-        let serie = self.movies[i].id.is_serie();
-        let Some(item) = self.items[i].as_ref().filter(|item| serie || item.collaborative) else { return Vec::new() };
+        let tipo = self.movies[i].tipo();
+        let Some(item) = self.items[i].as_ref().filter(|item| tipo != Tipo::Filme || item.collaborative) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = self
             .items
             .iter()
             .enumerate()
             .filter(|&(j, _)| j != i && !self.dispensado(j))
             .filter_map(|(j, other)| {
-                let same = other.as_ref().filter(|o| if serie { self.movies[j].id.is_serie() } else { o.collaborative })?;
+                let same = other.as_ref().filter(|o| self.movies[j].tipo() == tipo && (tipo != Tipo::Filme || o.collaborative))?;
                 Some((item.similarity(same) * same.confianca, j))
             })
             .collect();
@@ -1459,14 +1633,20 @@ impl Core {
         scored.into_iter().map(|(_, j)| j).collect()
     }
 
-    /// Titles of the loved movies most like this one; a série never explains a filme.
+    /// Titles of the loved movies most like this one; a série never explains a filme, and animes
+    /// read factors of their own, so only they explain each other.
     fn porque(&self, i: usize) -> Vec<String> {
         let Some(item) = &self.items[i] else { return Vec::new() };
+        let tipo = self.movies[i].tipo();
+        let explica = |id: ObraId| match (tipo, self.tipo(id)) {
+            (Tipo::Serie, Tipo::Anime) | (Tipo::Anime, Tipo::Filme | Tipo::Serie) | (Tipo::Filme, Tipo::Serie | Tipo::Anime) => false,
+            _ => true,
+        };
         let mut loved: Vec<(f32, usize)> = self
             .owner
             .notas
             .iter()
-            .filter(|(id, h)| h.last().is_some_and(|e| e.nota >= LOVED) && (self.movies[i].id.is_serie() || !id.is_serie()))
+            .filter(|(id, h)| h.last().is_some_and(|e| e.nota >= LOVED) && explica(**id))
             .filter_map(|(id, _)| {
                 let j = *self.index.get(id)?;
                 let similarity = item.similarity(self.items[j].as_ref()?);
@@ -1529,7 +1709,7 @@ impl Core {
     /// ones. `None` without a model or when none of them can be predicted.
     pub fn accuracy_series(&self, fraction: f32, peso: f32) -> Option<AccuracySeries> {
         let model = self.model.as_ref()?;
-        let series: BTreeMap<ObraId, Vec<NotaEntry>> = self.owner.notas.iter().filter(|(id, _)| id.is_serie()).map(|(&id, h)| (id, h.clone())).collect();
+        let series: BTreeMap<ObraId, Vec<NotaEntry>> = self.owner.notas.iter().filter(|(&id, _)| self.tipo(id) == Tipo::Serie).map(|(&id, h)| (id, h.clone())).collect();
         let (mut known, hidden) = recommender::hold_out(&series, fraction);
         known.extend(self.notas_de_filmes());
         let profile = self.fold_in_series(model, &known, peso);

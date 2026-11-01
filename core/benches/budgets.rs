@@ -10,6 +10,12 @@ use cinelens_core::{Core, Filtro, Reacao, Tipo};
 const CATALOG_SIZE: usize = 60_000;
 /// A quarter of the download, the most the catalog job publishes.
 const SERIES_SIZE: usize = 15_000;
+/// A quarter more of the download, the most the catalog job publishes, at the séries' density.
+const ANIMES_SIZE: usize = 19_000;
+/// Well above the entries the dump joins to TMDB.
+const ANIME_MODEL_SIZE: usize = 12_000;
+/// No série has these numbers.
+const ANIME_IDS_FROM: u32 = 1_000_000;
 /// ml-latest movies with enough ratings to be published.
 const MODEL_SIZE: usize = 40_000;
 const FACTORS: usize = 32;
@@ -19,15 +25,17 @@ const NOTAS: u32 = 300;
 fn main() {
     let catalog = synthetic_catalog(CATALOG_SIZE);
     let series = synthetic_series(SERIES_SIZE);
+    let animes = synthetic_animes(ANIMES_SIZE);
     let model = synthetic_model(MODEL_SIZE);
+    let anime_model = synthetic_anime_model(ANIME_MODEL_SIZE);
     let mut failed = false;
 
-    failed |= !budget("startup: load catálogo, séries and model", Duration::from_secs(1), || {
-        Core::default().load_saved(Some(&catalog), Some(&series), None, Some(&model));
+    failed |= !budget("startup: load catálogo, séries, animes and models", Duration::from_secs(1), || {
+        Core::default().load_saved(Some(&catalog), Some(&series), Some(&animes), Some(&model), Some(&anime_model));
     });
 
     let mut core = Core::default();
-    core.load_saved(Some(&catalog), Some(&series), None, Some(&model));
+    core.load_saved(Some(&catalog), Some(&series), Some(&animes), Some(&model), Some(&anime_model));
     for id in 0..NOTAS {
         core.rate(ObraId::filme(id * 97), 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
     }
@@ -46,6 +54,16 @@ fn main() {
         core.reagir(ObraId::serie(1_234), Reacao::Gostei, at).unwrap();
         // The page the shell returns folds in again, without this nota.
         assert!(core.movie(ObraId::serie(1_234)).unwrap().prevista_sem_a_nota.is_some());
+        assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
+    });
+
+    for id in 0..30 {
+        core.rate(ObraId::anime(ANIME_IDS_FROM + id * 97), 4.0, 1).unwrap();
+    }
+    failed |= !budget("nota on an anime: fold-in and ranking", Duration::from_millis(200), || {
+        at += 1;
+        core.reagir(ObraId::anime(ANIME_IDS_FROM + 1_234), Reacao::Gostei, at).unwrap();
+        assert!(core.movie(ObraId::anime(ANIME_IDS_FROM + 1_234)).unwrap().prevista_sem_a_nota.is_some());
         assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
     });
 
@@ -84,12 +102,19 @@ fn main() {
     failed |= !budget("rodada: next movies after a nota", Duration::from_millis(100), || {
         assert_eq!(core.rodada(Tipo::Filme, 2).len(), 2);
         assert_eq!(core.rodada(Tipo::Serie, 2).len(), 2);
+        assert_eq!(core.rodada(Tipo::Anime, 2).len(), 2);
     });
 
     failed |= !budget("série page: open", Duration::from_millis(100), || {
         id += 1;
         let page = core.movie(ObraId::serie(id % SERIES_SIZE as u32)).unwrap();
         assert!(page.card.nota_prevista.is_some());
+    });
+
+    failed |= !budget("anime page: open", Duration::from_millis(100), || {
+        id += 1;
+        let page = core.movie(ObraId::anime(ANIME_IDS_FROM + 40 + id % 5_000)).unwrap();
+        assert!(page.card.nota_prevista.is_some() || page.nota.is_some());
     });
 
     failed |= !budget("perfil: every statistic", Duration::from_millis(100), || {
@@ -156,6 +181,39 @@ fn synthetic_series(n: usize) -> Vec<u8> {
     }
     out.push_str(rest);
     out.into_bytes()
+}
+
+fn synthetic_animes(n: usize) -> Vec<u8> {
+    let bytes = String::from_utf8(synthetic_catalog(n)).unwrap();
+    let animes = bytes.replace(r#""work_type":"movie""#, r#""work_type":"anime","number_of_seasons":3,"situacao":"terminada","temporadas":[{"numero":1,"nome":"Temporada 1","episodios":12,"ano":2020,"entrada":true},{"numero":2,"nome":"Temporada 2","episodios":12,"ano":2021,"entrada":true}]"#);
+    let mut out = String::new();
+    let mut rest = animes.as_str();
+    while let Some(at) = rest.find(r#""tmdb_id":"#) {
+        let start = at + r#""tmdb_id":"#.len();
+        let end = start + rest[start..].find(',').unwrap();
+        let id: u32 = rest[start..end].parse().unwrap();
+        out.push_str(&rest[..start]);
+        out.push_str(&ObraId::anime(ANIME_IDS_FROM + id).to_string());
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out.into_bytes()
+}
+
+/// Two temporadas each, and as many animated features.
+fn synthetic_anime_model(n: usize) -> Vec<u8> {
+    let mut seed = 7u32;
+    let mut next = || {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (seed >> 8) as f32 / (1 << 24) as f32 - 0.5
+    };
+    let mut factors = || (0..FACTORS).map(|_| next().to_string()).collect::<Vec<_>>().join(",");
+    let animes: Vec<String> = (0..n as u32 / 2)
+        .flat_map(|i| [1, 2].map(|t| (i, t)))
+        .map(|(i, t)| format!(r#"{{"tmdb_id":{},"temporada":{t},"bias":0.1,"factors":[{}],"ratings":100}}"#, ANIME_IDS_FROM + i, factors()))
+        .collect();
+    let filmes: Vec<String> = (0..500).map(|i| format!(r#"{{"tmdb_id":{},"bias":0.1,"factors":[{}],"ratings":100}}"#, i * 97, factors())).collect();
+    format!(r#"{{"format_version":1,"data_version":"bench","global_mean":3.8,"lambda":0.05,"movies":[{}],"animes":[{}],"content":[{{"feature":"g18","bias":0.0,"factors":[{}]}}]}}"#, filmes.join(","), animes.join(","), factors()).into_bytes()
 }
 
 /// Movies shaped like the catalog job's output, so startup also pays for the fields

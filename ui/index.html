@@ -146,6 +146,9 @@
     #stats .link { display: flex; margin-top: var(--s1); font-size: var(--t-meta); text-align: left; }
     #pesou { margin-top: 12px; }
     #pesou .chips { flex-wrap: wrap; margin-top: 8px; }
+    #temporadas-lista { margin: 8px 0 0; padding: 0; list-style: none; }
+    #temporadas-lista li { padding: 8px 0; border-bottom: 1px solid var(--card); }
+    #temporadas-lista .chips { flex-wrap: wrap; margin-top: 8px; }
     #pesou .link { margin-top: 10px; font-size: 13px; }
     #parecidos-mas { margin: 0 0 var(--s2); align-items: center; }
     #parecidos-mas .meta { flex: none; }
@@ -393,6 +396,10 @@
       <h2>Onde assistir</h2>
       <div id="onde-lista"></div>
       <div class="credito">Dados de onde assistir: JustWatch <button id="onde-link" class="link">· ver ofertas</button></div>
+    </section>
+    <section id="temporadas-secao" class="secao" hidden>
+      <h2>Temporadas</h2>
+      <ul id="temporadas-lista"></ul>
     </section>
     <section id="sinopse-secao" class="secao">
       <h2>Sinopse</h2>
@@ -954,6 +961,7 @@
         li.textContent = `${i ? 'Antes' : 'Atual'}: ${notaDada(e)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
         return li;
       }));
+      showTemporadas(m);
       document.getElementById('sinopse-secao').hidden = !m.sinopse;
       sinopseEl.textContent = m.sinopse;
       document.getElementById('parecidos-secao').hidden = !m.parecidos.length;
@@ -1121,7 +1129,7 @@
         const b = Object.assign(document.createElement('button'), { onclick: () => openMovie(n.card.tmdb_id) });
         const info = Object.assign(document.createElement('div'), { className: 'info' });
         info.append(
-          Object.assign(document.createElement('div'), { className: 'title', textContent: n.card.title }),
+          Object.assign(document.createElement('div'), { className: 'title', textContent: [n.card.title, n.temporada].filter(Boolean).join(' · ') }),
           Object.assign(document.createElement('div'), { className: 'original', textContent: new Date(n.at * 1000).toLocaleDateString('pt-BR') }));
         b.append(posterOf(n.card), info, Object.assign(document.createElement('span'), { className: 'nota', textContent: notaDada(n) }));
         li.append(b);
@@ -1490,6 +1498,48 @@
       if (revealed) revelacao.textContent = `O app achava: ${revealed.faixa}`;
       // Asked only once the nota is given, so it never slows the rating down.
       pesouEl.hidden = ehSerie(tmdbId) || await invoke('pesou_oculto');
+    }
+
+    // An anime's temporadas; those with ratings behind them take a nota of their own.
+    function showTemporadas(m) {
+      document.getElementById('temporadas-secao').hidden = !m.lista_temporadas.length;
+      document.getElementById('temporadas-lista').replaceChildren(...m.lista_temporadas.map(t => {
+        const li = document.createElement('li');
+        const detalhes = [t.episodios && `${t.episodios} episódios`, t.ano].filter(Boolean).join(' · ');
+        li.append(
+          Object.assign(document.createElement('div'), { className: 'title', textContent: t.nome }),
+          Object.assign(document.createElement('div'), { className: 'meta', textContent: [detalhes, t.nota != null && `Sua nota: ${notaDada(t)}`].filter(Boolean).join(' · ') }));
+        if (!t.avaliavel) return li;
+        const opcoes = Object.assign(document.createElement('div'), { className: 'chips' });
+        const responder = async (comando, resposta) => {
+          const [pagina] = await invoke(comando, { tmdbId: m.tmdb_id, temporada: t.numero, ...resposta });
+          stale = true;
+          if (pagina) showMovie(pagina);
+        };
+        for (const [reacao, nome] of Object.entries(REACOES)) {
+          const b = Object.assign(document.createElement('button'), { className: 'chip', textContent: nome });
+          b.classList.toggle('on', t.reacao === reacao);
+          b.onclick = () => responder('reagir_temporada', { reacao });
+          opcoes.append(b);
+        }
+        const estrelas = Object.assign(document.createElement('select'), { className: 'chip', ariaLabel: `Estrelas: ${t.nome}` });
+        estrelas.append(new Option('★', ''));
+        for (let n = 0.5; n <= 5; n += 0.5) estrelas.append(new Option(fmt(n), n));
+        if (t.nota != null && !t.reacao) estrelas.value = t.nota;
+        estrelas.onchange = () => estrelas.value && responder('rate_temporada', { nota: Number(estrelas.value) });
+        opcoes.append(estrelas);
+        if (t.nota != null) {
+          const remover = Object.assign(document.createElement('button'), { className: 'chip', textContent: 'Remover' });
+          remover.onclick = async () => {
+            const pagina = await invoke('remover_nota_temporada', { tmdbId: m.tmdb_id, temporada: t.numero });
+            stale = true;
+            if (pagina) showMovie(pagina);
+          };
+          opcoes.append(remover);
+        }
+        li.append(opcoes);
+        return li;
+      }));
     }
 
     const importFiles = document.getElementById('import-files');

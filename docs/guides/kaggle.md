@@ -46,6 +46,10 @@ mkdir -p ~/.kaggle && chmod 700 ~/.kaggle
 
 Depois abra um editor, cole o token num arquivo novo `~/.kaggle/access_token` e salve. Não cole o token em nenhum outro lugar (chat, issue, commit).
 
+## Modelo de animes
+
+O workflow **Anime model** usa o mesmo secret para baixar a amostra do MyAnimeList (ADR 0004). Só roda quando você pede: **Actions** → **Anime model** → **Run workflow**. Antes, o workflow **Catalog** precisa ter publicado `animes.json.gz`. O job imprime a cobertura do mapeamento para o TMDB e publica só fatores, na release **Modelo de animes**.
+
 ## Se o job falhar
 
 - Erro `KAGGLE_API_TOKEN secret missing`: o secret do passo 3 não existe ou tem outro nome.

@@ -78,6 +78,8 @@ pub struct MinhaNota {
     pub nota: f32,
     /// The Reação it was given as; `None` for stars.
     pub reacao: Option<Reacao>,
+    /// The temporada it is on, by name; `None` for the whole.
+    pub temporada: Option<String>,
     /// When the current nota was given, Unix seconds.
     pub at: i64,
 }
@@ -128,7 +130,7 @@ fn grupos(pares: impl Iterator<Item = (String, f32)>) -> Vec<Grupo> {
 impl Core {
     /// Of `tipo`'s notas; `None` is Tudo.
     pub fn estatisticas(&self, tipo: Option<Tipo>) -> Estatisticas {
-        let notas = || self.owner.notas.iter().filter(move |(id, _)| tipo.is_none_or(|t| (t == Tipo::Serie) == id.is_serie()));
+        let notas = || self.owner.notas.iter().filter(move |(id, _)| tipo.is_none_or(|t| t == self.tipo(**id)));
         let atuais: Vec<(ObraId, f32)> =
             notas().filter_map(|(&id, h)| Some((id, h.last()?.nota))).filter(|&(_, nota)| is_valid_nota(nota)).collect();
         let (mut distribuicao, mut reacoes) = ([0; 10], [0; 3]);
@@ -169,8 +171,8 @@ impl Core {
             (de != para).then_some((*self.index.get(id)?, de, para))
         });
         let por_ano = agrupar(notas().flat_map(|(_, h)| h).map(|e| (civil(e.at).0, e.nota)));
-        let acerto = |series: bool| {
-            let de_tipo = self.owner.notas.iter().filter(|(id, _)| id.is_serie() == series).flat_map(|(_, h)| h);
+        let acerto = |de: Tipo| {
+            let de_tipo = self.owner.notas.iter().filter(|(&id, _)| self.tipo(id) == de).flat_map(|(_, h)| h);
             let erros: Vec<f32> = de_tipo.filter_map(|e| Some((e.prevista? - e.nota).abs())).collect();
             media(&erros).map(|mae| Acerto { notas: erros.len(), mae })
         };
@@ -189,20 +191,25 @@ impl Core {
             discordancias: self.mais_distantes(discordancias).map(|(card, nota, publico)| Discordancia { card, nota, publico }).collect(),
             por_ano: por_ano.into_iter().map(|(ano, notas, media)| Ano { ano, notas, media }).collect(),
             mudancas: self.mais_distantes(mudancas.collect()).map(|(card, de, para)| Mudanca { card, de, para }).collect(),
-            acerto: acerto(false),
-            acerto_series: acerto(true),
+            acerto: acerto(Tipo::Filme),
+            acerto_series: acerto(Tipo::Serie),
             mae_series,
         }
     }
 
-    /// Every rated movie in the catálogo, the most recently rated first.
+    /// Every rated movie in the catálogo, and every temporada rated, the most recently rated first.
     pub fn minhas_notas(&self) -> Vec<MinhaNota> {
-        let mut notas: Vec<(usize, &NotaEntry)> =
-            self.owner.notas.iter().filter_map(|(id, h)| Some((*self.index.get(id)?, h.last()?)))
-            .filter(|(_, e)| is_valid_nota(e.nota))
-            .collect();
-        notas.sort_by_key(|&(_, e)| std::cmp::Reverse(e.at));
-        notas.into_iter().map(|(i, e)| MinhaNota { card: self.card(i), nota: e.nota, reacao: e.reacao, at: e.at }).collect()
+        let inteiras = self.owner.notas.iter().filter_map(|(id, h)| Some((*self.index.get(id)?, h.last()?, None)));
+        let de_temporada = self.owner.notas_temporada.iter().flat_map(|(id, de_anime)| {
+            de_anime.iter().filter_map(|(t, h)| {
+                let i = *self.index.get(id)?;
+                let temporada = self.movies[i].temporadas.iter().find(|x| x.numero == *t).map_or_else(|| format!("Temporada {t}"), |x| x.nome.clone());
+                Some((i, h.last()?, Some(temporada)))
+            })
+        });
+        let mut notas: Vec<(usize, &NotaEntry, Option<String>)> = inteiras.chain(de_temporada).filter(|(_, e, _)| is_valid_nota(e.nota)).collect();
+        notas.sort_by_key(|&(_, e, _)| std::cmp::Reverse(e.at));
+        notas.into_iter().map(|(i, e, temporada)| MinhaNota { card: self.card(i), nota: e.nota, reacao: e.reacao, temporada, at: e.at }).collect()
     }
 
     /// The `LISTA` movies whose two notas are furthest apart, furthest first; ties keep the

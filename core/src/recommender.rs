@@ -64,6 +64,27 @@ pub const GENOME_ASPECTS: [(&str, &[(&str, f32)]); 7] = [
 /// `GENOME_ASPECTS` index of "leve".
 pub(crate) const LEVE: usize = 0;
 
+/// The anime model: `movies` are the animated features, under their filme ids.
+#[derive(Deserialize)]
+struct AnimeModelArtifact {
+    format_version: u32,
+    data_version: String,
+    global_mean: f32,
+    lambda: f32,
+    movies: Vec<MovieFactors>,
+    animes: Vec<AnimeFactors>,
+    content: Vec<ContentFactors>,
+}
+
+#[derive(Deserialize)]
+struct AnimeFactors {
+    tmdb_id: u32,
+    temporada: u32,
+    bias: f32,
+    factors: Vec<f32>,
+    ratings: u32,
+}
+
 #[derive(Deserialize)]
 struct MovieFactors {
     tmdb_id: u32,
@@ -98,6 +119,14 @@ const NEGATIVE_WEIGHT: f32 = 0.25;
 /// A nota on a série weighs this many notas on filmes in the séries profile: direct evidence.
 // ponytail: a default; calibrate it with cinelens-accuracy (`docs/guides/accuracy.md`) from 30 notas on séries.
 pub const SERIE_WEIGHT: f32 = 3.0;
+
+/// A nota on an anime weighs this many notas on the filmes shared with MyAnimeList: direct evidence.
+// ponytail: a default; calibrate with the informational MAE from 30 notas on animes.
+pub(crate) const ANIME_WEIGHT: f32 = 3.0;
+/// A nota on a filme read only through its content weighs this much of a shared one: many of the
+/// owner's notas are these, and they say little about animes.
+// ponytail: a default, as above.
+pub(crate) const FILME_CONTEUDO_WEIGHT: f32 = 0.25;
 
 /// What the model knows of a movie: collaborative factors, or ones guessed from its content.
 #[derive(Clone)]
@@ -143,6 +172,8 @@ pub(crate) struct Model {
     content: HashMap<String, (f32, Vec<f32>)>,
     /// Per `GENOME_ASPECTS` aspect, its mean over the movies with a score; 0 when none has one.
     pub genome_means: Vec<f32>,
+    /// The anime model only: an anime's temporadas with factors.
+    pub temporadas: HashMap<ObraId, BTreeMap<u32, Item>>,
 }
 
 /// The owner's side of the prediction, recomputed after every change to the notas.
@@ -214,7 +245,57 @@ impl Model {
             movies,
             content: artifact.content.into_iter().map(|c| (c.feature, (c.bias, c.factors))).collect(),
             genome_means,
+            temporadas: HashMap::new(),
         })
+    }
+
+    /// An anime's own entry in `movies` is its first temporada, as it is recommended by.
+    pub fn parse_anime(bytes: &[u8]) -> Result<Model, Error> {
+        let invalid = Error::InvalidModel;
+        let artifact: AnimeModelArtifact = serde_json::from_slice(bytes).map_err(|e| invalid(e.to_string()))?;
+        if artifact.format_version != ANIME_MODEL_FORMAT_VERSION {
+            return Err(invalid(format!("unknown format version {}", artifact.format_version)));
+        }
+        let dim = artifact.animes.first().map_or(0, |m| m.factors.len());
+        let (filmes, content) = (artifact.movies.iter().map(|m| &m.factors), artifact.content.iter().map(|c| &c.factors));
+        if artifact.animes.iter().map(|a| &a.factors).chain(filmes).chain(content).any(|f| f.len() != dim) {
+            return Err(invalid("entries with different factor counts".into()));
+        }
+        if artifact.lambda.is_nan() || artifact.lambda <= 0.0 {
+            return Err(invalid(format!("lambda {} is not positive", artifact.lambda)));
+        }
+        let mut movies: HashMap<ObraId, Item> =
+            artifact.movies.into_iter().map(|m| (ObraId::filme(m.tmdb_id), Item::collaborative(m))).collect();
+        let mut temporadas: HashMap<ObraId, BTreeMap<u32, Item>> = HashMap::new();
+        for a in artifact.animes {
+            let m = MovieFactors { tmdb_id: a.tmdb_id, bias: a.bias, factors: a.factors, ratings: a.ratings };
+            temporadas.entry(ObraId::anime(a.tmdb_id)).or_default().insert(a.temporada, Item::collaborative(m));
+        }
+        for (&id, de_anime) in &temporadas {
+            movies.extend(de_anime.values().next().map(|first| (id, first.clone())));
+        }
+        Ok(Model {
+            data_version: artifact.data_version,
+            global_mean: artifact.global_mean,
+            lambda: artifact.lambda,
+            dim,
+            movies,
+            content: artifact.content.into_iter().map(|c| (c.feature, (c.bias, c.factors))).collect(),
+            genome_means: vec![0.0; GENOME_ASPECTS.len()],
+            temporadas,
+        })
+    }
+
+    /// Fold-in for animes from `rows` of (what is rated, nota, when, weight), the owner's mean
+    /// included. No negatives: as on séries, não me interessa teaches nothing here.
+    pub fn profile_anime(&self, rows: &[(Item, f32, i64, f32)], half_life_days: Option<u32>) -> Profile {
+        let latest = rows.iter().map(|r| r.2).max().unwrap_or(0);
+        let weight = |at: i64, peso: f32| peso * half_life_days.map_or(1.0, |days| 0.5f32.powf((latest - at) as f32 / (days as f32 * 86_400.0)));
+        let total: f32 = rows.iter().map(|r| weight(r.2, r.3)).sum();
+        let mean = if rows.is_empty() { self.global_mean } else { rows.iter().map(|r| weight(r.2, r.3) * r.1).sum::<f32>() / total };
+        let rows = rows.iter().map(|(item, nota, at, peso)| (item.factors.as_slice(), nota - mean - item.bias, weight(*at, *peso)));
+        let (factors, cholesky) = weighted_ridge(rows, self.dim, self.lambda);
+        Profile { mean, factors, cholesky }
     }
 
     /// Fold-in: the owner's factors given the fixed movie factors. With a half-life, a nota

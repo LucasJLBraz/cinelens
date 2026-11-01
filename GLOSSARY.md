@@ -29,7 +29,7 @@ A quick verdict on a whole série or anime, up to where the owner has seen it: N
 _Avoid_: joinha, like, curtida
 
 **Assistindo** (Watching):
-A mark that the owner is partway through a série; it takes the série out of recomendações and teaches nothing about taste.
+A mark that the owner is partway through a série or anime; it takes it out of recomendações and teaches nothing about taste.
 _Avoid_: em andamento (that is the série's own situação), progresso
 
 **Nota prevista** (Predicted rating):

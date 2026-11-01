@@ -8,7 +8,7 @@ const MODEL: &[u8] = include_bytes!("../fixtures/model.json");
 #[test]
 fn loading_both_at_once_predicts_the_same_as_one_after_the_other() {
     let mut juntos = Core::default();
-    juntos.load_saved(Some(CATALOG), None, None, Some(MODEL));
+    juntos.load_saved(Some(CATALOG), None, None, Some(MODEL), None);
     let mut separados = Core::open(CATALOG).unwrap();
     separados.load_model(MODEL).unwrap();
     for core in [&mut juntos, &mut separados] {
@@ -24,7 +24,7 @@ fn loading_both_at_once_predicts_the_same_as_one_after_the_other() {
 #[test]
 fn an_invalid_model_keeps_the_catalogo() {
     let mut core = Core::default();
-    core.load_saved(Some(CATALOG), None, None, Some(b"not a model"));
+    core.load_saved(Some(CATALOG), None, None, Some(b"not a model"), None);
     assert!(core.data_version().is_some());
     assert_eq!(core.model_version(), None);
 }
@@ -32,7 +32,7 @@ fn an_invalid_model_keeps_the_catalogo() {
 #[test]
 fn nothing_saved_stays_a_first_run() {
     let mut core = Core::default();
-    core.load_saved(None, None, None, None);
+    core.load_saved(None, None, None, None, None);
     assert_eq!(core.data_version(), None);
     assert_eq!(core.model_version(), None);
 }

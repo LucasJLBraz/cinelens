@@ -44,6 +44,11 @@ impl OwnerData {
                 self.add_nota(id, entry);
             }
         }
+        for (id, de_anime) in theirs.notas_temporada {
+            for (temporada, history) in de_anime {
+                history.into_iter().for_each(|entry| self.add_nota_temporada(id, temporada, entry));
+            }
+        }
         self.nao_vi.extend(theirs.nao_vi);
         // The earliest announcement, so every device settles on the same.
         for (id, at) in theirs.notificados {
@@ -74,12 +79,25 @@ impl OwnerData {
             history.retain(|e| Some(&e.at) > removida);
             !history.is_empty()
         });
+        self.notas_temporada.retain(|&id, de_anime| {
+            de_anime.retain(|&temporada, history| {
+                let removida = changed.get(&key_temporada(id, temporada));
+                history.retain(|e| Some(&e.at) > removida);
+                !history.is_empty()
+            });
+            !de_anime.is_empty()
+        });
     }
 }
 
 /// The key `OwnerData::changed` stamps an item under.
 pub(crate) fn key(field: &str, id: impl Display) -> String {
     format!("{field}/{id}")
+}
+
+/// The key a nota on a temporada has of its own.
+pub(crate) fn key_temporada(id: impl Display, temporada: u32) -> String {
+    key("notas_temporada", format!("{id}/{temporada}"))
 }
 
 /// Per item of `field` either side has: the side that changed it last keeps its state, present

@@ -113,7 +113,7 @@ mod series {
 
     fn core() -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()), None);
         core
     }
 

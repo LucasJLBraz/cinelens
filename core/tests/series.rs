@@ -92,14 +92,14 @@ fn an_asset_with_the_wrong_type_of_obra_is_refused() {
 #[test]
 fn a_launch_loads_the_saved_series_too() {
     let mut core = Core::default();
-    core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, None);
+    core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, None, None);
     assert_eq!(ids(&core, &Filtro::default()).len(), 3);
 }
 
 #[test]
 fn invalid_saved_series_leave_the_filmes() {
     let mut core = Core::default();
-    core.load_saved(Some(FILMES.as_bytes()), Some(b"nope"), None, None);
+    core.load_saved(Some(FILMES.as_bytes()), Some(b"nope"), None, None, None);
     assert_eq!(ids(&core, &Filtro::default()).len(), 2);
     assert_eq!(core.series_version(), None);
 }
@@ -138,7 +138,7 @@ mod previsoes {
 
     fn with_series() -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()), None);
         core.rate(ObraId::filme(1), 5.0, 100).unwrap();
         core.rate(ObraId::filme(4), 1.0, 100).unwrap();
         core
@@ -207,7 +207,7 @@ mod previsoes {
     #[test]
     fn predictions_for_filmes_are_the_same_with_and_without_series() {
         let mut sem = Core::default();
-        sem.load_saved(Some(FILMES.as_bytes()), None, None, Some(MODEL.as_bytes()));
+        sem.load_saved(Some(FILMES.as_bytes()), None, None, Some(MODEL.as_bytes()), None);
         sem.rate(ObraId::filme(1), 5.0, 100).unwrap();
         sem.rate(ObraId::filme(4), 1.0, 100).unwrap();
         assert_eq!(filmes_seen(&with_series()), filmes_seen(&sem));
@@ -300,7 +300,7 @@ mod previsoes {
             "content": [{"feature": "g1", "bias": 0.0, "factors": [1.0]}]
         }"#;
         let mut core = Core::default();
-        core.load_saved(Some(filmes.as_bytes()), Some(series.as_bytes()), None, Some(model.as_bytes()));
+        core.load_saved(Some(filmes.as_bytes()), Some(series.as_bytes()), None, Some(model.as_bytes()), None);
         core.rate(ObraId::filme(1), 1.0, 100).unwrap();
         core.rate(ObraId::serie(1), 5.0, 100).unwrap();
         let p = prevista(&core, ObraId::serie(2)).unwrap();
@@ -464,7 +464,7 @@ mod ranking_misto {
 
     fn core() -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()), None);
         core
     }
 
@@ -558,7 +558,7 @@ mod piso {
 
     fn core_com(medias: [f32; 5]) -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(series(medias).as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(series(medias).as_bytes()), None, Some(MODEL.as_bytes()), None);
         core
     }
 
@@ -657,7 +657,7 @@ mod assistindo {
 
     fn core() -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()), None);
         core
     }
 
@@ -814,7 +814,7 @@ mod pagina {
 
     fn core() -> Core {
         let mut core = Core::default();
-        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()));
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), None, Some(MODEL.as_bytes()), None);
         core
     }
 
@@ -905,7 +905,7 @@ mod listas_prontas {
         let model = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "movies": [{"tmdb_id": 999, "bias": 0.0, "factors": [0.0], "ratings": 1}],
             "content": [{"feature": "g1", "bias": 1.0, "factors": [0.0]}, {"feature": "g2", "bias": -1.0, "factors": [0.0]}]}"#;
         let mut core = Core::default();
-        core.load_saved(Some(artifact(filmes).as_bytes()), Some(artifact(series).as_bytes()), None, Some(model.as_bytes()));
+        core.load_saved(Some(artifact(filmes).as_bytes()), Some(artifact(series).as_bytes()), None, Some(model.as_bytes()), None);
         core.set_servicos(&[8], 0);
         core
     }
