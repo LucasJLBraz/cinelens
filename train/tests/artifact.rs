@@ -1,6 +1,7 @@
 //! Seam 2: the training job, run on a tiny ratings fixture, produces a model the core loads
 //! and predicts with.
 
+use cinelens_core::ObraId;
 use cinelens_core::{content_features, Core, Direcao, Filtro};
 use cinelens_train::{add_genome, catalog_titles, read_slugs, train, Letterboxd};
 
@@ -63,26 +64,26 @@ fn core_predicts_with_the_trained_model() {
     let mut core = trained_core();
     assert_eq!(core.model_version(), Some("2026-10-25"));
 
-    core.rate(101, 5.0, 100).unwrap();
-    core.rate(105, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(101), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(105), 1.0, 100).unwrap();
 
-    let prevista = |id| core.movie(id).unwrap().card.nota_prevista.unwrap();
+    let prevista = |id| core.movie(ObraId::filme(id)).unwrap().card.nota_prevista.unwrap();
     for sci_fi in [102, 103, 104] {
         for drama in [106, 107, 108] {
             assert!(prevista(sci_fi) > prevista(drama) + 1.0, "{sci_fi} vs {drama}");
         }
     }
-    let ids: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().take(3).map(|m| m.tmdb_id).collect();
+    let ids: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().take(3).map(|m| m.id.tmdb_id()).collect();
     assert!(ids.iter().all(|id| (102..=104).contains(id)), "{ids:?}");
 }
 
 #[test]
 fn movies_nobody_rated_are_predicted_from_their_content() {
     let mut core = trained_core();
-    core.rate(101, 5.0, 100).unwrap();
-    core.rate(105, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(101), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(105), 1.0, 100).unwrap();
 
-    let card = |id| core.movie(id).unwrap().card;
+    let card = |id| core.movie(ObraId::filme(id)).unwrap().card;
     assert!(card(113).nota_prevista.unwrap() > card(114).nota_prevista.unwrap() + 1.0);
     assert!(card(113).confianca.unwrap() < card(102).confianca.unwrap());
 }
@@ -91,8 +92,8 @@ fn movies_nobody_rated_are_predicted_from_their_content() {
 fn model_leaves_out_movies_with_few_ratings() {
     let core = trained_core();
     // Movie 109 shares its content with the dramas, so it is predicted from that alone.
-    assert!(core.movie(109).unwrap().card.confianca.unwrap() < core.movie(108).unwrap().card.confianca.unwrap());
-    assert!(core.movie(108).unwrap().card.nota_prevista.is_some());
+    assert!(core.movie(ObraId::filme(109)).unwrap().card.confianca.unwrap() < core.movie(ObraId::filme(108)).unwrap().card.confianca.unwrap());
+    assert!(core.movie(ObraId::filme(108)).unwrap().card.nota_prevista.is_some());
 }
 
 #[test]
@@ -143,31 +144,31 @@ fn with_letterboxd() -> Core {
 #[test]
 fn letterboxd_joins_through_the_wikidata_slugs() {
     let mut core = with_letterboxd();
-    core.rate(101, 5.0, 100).unwrap();
-    core.rate(105, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(101), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(105), 1.0, 100).unwrap();
 
-    let prevista = |id| core.movie(id).unwrap().card.nota_prevista.unwrap();
+    let prevista = |id| core.movie(ObraId::filme(id)).unwrap().card.nota_prevista.unwrap();
     assert!(prevista(111) > prevista(106) + 1.0);
 }
 
 #[test]
 fn letterboxd_joins_through_title_and_year_only_when_one_movie_matches() {
     let mut core = with_letterboxd();
-    core.rate(101, 5.0, 100).unwrap();
-    core.rate(105, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(101), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(105), 1.0, 100).unwrap();
 
-    assert!(core.movie(112).unwrap().card.nota_prevista.unwrap() > core.movie(106).unwrap().card.nota_prevista.unwrap() + 1.0);
-    assert_eq!(core.movie(113).unwrap().card.nota_prevista, None);
-    assert_eq!(core.movie(114).unwrap().card.nota_prevista, None);
+    assert!(core.movie(ObraId::filme(112)).unwrap().card.nota_prevista.unwrap() > core.movie(ObraId::filme(106)).unwrap().card.nota_prevista.unwrap() + 1.0);
+    assert_eq!(core.movie(ObraId::filme(113)).unwrap().card.nota_prevista, None);
+    assert_eq!(core.movie(ObraId::filme(114)).unwrap().card.nota_prevista, None);
 }
 
 #[test]
 fn letterboxd_users_are_trained_alongside_movielens_users() {
     let mut core = with_letterboxd();
-    core.rate(101, 5.0, 100).unwrap();
-    core.rate(105, 1.0, 100).unwrap();
+    core.rate(ObraId::filme(101), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(105), 1.0, 100).unwrap();
 
-    let prevista = |id| core.movie(id).unwrap().card.nota_prevista.unwrap();
+    let prevista = |id| core.movie(ObraId::filme(id)).unwrap().card.nota_prevista.unwrap();
     for sci_fi in [102, 103, 104] {
         for drama in [106, 107, 108] {
             assert!(prevista(sci_fi) > prevista(drama) + 1.0, "{sci_fi} vs {drama}");
@@ -201,7 +202,7 @@ fn the_genome_subset_steers_parecidos_mas() {
     let mut core = Core::open(&catalog()).unwrap();
     core.load_model(&serde_json::to_vec(&model).unwrap()).unwrap();
 
-    let mut better: Vec<u32> = core.parecidos_mas(101, Direcao::MelhorFotografia).iter().map(|m| m.tmdb_id).collect();
+    let mut better: Vec<u32> = core.parecidos_mas(ObraId::filme(101), Direcao::MelhorFotografia).iter().map(|m| m.id.tmdb_id()).collect();
     better.sort();
     assert_eq!(better, [103, 104]);
 }

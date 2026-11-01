@@ -95,3 +95,16 @@ MAE nos filmes fora do modelo, previstos pelo conteúdo (10, 20 e 22 notas), com
 | + nota do público e década | 0,644 | 0,575 | 0,615 |
 
 Nenhum atributo passa: a nota do público piora em 10%, a década em 20% e 30%. A década é comum a milhares de filmes, então o centroide dela fica perto da média e dilui os outros atributos na média simples. O conteúdo fica como está e nenhum modelo novo é publicado.
+
+## Medições de 2026-10-31 (#41)
+
+Keywords do TMDB como atributo de conteúdo, medidas para saber o quanto o conteúdo consegue prever antes de construir as séries sobre ele. Mesmo export, mesmo `ml-latest` e mesmo catálogo nos dois modelos, com `FACTORS` 32 e `LAMBDA` 0,05. As keywords vieram de 91.441 dos 91.442 filmes do catálogo, por uma busca única à API do TMDB; 66.932 têm alguma, e 11.746 keywords entraram no mapeamento de conteúdo do modelo.
+
+MAE nos filmes fora do modelo, previstos pelo conteúdo (10, 20 e 22 notas):
+
+| Conteúdo | 10% | 20% | 30% |
+|---|---|---|---|
+| **Atual (gêneros, direção, elenco, idioma)** | **0,624** | **0,571** | **0,608** |
+| + keywords | 0,611 | 0,561 | 0,612 |
+
+Keywords não passam: melhoram 10% e 20%, mas pioram 30%, e a regra é não piorar nenhum corte. A diferença é pequena e são poucas notas, então a medição não mostra ganho nem perda confiável. O catálogo fica sem keywords e nenhum modelo novo é publicado. O MAE dos filmes do modelo não muda (0,375, 0,428 e 0,493).

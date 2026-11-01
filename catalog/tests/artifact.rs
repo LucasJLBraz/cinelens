@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use cinelens_catalog::{build, Config, Critica};
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro};
 use serde_json::{json, Value};
 
@@ -45,7 +46,7 @@ fn core_queries_the_built_catalogo_most_voted_first() {
     assert_eq!(core.data_version(), Some("2026-10-25"));
 
     let page = core.explorar(&Filtro::default(), 0);
-    let ids: Vec<u32> = page.movies.iter().map(|m| m.tmdb_id).collect();
+    let ids: Vec<u32> = page.movies.iter().map(|m| m.id.tmdb_id()).collect();
     // Discover (both 1999 pages), the training-data extra and the recent release; 999999 skipped.
     assert_eq!(ids, [550, 13, 603, 1311]);
     assert!(!page.has_more);
@@ -120,13 +121,13 @@ fn artifact_carries_brazil_watch_providers() {
 fn core_lists_where_to_watch_a_built_movie() {
     let core = Core::open(&fixture_artifact()).unwrap();
 
-    let matrix = core.movie(603).unwrap().onde_assistir.unwrap();
+    let matrix = core.movie(ObraId::filme(603)).unwrap().onde_assistir.unwrap();
     let names = |p: &[cinelens_core::Provedor]| p.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
     assert_eq!(names(&matrix.assinatura), ["Max", "Netflix"]);
     assert!(matrix.aluguel.is_empty() && matrix.compra.is_empty());
     // Netflix has two movies on subscription, Max one; Apple TV only rents and sells.
     assert_eq!(names(core.provedores()), ["Netflix", "Max", "Apple TV"]);
-    assert!(core.movie(13).unwrap().onde_assistir.is_none());
+    assert!(core.movie(ObraId::filme(13)).unwrap().onde_assistir.is_none());
 }
 
 #[test]
@@ -210,6 +211,6 @@ fn core_reads_the_critic_scores() {
     let artifact = build(&fixture_tmdb, &fixture_omdb(&asked), &mut BTreeMap::new(), &config(4)).unwrap();
     let core = Core::open(&serde_json::to_vec(&artifact).unwrap()).unwrap();
     let filtro = Filtro { critica_min: Some(70), ..Default::default() };
-    let ids: Vec<u32> = core.explorar(&filtro, 0).movies.iter().map(|m| m.tmdb_id).collect();
+    let ids: Vec<u32> = core.explorar(&filtro, 0).movies.iter().map(|m| m.id.tmdb_id()).collect();
     assert_eq!(ids, [13, 603]);
 }

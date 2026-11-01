@@ -1,5 +1,6 @@
 //! How the nota prevista is shown ("Mostrar previsão como"), and the reveal after a nota.
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, DisplayMode, Exibicao, Faixa};
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/catalog.json");
@@ -10,8 +11,8 @@ const MODEL: &[u8] = include_bytes!("../fixtures/model.json");
 fn owner() -> Core {
     let mut core = Core::open(CATALOG).unwrap();
     core.load_model(MODEL).unwrap();
-    core.rate(603, 5.0, 100).unwrap();
-    core.rate(278, 1.5, 100).unwrap();
+    core.rate(ObraId::filme(603), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(278), 1.5, 100).unwrap();
     core
 }
 
@@ -42,19 +43,19 @@ fn faixa_is_the_default_with_bands_from_the_owners_own_predictions() {
 #[test]
 fn oculto_shows_nothing_but_keeps_the_order() {
     let mut core = owner();
-    let order: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect();
+    let order: Vec<u32> = core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.id.tmdb_id()).collect();
     core.set_display_mode(DisplayMode::Oculto, 0);
 
     assert!(exibicoes(&core).iter().all(Option::is_none));
-    assert_eq!(core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.tmdb_id).collect::<Vec<_>>(), order);
+    assert_eq!(core.explorar(&Filtro::default(), 0).movies.iter().map(|m| m.id.tmdb_id()).collect::<Vec<_>>(), order);
 }
 
 #[test]
 fn after_a_nota_the_app_reveals_what_it_predicted_in_the_chosen_mode() {
     let mut core = owner();
-    let before = core.movie(27205).unwrap().card;
+    let before = core.movie(ObraId::filme(27205)).unwrap().card;
 
-    let revealed = core.rate(27205, 4.0, 200).unwrap();
+    let revealed = core.rate(ObraId::filme(27205), 4.0, 200).unwrap();
 
     assert_eq!(revealed, before.exibicao);
     assert!(matches!(revealed, Some(Exibicao::Faixa { .. })));
@@ -63,26 +64,26 @@ fn after_a_nota_the_app_reveals_what_it_predicted_in_the_chosen_mode() {
 #[test]
 fn the_prediction_at_rating_time_is_stored_with_the_nota() {
     let mut core = owner();
-    let predicted = core.movie(27205).unwrap().card.nota_prevista;
-    core.rate(27205, 4.0, 200).unwrap();
+    let predicted = core.movie(ObraId::filme(27205)).unwrap().card.nota_prevista;
+    core.rate(ObraId::filme(27205), 4.0, 200).unwrap();
 
-    let history = core.movie(27205).unwrap().history;
+    let history = core.movie(ObraId::filme(27205)).unwrap().history;
     assert_eq!(history.last().unwrap().prevista, predicted);
 
     // Re-rating: the movie had a nota, so there was nothing on screen to store.
-    core.rate(27205, 4.5, 300).unwrap();
-    assert_eq!(core.movie(27205).unwrap().history.last().unwrap().prevista, None);
+    core.rate(ObraId::filme(27205), 4.5, 300).unwrap();
+    assert_eq!(core.movie(ObraId::filme(27205)).unwrap().history.last().unwrap().prevista, None);
 }
 
 #[test]
 fn no_reveal_when_hidden_or_without_a_prediction() {
     let mut core = owner();
     core.set_display_mode(DisplayMode::Oculto, 0);
-    assert_eq!(core.rate(27205, 4.0, 200).unwrap(), None);
+    assert_eq!(core.rate(ObraId::filme(27205), 4.0, 200).unwrap(), None);
 
     let mut core = owner();
     // Clube da Luta is outside the model.
-    assert_eq!(core.rate(550, 4.0, 200).unwrap(), None);
+    assert_eq!(core.rate(ObraId::filme(550), 4.0, 200).unwrap(), None);
 }
 
 #[test]
@@ -137,11 +138,13 @@ fn an_estrelas_arriving_through_sync_reads_as_faixa() {
 fn the_movie_page_shows_the_nota_prevista_and_its_faixa_whatever_the_mode() {
     let mut core = owner();
     core.set_display_mode(DisplayMode::Oculto, 0);
-    let top = core.explorar(&Filtro::default(), 0).movies[0].tmdb_id;
+    let top = core.explorar(&Filtro::default(), 0).movies[0].id.tmdb_id();
 
-    let page = core.movie(top).unwrap();
+    let page = core.movie(ObraId::filme(top)).unwrap();
     assert!(page.card.nota_prevista.is_some());
     assert_eq!(page.faixa, Some(Faixa::ApostaForte));
-    // A movie with a nota has no nota prevista, so no faixa either.
-    assert_eq!(core.movie(603).unwrap().faixa, None);
+    // A movie with a nota has no nota prevista; its faixa is that of the one without the nota.
+    let rated = core.movie(ObraId::filme(603)).unwrap();
+    assert_eq!(rated.card.nota_prevista, None);
+    assert!(rated.prevista_sem_a_nota.is_some() && rated.faixa.is_some());
 }

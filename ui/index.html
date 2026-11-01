@@ -335,8 +335,10 @@
         <div class="menu-items">
           <button data-marca="NaoMeInteressa">Não me interessa</button>
           <button id="ver-historico">Histórico de notas</button>
+          <button id="remover-nota">Remover nota</button>
           <button id="trailer">▶ Trailer</button>
           <button id="abrir-tmdb">Abrir no TMDB</button>
+          <button id="compartilhar">Compartilhar</button>
         </div>
       </details>
     </div>
@@ -793,6 +795,7 @@
 
     function showMovie(m) {
       filmeEl.dataset.id = m.tmdb_id;
+      filmeAtual = m;
       const fundo = document.getElementById('filme-fundo');
       fundo.replaceChildren();
       if (m.backdrop_url) {
@@ -810,6 +813,10 @@
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
       document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
       document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : '';
+      const remover = document.getElementById('remover-nota');
+      remover.hidden = m.nota == null;
+      remover.textContent = 'Remover nota';
+      delete remover.dataset.confirmar;
       showPontuacoes(m);
       document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
@@ -855,10 +862,12 @@
     // Every score is a pill that starts hidden; a tap reveals that one, and only that one. The
     // revealed ones are forgotten whenever a movie page opens, so numbers never anchor the owner.
     const revelados = new Set();
+    let filmeAtual = null;
     const pontuacoesEl = document.getElementById('pontuacoes');
     function showPontuacoes(m) {
       const pontuacoes = [
         ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · ${Math.round(m.confianca * 100)}%`],
+        ['sem-nota', 'Previsão sem sua nota', m.prevista_sem_a_nota != null && `★ ${decimal(m.prevista_sem_a_nota)} (${decimal(Math.round(m.prevista_sem_a_nota * 2) / 2)}) · ${m.faixa}`],
         ['publico', 'Público', m.publico != null && `★ ${decimal(m.publico)}`],
         ['critica', 'Crítica', m.critica != null && `${m.critica}/100`],
       ].filter(([, , valor]) => valor);
@@ -1023,11 +1032,110 @@
       painelNota.hidden = !painelNota.hidden;
       filmeEl.classList.toggle('dando-nota', !painelNota.hidden);
     });
+    // Takes the whole history with it, so a stray tap only asks.
+    document.getElementById('remover-nota').addEventListener('click', async e => {
+      const b = e.target;
+      if (!b.dataset.confirmar) {
+        b.dataset.confirmar = 'sim';
+        b.textContent = 'Toque de novo para remover';
+        return;
+      }
+      const m = await invoke('remover_nota', { tmdbId: Number(filmeEl.dataset.id) });
+      stale = true;
+      filmeEl.querySelector('.menu').open = false;
+      closeRating();
+      if (m) showMovie(m);
+    });
     document.getElementById('ver-historico').addEventListener('click', () => {
       const historico = document.getElementById('nota-history');
       if (!historico.children.length) historico.append(Object.assign(document.createElement('li'), { textContent: 'Nenhuma nota ainda.' }));
       historico.hidden = false;
       filmeEl.querySelector('.menu').open = false;
+    });
+    // The share card: story-sized, the poster over a blurred copy of itself.
+    function linhas(ctx, texto, largura, max) {
+      const saida = [];
+      let linha = '';
+      for (const palavra of texto.split(/\s+/)) {
+        const tentativa = linha ? `${linha} ${palavra}` : palavra;
+        if (ctx.measureText(tentativa).width <= largura || !linha) { linha = tentativa; continue; }
+        saida.push(linha);
+        linha = palavra;
+      }
+      if (linha) saida.push(linha);
+      if (saida.length <= max) return saida;
+      let ultima = saida[max - 1];
+      while (ctx.measureText(`${ultima}…`).width > largura) ultima = ultima.slice(0, -1);
+      return [...saida.slice(0, max - 1), `${ultima.trimEnd()}…`];
+    }
+    async function cardCompartilhar(m) {
+      const [W, H, M] = [1080, 1920, 90];
+      const canvas = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      const ctx = canvas.getContext('2d');
+      const css = getComputedStyle(document.documentElement);
+      const cor = nome => css.getPropertyValue(nome);
+      ctx.fillStyle = cor('--bg');
+      ctx.fillRect(0, 0, W, H);
+      // Without a poster (none, or offline) the card is the text alone.
+      const poster = m.poster_url
+        ? await invoke('poster_bytes', { name: m.poster_url.split('/').pop() }).then(b => createImageBitmap(new Blob([b]))).catch(() => null)
+        : null;
+      let y = 140;
+      if (poster) {
+        const escala = Math.max(W / poster.width, H / poster.height);
+        ctx.filter = 'blur(50px) brightness(0.35)';
+        ctx.drawImage(poster, (W - poster.width * escala) / 2, (H - poster.height * escala) / 2, poster.width * escala, poster.height * escala);
+        ctx.filter = 'none';
+        const pw = 600, ph = pw * poster.height / poster.width;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+        ctx.shadowBlur = 60;
+        ctx.beginPath();
+        ctx.roundRect((W - pw) / 2, y, pw, ph, 28);
+        ctx.fill();
+        ctx.clip();
+        ctx.drawImage(poster, (W - pw) / 2, y, pw, ph);
+        ctx.restore();
+        y += ph + 80;
+      }
+      const familia = getComputedStyle(document.body).fontFamily;
+      const escrever = (texto, fonte, altura, cor_, max, gap) => {
+        ctx.font = `${fonte} ${familia}`;
+        ctx.fillStyle = cor_;
+        ctx.textBaseline = 'top';
+        for (const l of linhas(ctx, texto, W - 2 * M, max)) {
+          ctx.fillText(l, M, y);
+          y += altura;
+        }
+        y += gap;
+      };
+      escrever(m.title, '700 72px', 86, cor('--text'), 3, 16);
+      const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+      if (meta) escrever(meta, '36px', 46, cor('--accent'), 2, 32);
+      // What is left down to the mark, in whole lines.
+      const sobra = Math.floor((H - 170 - y) / 54);
+      if (m.sinopse && sobra > 0) escrever(m.sinopse, '38px', 54, cor('--text'), sobra, 0);
+      ctx.font = `700 40px ${familia}`;
+      ctx.fillStyle = cor('--accent');
+      ctx.fillText('Cinelens', M, H - 110);
+      return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+    }
+    const compartilharEl = document.getElementById('compartilhar');
+    compartilharEl.hidden = !/Android/.test(navigator.userAgent);
+    compartilharEl.addEventListener('click', async () => {
+      const m = filmeAtual;
+      compartilharEl.disabled = true;
+      try {
+        const titulo = m.year ? `${m.title} (${m.year})` : m.title;
+        const sinopse = m.sinopse && m.sinopse.length > 280 ? `${m.sinopse.slice(0, 280).trimEnd()}…` : m.sinopse;
+        await invoke('compartilhar', { imagem: await cardCompartilhar(m), texto: [titulo, sinopse].filter(Boolean).join('\n\n') });
+        filmeEl.querySelector('.menu').open = false;
+      } catch (e) {
+        compartilharEl.textContent = 'Não deu para compartilhar';
+        setTimeout(() => compartilharEl.textContent = 'Compartilhar', 3000);
+      } finally {
+        compartilharEl.disabled = false;
+      }
     });
     document.getElementById('abrir-tmdb').addEventListener('click', () => {
       filmeEl.querySelector('.menu').open = false;

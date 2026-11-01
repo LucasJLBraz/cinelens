@@ -1,6 +1,7 @@
 //! A new monthly model replaces the current one only if it predicts the owner's recent notas
 //! no worse, and within the 0.65 bar.
 
+use cinelens_core::ObraId;
 use cinelens_core::Core;
 use serde_json::{json, Value};
 
@@ -14,7 +15,7 @@ fn owner() -> Core {
     core.load_model(MODEL).unwrap();
     let notas = [(603, 5.0, 100), (157336, 5.0, 100), (11, 5.0, 100), (693134, 5.0, 100), (278, 1.0, 100), (769, 1.0, 100), (424, 1.0, 100), (240, 1.0, 100), (27205, 5.0, 200), (238, 1.0, 200)];
     for (id, nota, at) in notas {
-        core.rate(id, nota, at).unwrap();
+        core.rate(ObraId::filme(id), nota, at).unwrap();
     }
     core
 }

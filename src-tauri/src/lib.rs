@@ -1,6 +1,7 @@
 //! Thin Tauri adapters over the core facade: catálogo and model files, downloads and background
 //! updates, owner data file and its sync, poster cache.
 
+mod compartilhar;
 mod google;
 
 use std::io::Read;
@@ -9,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -162,7 +163,7 @@ fn import_movielens(
 }
 
 #[tauri::command]
-fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Option<MoviePage> {
+fn movie(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Option<MoviePage> {
     core.read().unwrap().movie(tmdb_id)
 }
 
@@ -185,13 +186,37 @@ fn set_fa(app: AppHandle, core: tauri::State<RwLock<Core>>, person_id: u32, on: 
 fn rate(
     app: AppHandle,
     core: tauri::State<RwLock<Core>>,
-    tmdb_id: u32,
+    tmdb_id: ObraId,
     nota: f32,
 ) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
     let mut core = core.write().unwrap();
     let revealed = core.rate(tmdb_id, nota, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
+}
+
+/// A poster's bytes, for the share card: drawn from these, a canvas can still be exported.
+#[tauri::command]
+async fn poster_bytes(app: AppHandle, name: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || poster(&app, &name).into_body());
+    Ok(tauri::ipc::Response::new(bytes.await.map_err(|e| e.to_string())?))
+}
+
+/// Opens the share sheet with the card (a JPEG in base64) and the text.
+#[tauri::command]
+async fn compartilhar(app: AppHandle, imagem: String, texto: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || compartilhar::enviar(&app, imagem, texto))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Forgets the movie's nota; returns its page after.
+#[tauri::command]
+fn remover_nota(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Result<Option<MoviePage>, String> {
+    let mut core = core.write().unwrap();
+    core.remover_nota(tmdb_id, now());
+    save_owner(&app, &core)?;
+    Ok(core.movie(tmdb_id))
 }
 
 /// The rodada rápida's next `n` movies.
@@ -201,24 +226,24 @@ fn rodada(core: tauri::State<RwLock<Core>>, n: usize) -> Vec<MovieCard> {
 }
 
 #[tauri::command]
-fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32) -> Result<(), String> {
+fn nao_vi(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Result<(), String> {
     let mut core = core.write().unwrap();
     core.nao_vi(tmdb_id);
     save_owner(&app, &core)
 }
 
 #[tauri::command]
-fn parecidos(core: tauri::State<RwLock<Core>>, tmdb_id: u32, desde: usize) -> Vec<MovieCard> {
+fn parecidos(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, desde: usize) -> Vec<MovieCard> {
     core.read().unwrap().parecidos(tmdb_id, desde)
 }
 
 #[tauri::command]
-fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: u32, direcao: Direcao) -> Vec<MovieCard> {
+fn parecidos_mas(core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, direcao: Direcao) -> Vec<MovieCard> {
     core.read().unwrap().parecidos_mas(tmdb_id, direcao)
 }
 
 #[tauri::command]
-fn set_pesou(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: u32, aspectos: Vec<Aspecto>) -> Result<(), String> {
+fn set_pesou(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId, aspectos: Vec<Aspecto>) -> Result<(), String> {
     let mut core = core.write().unwrap();
     core.set_pesou(tmdb_id, &aspectos, now());
     save_owner(&app, &core)
@@ -241,7 +266,7 @@ fn set_pesou_oculto(app: AppHandle, core: tauri::State<RwLock<Core>>, oculto: bo
 fn marcar(
     app: AppHandle,
     core: tauri::State<RwLock<Core>>,
-    tmdb_id: u32,
+    tmdb_id: ObraId,
     marca: Marca,
     on: bool,
 ) -> Result<Option<MoviePage>, String> {
@@ -285,7 +310,7 @@ fn notify(app: &AppHandle) -> Result<(), String> {
     notification.builder().title("Lançamento para você").body(due.texto).show().map_err(|e| e.to_string())?;
     let state = app.state::<RwLock<Core>>();
     let mut core = state.write().unwrap();
-    core.notificado(due.tmdb_id, now());
+    core.notificado(due.id, now());
     save_owner(app, &core)
 }
 
@@ -390,32 +415,16 @@ async fn download_model(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Brings the catálogo up to date with the published one through its daily deltas, or the
-/// full catálogo if they do not reach (the app was too long without updating). Only once
-/// there is a catálogo: the first one is the setup's download, with its progress shown.
+/// Brings the catálogo up to date with the published one, downloading it whole. Only once there
+/// is a catálogo: the first one is the setup's download, with its progress shown.
 fn update_catalog(app: &AppHandle) -> Result<(), String> {
-    let Some(mut version) = app.state::<RwLock<Core>>().read().unwrap().data_version().map(str::to_string) else { return Ok(()) };
+    let Some(version) = app.state::<RwLock<Core>>().read().unwrap().data_version().map(str::to_string) else { return Ok(()) };
     let Some(latest) = fetch(&catalog_release("catalog-version.txt"))? else { return Ok(()) };
-    let latest = String::from_utf8_lossy(&latest).trim().to_string();
-    if version == latest {
+    if version == String::from_utf8_lossy(&latest).trim() {
         return Ok(());
     }
-    let mut json = std::fs::read(catalog_file(app)).map_err(|e| e.to_string())?;
-    while version != latest {
-        let Some(delta) = fetch(&catalog_release(&format!("catalog-delta-{version}.json.gz")))? else { break };
-        json = cinelens_core::apply_catalog_delta(&json, &gunzip(&delta)?).map_err(|e| e.to_string())?;
-        // ponytail: a full parse per delta just for its version; fine for the few days an app
-        // falls behind, read the version alone if long chains get slow.
-        let next = Core::open(&json).map_err(|e| e.to_string())?.data_version().unwrap_or_default().to_string();
-        if next == version {
-            break; // A delta that goes nowhere: fall back to the full catálogo.
-        }
-        version = next;
-    }
-    if version != latest {
-        json = download(app, &catalog_url())?;
-        Core::open(&json).map_err(|e| e.to_string())?;
-    }
+    let json = download(app, &catalog_url())?;
+    Core::open(&json).map_err(|e| e.to_string())?;
     write_atomically(&catalog_file(app), &json).map_err(|e| e.to_string())?;
     app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())?;
     let _ = app.emit("atualizado", ());
@@ -563,7 +572,7 @@ pub fn run() {
     let builder =
         tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_notification::init());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(google::init());
+    let builder = builder.plugin(google::init()).plugin(compartilhar::init());
     builder
         .setup(|app| {
             let mut core = Core::default();
@@ -644,6 +653,9 @@ pub fn run() {
             set_pesou,
             pesou_oculto,
             set_pesou_oculto,
+            remover_nota,
+            poster_bytes,
+            compartilhar,
             rodada,
             nao_vi,
             estatisticas,

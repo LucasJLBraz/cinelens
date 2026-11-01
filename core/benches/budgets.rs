@@ -3,6 +3,7 @@
 
 use std::time::{Duration, Instant};
 
+use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
@@ -25,12 +26,12 @@ fn main() {
     let mut core = Core::open(&catalog).unwrap();
     core.load_model(&model).unwrap();
     for id in 0..NOTAS {
-        core.rate(id * 97, 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
+        core.rate(ObraId::filme(id * 97), 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
     }
     let mut at = 1;
     failed |= !budget("nota: fold-in and ranking", Duration::from_millis(200), || {
         at += 1;
-        core.rate(12_345, 4.0, at).unwrap();
+        core.rate(ObraId::filme(12_345), 4.0, at).unwrap();
         assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
     });
 
@@ -57,7 +58,7 @@ fn main() {
     let mut id = 0;
     failed |= !budget("movie page: open", Duration::from_millis(100), || {
         id += 1_001;
-        let page = core.movie(id).unwrap();
+        let page = core.movie(ObraId::filme(id)).unwrap();
         assert_eq!(page.parecidos.len(), 12);
         assert!(!page.porque.is_empty());
     });

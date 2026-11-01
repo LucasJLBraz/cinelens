@@ -1,5 +1,6 @@
 //! Where to watch in Brazil, and the services the owner subscribes to.
 
+use cinelens_core::ObraId;
 use cinelens_core::Core;
 
 const CATALOG: &str = r#"{"format_version": 1, "data_version": "t",
@@ -15,7 +16,7 @@ const CATALOG: &str = r#"{"format_version": 1, "data_version": "t",
 #[test]
 fn the_movie_page_lists_subscription_rent_and_buy_options() {
     let core = Core::open(CATALOG.as_bytes()).unwrap();
-    let onde = core.movie(1).unwrap().onde_assistir.unwrap();
+    let onde = core.movie(ObraId::filme(1)).unwrap().onde_assistir.unwrap();
 
     let names = |p: &[cinelens_core::Provedor]| p.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(",");
     assert_eq!(names(&onde.assinatura), "Netflix");
@@ -23,7 +24,7 @@ fn the_movie_page_lists_subscription_rent_and_buy_options() {
     // A provider the catálogo does not name is left out.
     assert_eq!(names(&onde.compra), "Apple TV");
     assert_eq!(onde.link.as_deref(), Some("https://www.themoviedb.org/movie/1/watch?locale=BR"));
-    assert!(core.movie(2).unwrap().onde_assistir.is_none());
+    assert!(core.movie(ObraId::filme(2)).unwrap().onde_assistir.is_none());
 }
 
 #[test]

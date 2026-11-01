@@ -10,7 +10,7 @@ fn explorar_returns_first_page_of_fixture_catalogo() {
     assert_eq!(page.movies.len(), 30);
     assert!(page.has_more);
     let first = &page.movies[0];
-    assert_eq!(first.tmdb_id, 550);
+    assert_eq!(first.id.tmdb_id(), 550);
     assert_eq!(first.title, "Clube da Luta");
     assert_eq!(first.original_title, "Fight Club");
     assert_eq!(first.year, Some(1999));

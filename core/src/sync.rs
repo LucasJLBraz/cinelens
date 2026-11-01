@@ -2,6 +2,7 @@
 //! recent change winning.
 
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use serde::Serialize;
 
@@ -65,24 +66,31 @@ impl OwnerData {
             let stamp = self.changed.entry(key).or_insert(at);
             *stamp = (*stamp).max(at);
         }
+        // A removal on either device takes every nota given by then.
+        let changed = &self.changed;
+        self.notas.retain(|&id, history| {
+            let removida = changed.get(&key("notas", id));
+            history.retain(|e| Some(&e.at) > removida);
+            !history.is_empty()
+        });
     }
 }
 
 /// The key `OwnerData::changed` stamps an item under.
-pub(crate) fn key(field: &str, id: u32) -> String {
+pub(crate) fn key(field: &str, id: impl Display) -> String {
     format!("{field}/{id}")
 }
 
 /// Per item of `field` either side has: the side that changed it last keeps its state, present
 /// or removed. Items neither side stamped (imported, or given before sync) are kept from both.
-fn lww<V: Clone + Serialize>(
+fn lww<K: Copy + Ord + Display, V: Clone + Serialize>(
     field: &str,
-    mine: &mut BTreeMap<u32, V>,
-    theirs: &BTreeMap<u32, V>,
+    mine: &mut BTreeMap<K, V>,
+    theirs: &BTreeMap<K, V>,
     my_stamps: &BTreeMap<String, i64>,
     their_stamps: &BTreeMap<String, i64>,
 ) {
-    let ids: Vec<u32> = mine.keys().chain(theirs.keys()).copied().collect();
+    let ids: Vec<K> = mine.keys().chain(theirs.keys()).copied().collect();
     for id in ids {
         let key = key(field, id);
         let (a, b) = (my_stamps.get(&key), their_stamps.get(&key));
@@ -102,15 +110,15 @@ fn lww<V: Clone + Serialize>(
     }
 }
 
-fn lww_set(
+fn lww_set<K: Copy + Ord + Display>(
     field: &str,
-    mine: &mut std::collections::BTreeSet<u32>,
-    theirs: &std::collections::BTreeSet<u32>,
+    mine: &mut std::collections::BTreeSet<K>,
+    theirs: &std::collections::BTreeSet<K>,
     my_stamps: &BTreeMap<String, i64>,
     their_stamps: &BTreeMap<String, i64>,
 ) {
-    let mut map: BTreeMap<u32, ()> = mine.iter().map(|&id| (id, ())).collect();
-    let other: BTreeMap<u32, ()> = theirs.iter().map(|&id| (id, ())).collect();
+    let mut map: BTreeMap<K, ()> = mine.iter().map(|&id| (id, ())).collect();
+    let other: BTreeMap<K, ()> = theirs.iter().map(|&id| (id, ())).collect();
     lww(field, &mut map, &other, my_stamps, their_stamps);
     *mine = map.into_keys().collect();
 }

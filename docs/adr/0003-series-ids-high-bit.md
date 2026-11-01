@@ -1,0 +1,3 @@
+# Série ids set the high bit of the TMDB id
+
+TMDB numbers movies and TV series separately, so the same number can name a filme and a série. Internally, a série's id is its TMDB id with the high bit of the `u32` set, behind an `ObraId` type; a filme's id stays its TMDB id. We chose this over a composite (type, id) key because every note, mark and sync key the owner already has on their devices and Drive is keyed by filme id, so those stay valid with no data migration, and TMDB ids are far below 2^31. The cost is that the id encodes the type, and any call to TMDB must strip the bit first.

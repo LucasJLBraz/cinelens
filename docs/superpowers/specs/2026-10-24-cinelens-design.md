@@ -117,7 +117,7 @@ Tema escuro por padrão (escolha minha). Referências visuais: Nuvio (vitrine) e
 ### 7.1 Abas: Início · Explorar · Rodada · Perfil
 - **Início** — vitrine, sem filtros. Topo: destaque deslizável, um filme por vez, com o porquê ("porque você amou X") e ações (detalhes, quero assistir, parecidos, **agora não**). Chips de atalho para listas prontas. Fileiras: "Em alta, do seu jeito" (em alta no TMDB reordenado pelo gosto do dono), Lançamentos para você, Joias escondidas etc. Todo "ver tudo ›" e todo chip abre o **Explorar** com aquele filtro marcado.
 - **Explorar** — a única grade do catálogo. Abre sem filtro, ordenada por "Para você". Busca no topo. Três filtros visíveis (gênero, onde assistir, duração); resto em "+ filtros". Controle Populares ↔ Garimpo. Resultados em páginas curtas.
-- **Rodada** — **rodada rápida**: pôster, nota ou "não vi", próximo já carregado. Ordem escolhida pelos filmes que mais informam o modelo.
+- **Rodada** — **rodada rápida**: pôster, nota ou "não vi", próximo já carregado. Ordem: filmes que o dono provavelmente viu e que mais informam o modelo.
 - **Perfil** — estatísticas, histórico, configurações.
 
 Protótipos aprovados (abrir com o servidor de brainstorm; fora do git): `.superpowers/brainstorm/*/content/home-v2-inicio-explorar.html`, `detalhe-filme.html`.
