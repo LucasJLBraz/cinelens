@@ -69,6 +69,11 @@ const NOTIFICACAO_SECS: i64 = 7 * 86_400;
 const NOVO_DIAS: i64 = 30;
 /// Notas on séries before a série can be notified: until then its evidence is almost all filmes.
 const NOTIFICACAO_MIN_NOTAS_SERIES: usize = 10;
+/// The same for animes.
+const NOTIFICACAO_MIN_NOTAS_ANIMES: usize = 10;
+/// A verdict from here up, Gostei included, makes the owner want the next temporada.
+// ponytail: fixed cut; tune if the next-temporada row shows animes the owner dropped.
+const VEREDITO_BOM: f32 = 4.0;
 
 #[derive(Debug)]
 pub enum Error {
@@ -184,6 +189,9 @@ struct Temporada {
     nome: String,
     episodios: Option<u32>,
     ano: Option<u16>,
+    /// `YYYY-MM-DD`; an asset built before the next-temporada row has none.
+    #[serde(default)]
+    estreia: Option<String>,
     /// MyAnimeList has an entry for it: there are ratings behind it.
     entrada: bool,
 }
@@ -459,6 +467,19 @@ pub struct Inicio {
     pub destaques: Vec<Destaque>,
     /// Every lista pronta, in order; some may have no movies.
     pub fileiras: Vec<Fileira>,
+    /// A plain reminder, the latest premiere first; empty, the row is absent.
+    pub proximas_temporadas: Vec<ProximaTemporada>,
+}
+
+/// The temporada after what the owner has seen of an anime they rated well or are Assistindo.
+#[derive(Debug, Serialize)]
+pub struct ProximaTemporada {
+    /// With no prediction: a reminder of what the owner already chose.
+    #[serde(flatten)]
+    pub card: MovieCard,
+    pub temporada: String,
+    /// `YYYY-MM-DD`, maybe still to come.
+    pub estreia: String,
 }
 
 /// Where to watch a movie in Brazil; shown credited to JustWatch.
@@ -947,7 +968,7 @@ impl Core {
         self.half_life_days = self.half_life(self.model.as_ref(), &notas);
         self.profile = self.model.as_ref().map(|m| m.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days));
         self.profile_series = self.model.as_ref().map(|m| self.fold_in_series(m, &self.owner.notas, SERIE_WEIGHT));
-        self.profile_animes = self.anime_model.as_ref().map(|m| self.fold_in_animes(m, None));
+        self.profile_animes = self.anime_model.as_ref().map(|m| self.fold_in_animes(m, &BTreeSet::new()));
         self.previstas = self
             .movies
             .iter()
@@ -1010,6 +1031,12 @@ impl Core {
         self.owner.notas.iter().filter(|(&id, h)| self.tipo(id) == Tipo::Serie && !h.is_empty()).count()
     }
 
+    /// The owner's current notas on animes, a temporada's counting as one.
+    pub(crate) fn notas_em_animes(&self) -> usize {
+        let inteiras = self.owner.notas.iter().filter(|(&id, h)| self.tipo(id) == Tipo::Anime && !h.is_empty()).count();
+        inteiras + self.owner.notas_temporada.values().map(BTreeMap::len).sum::<usize>()
+    }
+
     /// What predicts séries: notas on filmes and, through their content, notas on séries; an anime
     /// reads as nothing, so its notas teach nothing here.
     fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>, peso: f32) -> recommender::Profile {
@@ -1022,7 +1049,7 @@ impl Core {
 
     /// What predicts animes: notas on filmes, through the features shared with MyAnimeList or else
     /// their content, and notas on animes, leaving out `sem`'s. Nothing from séries.
-    fn fold_in_animes(&self, model: &Model, sem: Option<ObraId>) -> recommender::Profile {
+    fn fold_in_animes(&self, model: &Model, sem: &BTreeSet<ObraId>) -> recommender::Profile {
         let mut rows: Vec<(recommender::Item, f32, i64, f32)> = Vec::new();
         for (&id, h) in self.owner.notas.iter().filter(|(id, _)| !id.is_serie()) {
             let Some(e) = h.last() else { continue };
@@ -1034,7 +1061,7 @@ impl Core {
         }
         let vazio = BTreeMap::new();
         let animes = self.owner.notas.keys().chain(self.owner.notas_temporada.keys()).copied().collect::<BTreeSet<_>>();
-        for id in animes.into_iter().filter(|&id| self.tipo(id) == Tipo::Anime && Some(id) != sem) {
+        for id in animes.into_iter().filter(|&id| self.tipo(id) == Tipo::Anime && !sem.contains(&id)) {
             let Some(base) = self.index.get(&id).and_then(|&i| self.items[i].as_ref()) else { continue };
             let de_temporada = self.owner.notas_temporada.get(&id).unwrap_or(&vazio);
             let com_fatores = model.temporadas.get(&id);
@@ -1263,7 +1290,44 @@ impl Core {
             let movies = sortear(movies, FILEIRA, sorteio, |m| m.id);
             Fileira { nome: nome.to_string(), filtro, movies }
         });
-        Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
+        Inicio { destaques: destaques.collect(), fileiras: fileiras.collect(), proximas_temporadas: self.proximas_temporadas() }
+    }
+
+    /// From the owner's own notas and marks and TMDB's dates only. A nota on a temporada has seen
+    /// up to it; without one, a nota on the whole or Assistindo has seen what had premiered when
+    /// given. The latest verdict says whether the anime was rated well.
+    // ponytail: with no episode progress, Assistindo alone cannot tell which temporada the owner
+    // is on, so only a premiere after the mark counts; a nota on a temporada settles it.
+    fn proximas_temporadas(&self) -> Vec<ProximaTemporada> {
+        let vazio = BTreeMap::new();
+        let ids: BTreeSet<ObraId> = self.owner.notas.keys().chain(self.owner.notas_temporada.keys()).chain(&self.owner.assistindo).copied().collect();
+        let mut proximas: Vec<ProximaTemporada> = ids
+            .into_iter()
+            .filter_map(|id| {
+                let i = *self.index.get(&id)?;
+                let m = &self.movies[i];
+                let de_temporada = self.owner.notas_temporada.get(&id).unwrap_or(&vazio);
+                let inteira = self.owner.notas.get(&id).and_then(|h| h.last());
+                let veredito = inteira.into_iter().chain(de_temporada.values().filter_map(|h| h.last())).max_by_key(|e| e.at);
+                let assistindo = self.owner.assistindo.contains(&id);
+                if m.tipo() != Tipo::Anime || self.dispensado(i) || !(assistindo || veredito.is_some_and(|e| e.nota >= VEREDITO_BOM)) {
+                    return None;
+                }
+                let marcada = assistindo.then(|| self.owner.changed.get(&sync::key("assistindo", id)).copied()).flatten();
+                let ate = inteira.map(|e| e.at).max(marcada).filter(|_| de_temporada.is_empty()).map(listas::date);
+                let ultima = de_temporada.iter().filter(|(_, h)| !h.is_empty()).map(|(&t, _)| t).max().unwrap_or(0);
+                let proxima = m
+                    .temporadas
+                    .iter()
+                    .filter(|t| t.numero > ultima && t.estreia.as_ref().is_some_and(|e| ate.as_ref().is_none_or(|v| e > v)))
+                    .min_by_key(|t| t.numero)?;
+                let card = MovieCard { nota_prevista: None, confianca: None, exibicao: None, ..self.card(i) };
+                Some(ProximaTemporada { card, temporada: proxima.nome.clone(), estreia: proxima.estreia.clone()? })
+            })
+            .collect();
+        proximas.sort_by(|a, b| b.estreia.cmp(&a.estreia));
+        proximas.truncate(FILEIRA);
+        proximas
     }
 
     /// The rodada rápida's next `n` obras of `tipo`: those the owner most likely saw and whose
@@ -1330,7 +1394,8 @@ impl Core {
     /// The weekly notification, if one is due at `at` (Unix seconds): the best recomendação
     /// released in the last `NOVO_DIAS` days, in Aposta forte and never announced before. A série
     /// competes once the owner has `NOTIFICACAO_MIN_NOTAS_SERIES` notas on séries; its release is
-    /// its first episode, so a new season announces nothing.
+    /// its first episode, so a new season announces nothing. An anime likewise, from
+    /// `NOTIFICACAO_MIN_NOTAS_ANIMES` notas on animes.
     pub fn notificacao_devida(&self, at: i64) -> Option<Notificacao> {
         let last = self.owner.notificados.values().max();
         if self.owner.settings.sem_notificacao || last.is_some_and(|&t| at - t < NOTIFICACAO_SECS) {
@@ -1339,13 +1404,14 @@ impl Core {
         let (desde, hoje) = (listas::date(at - NOVO_DIAS * 86_400), listas::date(at));
         let novo = |m: &Movie| m.release_date.as_ref().is_some_and(|d| *d >= desde && *d <= hoje);
         let series_competem = self.notas_em_series() >= NOTIFICACAO_MIN_NOTAS_SERIES;
+        let animes_competem = self.notas_em_animes() >= NOTIFICACAO_MIN_NOTAS_ANIMES;
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, self.ranked_de(i)) == Faixa::ApostaForte);
             let compete = match m.tipo() {
                 Tipo::Filme => true,
                 Tipo::Serie => series_competem,
-                Tipo::Anime => false,
+                Tipo::Anime => animes_competem,
             };
             alta && novo(m) && compete && !self.owner.notificados.contains_key(&m.id)
         })?;
@@ -1511,7 +1577,7 @@ impl Core {
             return None;
         }
         if tipo == Tipo::Anime {
-            return Some(model.predict(&self.fold_in_animes(model, Some(id)), item));
+            return Some(model.predict(&self.fold_in_animes(model, &BTreeSet::from([id])), item));
         }
         if tipo == Tipo::Serie {
             let mut notas = self.owner.notas.clone();
@@ -1737,6 +1803,37 @@ impl Core {
             })
         };
         Some(AccuracySeries { geral: erro(None)?, acima: erro(Some(false)), abaixo: erro(Some(true)) })
+    }
+
+    /// Hides the `fraction` (0–1) of the owner's notas on animes given most recently, a temporada's
+    /// counting as one, with every other nota on those animes so none echoes them, and predicts
+    /// the hidden ones as `fold_in_animes` reads them. `None` without a model or when none can be
+    /// predicted. Informational: animes have no gate.
+    pub fn accuracy_animes(&self, fraction: f32) -> Option<ErroSeries> {
+        let model = self.anime_model.as_ref()?;
+        let inteiras = self.owner.notas.iter().filter_map(|(&id, h)| Some((id, None, h.last()?)));
+        let de_temporada = self.owner.notas_temporada.iter().flat_map(|(&id, de)| de.iter().filter_map(move |(&t, h)| Some((id, Some(t), h.last()?))));
+        let mut notas: Vec<(ObraId, Option<u32>, &NotaEntry)> = inteiras.chain(de_temporada).filter(|n| self.tipo(n.0) == Tipo::Anime).collect();
+        notas.sort_by_key(|n| std::cmp::Reverse(n.2.at));
+        notas.truncate(((notas.len() as f32 * fraction).round() as usize).min(notas.len()));
+        let profile = self.fold_in_animes(model, &notas.iter().map(|n| n.0).collect());
+        let medidos: Vec<(f32, f32)> = notas
+            .iter()
+            .filter_map(|&(id, t, e)| {
+                let base = self.items.get(*self.index.get(&id)?)?.as_ref()?;
+                let item = match (t, model.temporadas.get(&id)) {
+                    (Some(t), Some(fatores)) => fatores.get(&t)?,
+                    _ => base,
+                };
+                Some(((model.predict(&profile, item) - e.nota).abs(), e.nota))
+            })
+            .collect();
+        let n = medidos.len() as f32;
+        (!medidos.is_empty()).then(|| ErroSeries {
+            notas: medidos.len(),
+            mae: medidos.iter().map(|m| m.0).sum::<f32>() / n,
+            media: medidos.iter().map(|m| m.1).sum::<f32>() / n,
+        })
     }
 
     /// The catálogo obras passing `filtro`, recomendações first ("Para você": best percentile

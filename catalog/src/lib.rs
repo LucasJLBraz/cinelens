@@ -220,6 +220,8 @@ struct Temporada {
     nome: String,
     episodios: Option<u32>,
     ano: Option<u16>,
+    /// `YYYY-MM-DD`; a temporada to come may have a date already, or none.
+    estreia: Option<String>,
     /// MyAnimeList has an entry for it: there are ratings behind it.
     entrada: bool,
 }
@@ -749,6 +751,7 @@ fn anime(d: SerieDetails, anilist: &AniList) -> Option<(Movie, Vec<Provider>)> {
         nome: s.name.clone(),
         episodios: s.episode_count,
         ano: s.air_date.as_deref().and_then(|a| a.get(..4)).and_then(|y| y.parse().ok()),
+        estreia: s.air_date.clone().filter(|a| !a.is_empty()),
         entrada: entradas.is_some_and(|e| e.contains(&s.season_number)),
     });
     let temporadas: Vec<Temporada> = temporadas.collect();

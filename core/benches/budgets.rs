@@ -185,7 +185,7 @@ fn synthetic_series(n: usize) -> Vec<u8> {
 
 fn synthetic_animes(n: usize) -> Vec<u8> {
     let bytes = String::from_utf8(synthetic_catalog(n)).unwrap();
-    let animes = bytes.replace(r#""work_type":"movie""#, r#""work_type":"anime","number_of_seasons":3,"situacao":"terminada","temporadas":[{"numero":1,"nome":"Temporada 1","episodios":12,"ano":2020,"entrada":true},{"numero":2,"nome":"Temporada 2","episodios":12,"ano":2021,"entrada":true}]"#);
+    let animes = bytes.replace(r#""work_type":"movie""#, r#""work_type":"anime","number_of_seasons":3,"situacao":"terminada","temporadas":[{"numero":1,"nome":"Temporada 1","episodios":12,"ano":2020,"estreia":"2020-01-01","entrada":true},{"numero":2,"nome":"Temporada 2","episodios":12,"ano":2021,"estreia":"2021-01-01","entrada":true}]"#);
     let mut out = String::new();
     let mut rest = animes.as_str();
     while let Some(at) = rest.find(r#""tmdb_id":"#) {

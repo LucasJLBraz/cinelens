@@ -72,6 +72,17 @@ Séries não têm limite de MAE: esse número aparece no Perfil só como informa
 
 **O piso é removido se esconde séries de que você gosta.** Se a média das suas notas abaixo do piso for 3,5 ou mais, ou não for menor que a média acima dele, tire o piso (`abaixo_do_piso` em `core/src/lib.rs`). As séries abaixo do piso aparecem na busca, no Explorar e na Rodada rápida, então podem ganhar nota.
 
+
+## 6. Medir as previsões de animes
+
+Copie o `owner.json` para `data/`, como nas séries. A partir de 30 notas em animes:
+
+```bash
+cargo run --release -p cinelens-train --bin cinelens-accuracy -- --model data/model.json.gz --catalog data/catalog.json.gz --animes data/animes.json.gz --anime-model data/anime-model.json.gz --owner data/owner.json
+```
+
+A medição esconde as notas mais recentes em animes, com as outras notas nesses mesmos animes, e imprime o MAE e a média das notas escondidas. Uma nota em temporada conta como uma nota. Animes não têm limite de MAE: esse número aparece no Perfil só como informação e nunca rejeita um modelo (ADR 0004).
+
 ## Como decidir
 
 - A base Letterboxd fica só se o modelo com ela não tiver MAE maior que o modelo só MovieLens.

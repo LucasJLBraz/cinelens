@@ -422,3 +422,379 @@ mod temporadas {
         assert!(!core.rodada(Tipo::Anime, 9).iter().any(|c| c.id == id(10)));
     }
 }
+
+/// A core with one filme, `series` (average, votes above the piso's minimum) and `obras`, the raw
+/// fields of each anime, numbered from 200. No model unless the test loads one.
+fn com_animes(series: &[f32], obras: &[String]) -> Core {
+    let serie = |(n, media): (usize, &f32)| {
+        format!(r#"{{"tmdb_id": {}, "work_type": "tv", "title": "S{n}", "original_title": "S{n}", "year": 2010, "poster_path": null, "vote_count": 500, "vote_average": {media}, "genre_ids": [18]}}"#, ObraId::serie(100 + n as u32))
+    };
+    let series: Vec<String> = series.iter().enumerate().map(serie).collect();
+    let anime = |(n, campos): (usize, &String)| {
+        let n = 200 + n as u32;
+        format!(r#"{{"tmdb_id": {}, "work_type": "anime", "title": "Anime {n}", "original_title": "Original {n}", "year": 2020, "poster_path": null, "genre_ids": [16], {campos}}}"#, id(n))
+    };
+    let animes: Vec<String> = obras.iter().enumerate().map(anime).collect();
+    let mut core = Core::open(FILMES.as_bytes()).unwrap();
+    core.load_series(format!(r#"{{"format_version": 1, "data_version": "s", "genres": [], "movies": [{}]}}"#, series.join(",")).as_bytes()).unwrap();
+    core.load_animes(format!(r#"{{"format_version": 1, "data_version": "a", "genres": [], "trending": [{}], "movies": [{}]}}"#, id(200), animes.join(",")).as_bytes()).unwrap();
+    core
+}
+
+mod encontrar {
+    use super::*;
+
+    fn ids(page: cinelens_core::ExplorarPage) -> Vec<ObraId> {
+        page.movies.into_iter().map(|m| m.id).collect()
+    }
+
+    #[test]
+    fn the_tipo_filter_narrows_to_animes() {
+        let achados = ids(core().explorar(&Filtro { tipo: Some(Tipo::Anime), ..Default::default() }, 0));
+        assert_eq!(achados.len(), 4);
+        assert!(achados.contains(&id(10)) && achados.contains(&id(12)));
+    }
+
+    #[test]
+    fn search_finds_an_anime_by_either_title() {
+        let core = core();
+        let busca = |b: &str| ids(core.explorar(&Filtro { busca: b.into(), ..Default::default() }, 0));
+        assert_eq!(busca("Anime 12"), [id(12)]);
+        assert_eq!(busca("Original 12"), [id(12)]);
+    }
+
+    #[test]
+    fn inicio_has_rows_of_animes() {
+        let inicio = core().inicio(0, 0);
+        let fileira = inicio.fileiras.iter().find(|f| f.nome == "Animes para você").unwrap();
+        assert_eq!(fileira.filtro.tipo, Some(Tipo::Anime));
+        assert!(fileira.movies.iter().any(|m| m.id == id(10)));
+    }
+
+    #[test]
+    fn em_alta_goes_by_the_animes_trending() {
+        let obras = ["\"vote_count\": 10".to_string(), "\"vote_count\": 20".to_string()];
+        let inicio = com_animes(&[], &obras).inicio(0, 0);
+        let fileira = inicio.fileiras.iter().find(|f| f.nome == "Animes em alta").unwrap();
+        assert_eq!(fileira.movies.iter().map(|m| m.id).collect::<Vec<_>>(), [id(200)]);
+    }
+
+    #[test]
+    fn the_destaque_mixes_the_three_types_by_percentile() {
+        let inicio = core().inicio(0, 0);
+        let primeiros: Vec<ObraId> = inicio.destaques.iter().take(3).map(|d| d.card.id).collect();
+        assert!(primeiros.iter().any(|m| !m.is_serie()), "{primeiros:?}");
+        assert!(primeiros.contains(&SERIE), "{primeiros:?}");
+        assert!(primeiros.iter().any(|m| [id(10), id(11), id(12), id(13)].contains(m)), "{primeiros:?}");
+    }
+
+    #[test]
+    fn below_the_floor_is_no_recomendacao_but_stays_reachable() {
+        // The séries' floor is 7: the lowest quarter of their averages.
+        let obras = [r#""vote_count": 100, "vote_average": 5.0"#.to_string(), r#""vote_count": 100, "vote_average": 8.0"#.to_string()];
+        let mut core = com_animes(&[6.0, 7.0, 8.0, 9.0], &obras);
+        core.load_anime_model(ANIME_MODEL.as_bytes()).unwrap();
+        let ruim = id(200);
+        let recomendado = |core: &Core| core.inicio(0, 0).destaques.iter().any(|d| d.card.id == ruim);
+        assert!(!recomendado(&core));
+        assert!(core.inicio(0, 0).fileiras.iter().flat_map(|f| &f.movies).all(|m| m.id != ruim));
+        assert!(ids(core.explorar(&Filtro { tipo: Some(Tipo::Anime), ..Default::default() }, 0)).contains(&ruim));
+        assert_eq!(ids(core.explorar(&Filtro { busca: "Anime 200".into(), acima_do_piso: true, ..Default::default() }, 0)), [ruim]);
+    }
+
+    #[test]
+    fn the_assistindo_row_has_animes_and_series() {
+        let mut core = core();
+        core.marcar(id(10), Marca::Assistindo, true, 100);
+        core.marcar(SERIE, Marca::Assistindo, true, 100);
+        let inicio = core.inicio(0, 0);
+        let fileira = inicio.fileiras.last().unwrap();
+        assert_eq!(fileira.nome, "Assistindo");
+        let mut achados: Vec<ObraId> = fileira.movies.iter().map(|m| m.id).collect();
+        achados.sort();
+        let mut esperados = vec![id(10), SERIE];
+        esperados.sort();
+        assert_eq!(achados, esperados);
+    }
+}
+
+mod pagina {
+    use super::*;
+    use cinelens_core::Direcao;
+
+    #[test]
+    fn shows_situacao_temporadas_episode_length_trailer_and_onde_assistir() {
+        let obras = [r#""vote_count": 100, "runtime": 24, "number_of_seasons": 2, "situacao": "em_andamento", "trailer_youtube": "abc", "watch": {"link": "https://w"}"#.to_string()];
+        let page = com_animes(&[], &obras).movie(id(200)).unwrap();
+        assert_eq!((page.runtime, page.temporadas, page.situacao.as_deref()), (Some(24), Some(2), Some("em_andamento")));
+        assert_eq!(page.trailer_youtube.as_deref(), Some("abc"));
+        assert_eq!(page.onde_assistir.unwrap().link.as_deref(), Some("https://w"));
+        assert!(page.tmdb_url.contains("/tv/200"));
+    }
+
+    #[test]
+    fn parecidos_are_only_animes_and_one_without_factors_falls_back_to_content() {
+        let core = core();
+        // 12 has no factors of its own: only content reaches it.
+        assert!(core.movie(id(12)).unwrap().card.confianca < core.movie(id(10)).unwrap().card.confianca);
+        for de in [id(10), id(12)] {
+            let parecidos = core.parecidos(de, 0);
+            assert!(!parecidos.is_empty());
+            assert!(parecidos.iter().all(|m| [id(10), id(11), id(12), id(13)].contains(&m.id)), "{parecidos:?}");
+        }
+    }
+
+    #[test]
+    fn parecidos_mas_is_empty_on_an_anime() {
+        assert!(core().parecidos_mas(id(10), Direcao::MaisRecente).is_empty());
+    }
+}
+
+mod proxima_temporada {
+    use super::*;
+
+    /// 2020-06-01, between the first and second temporadas.
+    const EM_2020: i64 = 1_590_969_600;
+    /// 2022-06-01, after the second.
+    const EM_2022: i64 = 1_654_041_600;
+
+    /// 200: first in 2020, second in 2021, third in 2030, fourth with no date.
+    fn core() -> Core {
+        let temporada = |n: u32, estreia: &str| format!(r#"{{"numero": {n}, "nome": "Temporada {n}", "episodios": 12, "ano": null, "estreia": {estreia}, "entrada": true}}"#);
+        let temporadas = [temporada(1, "\"2020-01-01\""), temporada(2, "\"2021-01-01\""), temporada(3, "\"2030-01-01\""), temporada(4, "null")];
+        com_animes(&[], &[format!(r#""vote_count": 100, "vote_average": 8.0, "temporadas": [{}]"#, temporadas.join(","))])
+    }
+
+    fn proxima(core: &Core) -> Option<(String, String)> {
+        let inicio = core.inicio(EM_2022, 0);
+        inicio.proximas_temporadas.first().map(|p| (p.temporada.clone(), p.estreia.clone()))
+    }
+
+    fn esperada(n: u32, estreia: &str) -> Option<(String, String)> {
+        Some((format!("Temporada {n}"), estreia.to_string()))
+    }
+
+    #[test]
+    fn is_absent_with_no_nota_or_mark_and_on_a_bad_nota() {
+        let mut core = core();
+        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        core.reagir(id(200), Reacao::NaoGostei, EM_2020).unwrap();
+        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+    }
+
+    #[test]
+    fn follows_the_highest_temporada_rated_well() {
+        let mut core = core();
+        core.reagir_temporada(id(200), 1, Reacao::Gostei, EM_2022).unwrap();
+        assert_eq!(proxima(&core), esperada(2, "2021-01-01"));
+    }
+
+    #[test]
+    fn a_nota_on_the_whole_covers_what_had_premiered_by_then() {
+        let mut core = core();
+        core.rate(id(200), 5.0, EM_2020).unwrap();
+        assert_eq!(proxima(&core), esperada(2, "2021-01-01"));
+        core.rate(id(200), 5.0, EM_2022).unwrap();
+        assert_eq!(proxima(&core), esperada(3, "2030-01-01"));
+    }
+
+    #[test]
+    fn a_nota_on_a_temporada_settles_where_the_owner_is() {
+        let mut core = core();
+        core.reagir_temporada(id(200), 1, Reacao::Gostei, EM_2020).unwrap();
+        core.marcar(id(200), Marca::Assistindo, true, EM_2022);
+        assert_eq!(proxima(&core), esperada(2, "2021-01-01"));
+    }
+
+    #[test]
+    fn the_latest_verdict_decides() {
+        let mut core = core();
+        core.rate(id(200), 5.0, EM_2020).unwrap();
+        core.reagir_temporada(id(200), 2, Reacao::NaoGostei, EM_2022).unwrap();
+        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+    }
+
+    #[test]
+    fn assistindo_counts_from_the_mark_with_no_prediction() {
+        let mut core = core();
+        core.load_anime_model(ANIME_MODEL.as_bytes()).unwrap();
+        assert!(core.movie(id(200)).unwrap().card.nota_prevista.is_some());
+        core.marcar(id(200), Marca::Assistindo, true, EM_2020);
+        let inicio = core.inicio(EM_2022, 0);
+        let p = &inicio.proximas_temporadas[0];
+        assert_eq!((p.temporada.as_str(), p.card.id), ("Temporada 2", id(200)));
+        assert_eq!((p.card.nota_prevista, p.card.confianca), (None, None));
+        assert!(p.card.exibicao.is_none());
+    }
+
+    #[test]
+    fn leaves_out_nao_me_interessa_and_a_temporada_without_a_date() {
+        let mut core = core();
+        core.rate_temporada(id(200), 3, 5.0, EM_2022).unwrap();
+        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+        core.remover_nota_temporada(id(200), 3, EM_2022);
+        core.rate(id(200), 5.0, EM_2020).unwrap();
+        core.marcar(id(200), Marca::NaoMeInteressa, true, EM_2022);
+        assert!(core.inicio(EM_2022, 0).proximas_temporadas.is_empty());
+    }
+
+    #[test]
+    fn sends_no_notification() {
+        let mut core = core();
+        core.rate(id(200), 5.0, EM_2020).unwrap();
+        assert!(proxima(&core).is_some());
+        assert!(core.notificacao_devida(EM_2022).is_none());
+    }
+}
+
+mod perfil {
+    use super::*;
+    use cinelens_core::Faixa;
+
+    /// 2026-11-01.
+    const AGORA: i64 = 1_793_491_200;
+
+    /// `n` animes with factors.
+    fn muitos(n: u32) -> Core {
+        let obras: Vec<String> = (0..n).map(|_| r#""vote_count": 100, "vote_average": 8.0"#.to_string()).collect();
+        let mut core = com_animes(&[], &obras);
+        let fatores = |t: u32| format!(r#"{{"tmdb_id": {t}, "temporada": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 1000}}"#);
+        let animes: Vec<String> = (200..200 + n).map(fatores).collect();
+        let modelo = format!(r#"{{"format_version": 1, "data_version": "am", "global_mean": 3.5, "lambda": 0.05, "movies": [{{"tmdb_id": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 100}}], "animes": [{}], "content": []}}"#, animes.join(","));
+        core.load_anime_model(modelo.as_bytes()).unwrap();
+        core
+    }
+
+    /// Animes to rate first and a new one, released a week before `AGORA`, last.
+    fn com_lancamento(n: u32) -> Core {
+        let mut obras: Vec<String> = (0..n).map(|_| r#""vote_count": 100, "vote_average": 8.0"#.to_string()).collect();
+        obras.push(r#""vote_count": 100, "vote_average": 8.0, "release_date": "2026-10-25""#.to_string());
+        let mut core = com_animes(&[], &obras);
+        let fatores = |t: u32| format!(r#"{{"tmdb_id": {t}, "temporada": 1, "bias": {}, "factors": [1.0, 0.0], "ratings": 1000}}"#, if t == 200 + n { 1.0 } else { 0.0 });
+        let animes: Vec<String> = (200..=200 + n).map(fatores).collect();
+        let modelo = format!(r#"{{"format_version": 1, "data_version": "am", "global_mean": 3.5, "lambda": 0.05, "movies": [], "animes": [{}], "content": []}}"#, animes.join(","));
+        core.load_anime_model(modelo.as_bytes()).unwrap();
+        core
+    }
+
+    #[test]
+    fn a_new_anime_competes_from_ten_notas_on_animes() {
+        let mut core = com_lancamento(10);
+        let novo = id(210);
+        (200..209).for_each(|t| _ = core.rate(id(t), 4.0, AGORA - 1000).unwrap());
+        assert_eq!(core.movie(novo).unwrap().faixa, Some(Faixa::ApostaForte));
+        assert!(core.notificacao_devida(AGORA).is_none());
+        core.rate(id(209), 4.0, AGORA - 1000).unwrap();
+        assert_eq!(core.notificacao_devida(AGORA).unwrap().id, novo);
+    }
+
+    #[test]
+    fn notas_on_temporadas_count_toward_the_ten() {
+        let temporada = |n: u32| format!(r#"{{"numero": {n}, "nome": "T{n}", "episodios": 1, "ano": null, "entrada": true}}"#);
+        let temporadas: Vec<String> = (1..=10).map(temporada).collect();
+        let obras = [format!(r#""vote_count": 100, "temporadas": [{}]"#, temporadas.join(",")), r#""vote_count": 100, "vote_average": 8.0, "release_date": "2026-10-25""#.to_string()];
+        let mut core = com_animes(&[], &obras);
+        let modelo = r#"{"format_version": 1, "data_version": "am", "global_mean": 3.5, "lambda": 0.05, "movies": [],
+            "animes": [{"tmdb_id": 200, "temporada": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 1000}, {"tmdb_id": 201, "temporada": 1, "bias": 1.0, "factors": [1.0, 0.0], "ratings": 1000}], "content": []}"#;
+        core.load_anime_model(modelo.as_bytes()).unwrap();
+        (1..=10).for_each(|t| _ = core.rate_temporada(id(200), t, 4.0, AGORA - 1000).unwrap());
+        assert_eq!(core.notificacao_devida(AGORA).unwrap().id, id(201));
+    }
+
+    #[test]
+    fn a_notification_comes_at_most_once_a_week() {
+        let mut core = com_lancamento(10);
+        (200..210).for_each(|t| _ = core.rate(id(t), 4.0, AGORA - 1000).unwrap());
+        let n = core.notificacao_devida(AGORA).unwrap();
+        core.notificado(n.id, AGORA);
+        assert!(core.notificacao_devida(AGORA + 86_400).is_none());
+    }
+
+    #[test]
+    fn the_selector_reads_animes_alone_with_their_temporadas() {
+        let mut core = core();
+        core.rate(FILME_BRIDGE, 5.0, 100).unwrap();
+        core.rate(id(11), 4.5, 100).unwrap();
+        core.rate_temporada(id(10), 1, 2.0, 100).unwrap();
+        core.reagir_temporada(id(10), 2, Reacao::Amei, 100).unwrap();
+        let e = core.estatisticas(Some(Tipo::Anime));
+        assert_eq!(e.distribuicao.iter().sum::<usize>(), 2);
+        assert_eq!(e.reacoes, [0, 0, 1]);
+        assert_eq!(core.estatisticas(Some(Tipo::Filme)).distribuicao.iter().sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn accuracy_stays_separated_by_type() {
+        let mut core = core();
+        core.rate(FILME_BRIDGE, 5.0, 100).unwrap();
+        core.rate(id(10), 4.0, 200).unwrap();
+        let e = core.estatisticas(None);
+        assert_eq!(e.acerto_animes.unwrap().notas, 1);
+        assert_eq!(e.acerto.unwrap().notas, 1);
+        assert!(e.acerto_series.is_none());
+    }
+
+    #[test]
+    fn the_informational_mae_starts_at_thirty_notas_on_animes() {
+        let mut core = muitos(30);
+        (200..229).for_each(|t| _ = core.rate(id(t), 4.0, 100 + i64::from(t)).unwrap());
+        assert!(core.estatisticas(None).mae_animes.is_none());
+        core.rate(id(229), 4.0, 400).unwrap();
+        // 20% of 30 hidden.
+        assert_eq!(core.estatisticas(None).mae_animes.unwrap().notas, 6);
+        assert!(core.estatisticas(None).mae_series.is_none());
+    }
+
+    #[test]
+    fn hiding_a_nota_hides_every_nota_on_that_anime() {
+        // The held-out temporada's own whole nota must not echo it: a perfect 5.0 on the whole
+        // would pull the prediction for its temporada up.
+        let temporada = |n: u32| format!(r#"{{"numero": {n}, "nome": "T{n}", "episodios": 1, "ano": null, "entrada": true}}"#);
+        let obras = [format!(r#""vote_count": 100, "temporadas": [{},{}]"#, temporada(1), temporada(2))];
+        let modelo = r#"{"format_version": 1, "data_version": "am", "global_mean": 3.0, "lambda": 0.05, "movies": [],
+            "animes": [{"tmdb_id": 200, "temporada": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 1000}, {"tmdb_id": 200, "temporada": 2, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 1000}], "content": []}"#;
+        let mut sozinho = com_animes(&[], &obras);
+        sozinho.load_anime_model(modelo.as_bytes()).unwrap();
+        sozinho.rate_temporada(id(200), 2, 5.0, 200).unwrap();
+        let mut com_inteira = com_animes(&[], &obras);
+        com_inteira.load_anime_model(modelo.as_bytes()).unwrap();
+        com_inteira.rate(id(200), 5.0, 100).unwrap();
+        com_inteira.rate_temporada(id(200), 2, 5.0, 200).unwrap();
+        let mae = |core: &Core, fraction| core.accuracy_animes(fraction).unwrap().mae;
+        assert_eq!(mae(&sozinho, 1.0), mae(&com_inteira, 0.5));
+    }
+
+    #[test]
+    fn the_filmes_gate_does_not_read_notas_on_animes() {
+        let mut core = core();
+        core.rate(FILME_BRIDGE, 5.0, 100).unwrap();
+        core.rate(FILME_OUTRO, 1.0, 200).unwrap();
+        let antes = core.accuracy(0.5).unwrap().mae;
+        core.rate(id(10), 0.5, 300).unwrap();
+        assert_eq!(core.accuracy(0.5).unwrap().mae, antes);
+    }
+}
+
+mod atualizar {
+    use super::*;
+
+    #[test]
+    fn notas_and_marks_stay_when_the_animes_arrive_and_a_serie_becomes_an_anime() {
+        let mut core = Core::open(FILMES.as_bytes()).unwrap();
+        let virou = r#"{"format_version": 1, "data_version": "s", "genres": [], "movies": [{"tmdb_id": 2147483658, "work_type": "tv", "title": "Era série", "original_title": "S", "year": 2010, "poster_path": null, "vote_count": 500, "genre_ids": [16]}]}"#;
+        core.load_series(virou.as_bytes()).unwrap();
+        core.reagir(id(10), Reacao::Amei, 100).unwrap();
+        core.marcar(id(10), Marca::Assistindo, true, 100);
+        core.rate(FILME_BRIDGE, 4.0, 100).unwrap();
+        core.marcar(FILME_OUTRO, Marca::QueroAssistir, true, 100);
+        let antes = core.owner_data();
+
+        core.load_animes(animes().as_bytes()).unwrap();
+        core.load_anime_model(ANIME_MODEL.as_bytes()).unwrap();
+
+        assert_eq!(core.owner_data(), antes);
+        let page = core.movie(id(10)).unwrap();
+        assert_eq!((page.nota, page.reacao, page.assistindo), (Some(5.0), Some(Reacao::Amei), true));
+        assert_eq!(page.card.title, "Anime 10");
+    }
+}

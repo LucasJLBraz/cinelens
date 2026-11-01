@@ -43,9 +43,9 @@ Recomendações de filmes e séries feitas para o seu gosto, que rodam no seu An
 | 🙈 **Sem spoiler de nota** | As notas ficam escondidas até você tocar, para não influenciar sua escolha |
 | 🧭 **Parecidos, mas…** | Parte de um filme de que você gostou e pede algo mais leve, mais curto ou mais recente |
 | 📊 **Estatísticas** | O que suas notas dizem sobre você |
-| 🔔 **Aviso semanal** | Avisa quando sai um filme com cara de Aposta forte para você, e uma série depois de 10 notas em séries |
+| 🔔 **Aviso semanal** | Avisa quando sai um filme com cara de Aposta forte para você, uma série depois de 10 notas em séries e um anime depois de 10 notas em animes |
 | 🔁 **Sync e importação** | Traga seu histórico do MovieLens e sincronize aparelhos pelo Google Drive |
-| 📤 **Compartilhar** | Envie um filme ou uma série como card pelo Android, com onde assistir |
+| 📤 **Compartilhar** | Envie um filme, uma série ou um anime como card pelo Android, com onde assistir |
 
 ## Instalar
 
@@ -60,8 +60,8 @@ Na primeira abertura o app baixa o catálogo, uma vez só. Depois, é só dar no
 ## Como funciona
 
 - **Local-first** ([ADR 0001](docs/adr/0001-local-first-split-model.md)): catálogo, notas e modelo ficam no aparelho; o sync passa só pelo Google Drive do dono.
-- **Catálogo:** filmes e séries, montado todo dia no GitHub Actions a partir do TMDB (e do OMDb, só para filmes) e publicado como release (`catalog-v*`). O app baixa sozinho.
-- **Modelo:** fatores de filmes treinados no GitHub Actions com o MovieLens `ml-latest` e publicados como release (`model-v*`). O perfil do dono é recalculado no aparelho a cada nota, e as notas nunca saem do aparelho e do Drive dele. Séries não entram no modelo: a nota prevista delas vem do conteúdo, e as notas em séries nunca mudam a nota prevista de um filme.
+- **Catálogo:** filmes, séries e animes, montado todo dia no GitHub Actions a partir do TMDB (e do OMDb, só para filmes) e publicado como release (`catalog-v*`). O app baixa sozinho.
+- **Modelo:** fatores de filmes treinados no GitHub Actions com o MovieLens `ml-latest` e publicados como release (`model-v*`). O perfil do dono é recalculado no aparelho a cada nota, e as notas nunca saem do aparelho e do Drive dele. Séries não entram no modelo: a nota prevista delas vem do conteúdo, e as notas em séries nunca mudam a nota prevista de um filme. Animes têm fatores próprios, treinados sob demanda com notas do MyAnimeList e publicados como release (`anime-model-v*`), e as notas em animes não mudam a nota prevista de filmes nem de séries.
 - **Precisão:** a nota prevista precisa errar no máximo tanto quanto o MovieLens erra sobre o dono. As medições estão em [docs/guides/accuracy.md](docs/guides/accuracy.md).
 
 O design completo está em [docs/superpowers/specs/2026-10-24-cinelens-design.md](docs/superpowers/specs/2026-10-24-cinelens-design.md), e os termos em [GLOSSARY.md](GLOSSARY.md).
@@ -98,6 +98,7 @@ Guias de configuração (chaves, secrets, publicar versão) em [docs/guides/](do
 ## Dados e licenças
 
 - [MovieLens](https://grouplens.org/datasets/movielens/) `ml-latest`, GroupLens: F. Maxwell Harper e Joseph A. Konstan, "The MovieLens Datasets: History and Context", ACM TiiS 5(4), 2015. Uso não comercial.
+- Fatores de animes treinados com notas do [MyAnimeList](https://myanimelist.net/), pelo dump de novembro de 2023 de Gatchalian, ligados ao TMDB por [`Fribb/anime-lists`](https://github.com/Fribb/anime-lists). Os dados das notas não ficam no repositório ([ADR 0004](docs/adr/0004-anime-factors-from-myanimelist.md)).
 - Metadados e imagens do [TMDB](https://www.themoviedb.org/). Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.
 - Onde assistir: dados do [JustWatch](https://www.justwatch.com/), via TMDB.
 - Notas da crítica via [OMDb](https://www.omdbapi.com/).

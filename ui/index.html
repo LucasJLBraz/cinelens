@@ -261,6 +261,7 @@
     <div id="rodada-tipos" class="chips">
       <button class="chip" data-valor="Filme">Filmes</button>
       <button class="chip" data-valor="Serie">Séries</button>
+      <button class="chip" data-valor="Anime">Animes</button>
     </div>
     <div id="rodada-filme"></div>
     <div id="rodada-notas"></div>
@@ -287,6 +288,7 @@
           <button class="chip" data-valor="">Tudo</button>
           <button class="chip" data-valor="Filme">Filmes</button>
           <button class="chip" data-valor="Serie">Séries</button>
+          <button class="chip" data-valor="Anime">Animes</button>
         </div>
       </div>
       <div class="linha">
@@ -307,7 +309,7 @@
         <div class="grade">
           <label>Ano de <input type="number" inputmode="numeric" data-campo="ano_min" data-tipo="num" placeholder="1900"></label>
           <label>até <input type="number" inputmode="numeric" data-campo="ano_max" data-tipo="num" placeholder="2026"></label>
-          <label>Situação da série <select data-campo="situacao"><option value="">Qualquer</option><option value="em_andamento">Em andamento</option><option value="terminada">Terminada</option></select></label>
+          <label>Situação <select data-campo="situacao"><option value="">Qualquer</option><option value="em_andamento">Em andamento</option><option value="terminada">Terminada</option></select></label>
           <label>Idioma original <select id="idioma" data-campo="idioma"><option value="">Qualquer</option></select></label>
           <label>País <select id="pais" data-campo="pais"><option value="">Qualquer</option></select></label>
           <label>Nota prevista mínima <select data-campo="nota_prevista_min" data-tipo="num">
@@ -429,7 +431,7 @@
     <button class="pill back">‹ Voltar</button>
     <h1 id="parecidos-tela-titulo"></h1>
     <main id="parecidos-grid"></main>
-    <button id="parecidos-mais-filmes" hidden>Mais filmes</button>
+    <button id="parecidos-mais-filmes" hidden>Ver mais</button>
   </section>
   <section id="pessoa" hidden>
     <button class="pill back">‹ Voltar</button>
@@ -461,6 +463,7 @@
       <button class="chip" data-valor="">Tudo</button>
       <button class="chip" data-valor="Filme">Filmes</button>
       <button class="chip" data-valor="Serie">Séries</button>
+      <button class="chip" data-valor="Anime">Animes</button>
     </div>
     <div id="stats"></div>
     <h2>Ajustes</h2>
@@ -493,7 +496,7 @@
     <button id="import" class="pill">Importar do MovieLens</button>
     <input id="import-files" type="file" multiple hidden>
     <p id="import-result" class="hint" hidden></p>
-    <footer>Dados e imagens de filmes: TMDB. Onde assistir: JustWatch. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
+    <footer>Dados e imagens: TMDB. Onde assistir: JustWatch. Notas previstas de animes: dados do MyAnimeList. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</footer>
   </section>
   <nav id="abas" hidden>
     <button data-aba="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Início</button>
@@ -556,7 +559,7 @@
     // Explorar's filters, as the core's Filtro; {} is no filter.
     let filtro = {};
     let statsTipo = '';
-    // Tudo, Filmes or Séries as the owner last chose; a lista pronta's own tipo does not change it.
+    // Tudo, Filmes, Séries or Animes as the owner last chose; a lista pronta's own tipo does not change it.
     let tipoEscolhido = '';
     try { tipoEscolhido = localStorage.getItem('tipo') || ''; } catch {}
     if (tipoEscolhido) filtro.tipo = tipoEscolhido;
@@ -612,8 +615,8 @@
         else if (el.dataset.tipo === 'bool') el.value = v ? '1' : '';
         else el.value = v ?? (el.dataset.campo === 'garimpo' ? 0 : el.tagName === 'SELECT' ? el.options[0].value : '');
       }
-      // On séries the choices are episode lengths; one that does not fit the type is dropped.
-      const faixas = filtro.tipo === 'Serie' ? DURACOES_EPISODIO : DURACOES;
+      // On séries and animes the choices are episode lengths; one that does not fit the type is dropped.
+      const faixas = ['Serie', 'Anime'].includes(filtro.tipo) ? DURACOES_EPISODIO : DURACOES;
       if (duracaoEl.dataset.faixas !== faixas) {
         duracaoEl.dataset.faixas = faixas;
         duracaoEl.innerHTML = faixas;
@@ -745,7 +748,7 @@
     const reacoesEl = document.getElementById('reacoes');
     const usarEstrelasEl = document.getElementById('usar-estrelas');
     const fmt = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1 });
-    // A série's id has the high bit set (ADR 0003).
+    // A série's or anime's id has the high bit set (ADR 0003).
     const ehSerie = id => id >= 2 ** 31;
     const REACOES = { NaoGostei: 'Não gostei', Gostei: 'Gostei', Amei: 'Amei' };
     // A nota as the owner gave it.
@@ -766,7 +769,7 @@
     const rodadaNaoViEl = document.getElementById('rodada-nao-vi');
     const rodadaReacoesEl = document.getElementById('rodada-reacoes');
     const rodadaTiposEl = document.getElementById('rodada-tipos');
-    // Filmes or Séries as the owner last chose.
+    // Filmes, Séries or Animes as the owner last chose.
     let rodadaTipo = 'Filme';
     try { rodadaTipo = localStorage.getItem('rodada-tipo') || 'Filme'; } catch {}
     const rodadaRevelacaoEl = document.getElementById('rodada-revelacao');
@@ -785,8 +788,8 @@
       const atual = rodadaFila[0];
       rodadaFilmeEl.replaceChildren(...(atual ? [atual.el] : []));
       rodadaNaoViEl.hidden = !atual;
-      rodadaNotasEl.hidden = !atual || rodadaTipo === 'Serie';
-      rodadaReacoesEl.hidden = !atual || rodadaTipo !== 'Serie';
+      rodadaNotasEl.hidden = !atual || rodadaTipo !== 'Filme';
+      rodadaReacoesEl.hidden = !atual || rodadaTipo === 'Filme';
       for (const chip of rodadaTiposEl.children) chip.classList.toggle('on', chip.dataset.valor === rodadaTipo);
       document.getElementById('rodada-vazio').hidden = Boolean(atual) || rodadaPedidos > 0;
     }
@@ -1314,10 +1317,11 @@
       const filme = (card, texto) => push(el('button', { className: 'link', textContent: `${card.title}: ${texto}`, onclick: () => openMovie(card.tmdb_id) }));
       const soma = valores => valores.reduce((a, b) => a + b, 0);
       const total = soma(e.distribuicao) + soma(e.reacoes);
-      // Always the type's own accuracy: the two are never mixed.
-      const resumoSeries = statsTipo === 'Serie' || (!statsTipo && !e.acerto);
-      const acertoResumo = resumoSeries ? e.acerto_series : e.acerto;
-      document.getElementById('resumo-acerto-nome').textContent = resumoSeries ? 'erro médio em séries' : 'erro médio em filmes';
+      // Always the type's own accuracy: the types are never mixed.
+      const acertos = [['Filme', 'filmes', e.acerto, null], ['Serie', 'séries', e.acerto_series, e.mae_series], ['Anime', 'animes', e.acerto_animes, e.mae_animes]];
+      const resumo = acertos.find(([tipo, , acerto]) => statsTipo ? tipo === statsTipo : acerto);
+      const acertoResumo = resumo?.[2];
+      if (resumo) document.getElementById('resumo-acerto-nome').textContent = `erro médio em ${resumo[1]}`;
       document.getElementById('resumo-notas').textContent = total;
       document.getElementById('resumo-acerto-box').hidden = !acertoResumo;
       if (acertoResumo) document.getElementById('resumo-acerto').textContent = `${estrelas(acertoResumo.mae)} ★`;
@@ -1335,9 +1339,11 @@
         hint(Math.abs(d) < 0.05 ? 'Como o público, em média.'
           : `${estrelas(Math.abs(d))} ★ ${d < 0 ? 'abaixo' : 'acima'} do público, em média.`);
       }
-      if (e.acerto && statsTipo !== 'Serie') hint(`Em filmes, o app erra ${estrelas(e.acerto.mae)} ★ em média em ${e.acerto.notas} notas.`);
-      if (e.acerto_series && statsTipo !== 'Filme') hint(`Em séries, o app erra ${estrelas(e.acerto_series.mae)} ★ em média em ${e.acerto_series.notas} notas.`);
-      if (e.mae_series && statsTipo !== 'Filme') hint(`Escondendo suas ${e.mae_series.notas} notas mais recentes em séries, o app erra ${estrelas(e.mae_series.mae)} ★ em média.`);
+      for (const [tipo, nome, acerto, mae] of acertos) {
+        if (statsTipo && statsTipo !== tipo) continue;
+        if (acerto) hint(`Em ${nome}, o app erra ${estrelas(acerto.mae)} ★ em média em ${acerto.notas} notas.`);
+        if (mae) hint(`Escondendo suas ${mae.notas} notas mais recentes em ${nome}, o app erra ${estrelas(mae.mae)} ★ em média.`);
+      }
       if (e.por_mes.length) {
         const meses = e.por_mes.slice(-24);
         titulo(meses.length < e.por_mes.length ? 'Notas por mês (últimos 24)' : 'Notas por mês');
@@ -1676,6 +1682,22 @@
         section.append(cabeca, fileira);
         return section;
       }));
+      // A plain reminder, absent when empty. A saved Início from before it has none.
+      const proximas = inicio.proximas_temporadas || [];
+      if (proximas.length) {
+        const section = document.createElement('section');
+        const cabeca = Object.assign(document.createElement('div'), { className: 'cabeca' });
+        cabeca.append(Object.assign(document.createElement('h2'), { textContent: 'Próxima temporada' }));
+        const fileira = Object.assign(document.createElement('div'), { className: 'fileira' });
+        fileira.append(...proximas.map(p => {
+          const el = card(p);
+          const [ano, mes, dia] = p.estreia.split('-');
+          el.querySelector('.ano').textContent = `${p.temporada} · ${dia}/${mes}/${ano}`;
+          return el;
+        }));
+        section.append(cabeca, fileira);
+        document.getElementById('fileiras').append(section);
+      }
     }
 
     // Shown once, right after the first catálogo download (not again if the catálogo is ever

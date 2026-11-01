@@ -60,6 +60,8 @@ fn every_row_is_explorar_with_its_listas_filtro() {
             "Em alta, do seu jeito",
             "Séries para você",
             "Séries em alta",
+            "Animes para você",
+            "Animes em alta",
             "No seu streaming hoje",
             "Lançamentos para você",
             "Joias escondidas",

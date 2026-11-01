@@ -211,9 +211,9 @@ fn temporadas_come_as_tmdb_lists_them_without_specials_and_say_which_have_an_ent
     assert_eq!(
         artifact["movies"][0]["temporadas"],
         json!([
-            {"numero": 1, "nome": "Temporada 1", "episodios": 12, "ano": 2019, "entrada": true},
-            {"numero": 2, "nome": "Temporada 2", "episodios": 13, "ano": null, "entrada": true},
-            {"numero": 3, "nome": "Temporada 3", "episodios": 13, "ano": 2024, "entrada": false}
+            {"numero": 1, "nome": "Temporada 1", "episodios": 12, "ano": 2019, "estreia": "2019-04-01", "entrada": true},
+            {"numero": 2, "nome": "Temporada 2", "episodios": 13, "ano": null, "estreia": null, "entrada": true},
+            {"numero": 3, "nome": "Temporada 3", "episodios": 13, "ano": 2024, "estreia": "2024-04-01", "entrada": false}
         ])
     );
 }

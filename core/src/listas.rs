@@ -20,10 +20,13 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
     let obras = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, assistindo: Mostrar::Esconder, acima_do_piso: true, ..Default::default() };
     let nao_visto = Filtro { tipo: Some(Tipo::Filme), ..obras.clone() };
     let series = Filtro { tipo: Some(Tipo::Serie), ..obras.clone() };
+    let animes = Filtro { tipo: Some(Tipo::Anime), ..obras.clone() };
     vec![
         ("Em alta, do seu jeito", Filtro { em_alta: true, ..nao_visto.clone() }),
         ("Séries para você", series.clone()),
         ("Séries em alta", Filtro { em_alta: true, ..series.clone() }),
+        ("Animes para você", animes.clone()),
+        ("Animes em alta", Filtro { em_alta: true, ..animes }),
         ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..obras.clone() }),
         (
             "Lançamentos para você",
@@ -52,7 +55,7 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
         ),
         ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, acima_do_piso: true, ..Default::default() }),
         // Below the main rows; the owner's own, so nothing about it is left out.
-        ("Assistindo", Filtro { tipo: Some(Tipo::Serie), assistindo: Mostrar::So, ..Default::default() }),
+        ("Assistindo", Filtro { assistindo: Mostrar::So, ..Default::default() }),
     ]
 }
 

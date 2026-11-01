@@ -1,12 +1,14 @@
 //! `cinelens-accuracy --model model.json.gz [--catalog catalog.json.gz] [--held-out 0.2] movielens-*.csv`
 //! `cinelens-accuracy --model model.json.gz --catalog catalog.json.gz --series series.json.gz --owner owner.json [--held-out 0.2]`
+//! `cinelens-accuracy --model model.json.gz --catalog catalog.json.gz --animes animes.json.gz --anime-model anime-model.json.gz --owner owner.json [--held-out 0.2]`
 //!
 //! The accuracy harness on the owner's real MovieLens export, run locally only (the export never
 //! reaches CI): imports it into a core, hides the most recent notas from the fold-in and prints
 //! the MAE of the nota prevista on them, next to MovieLens's own on the same notas. With the
 //! catálogo, held-out movies outside the model are also predicted from their content, measured
 //! apart. With the séries and the app's owner data, it instead measures the notas on séries:
-//! the error for each weight of a nota on a série, and above and below the floor.
+//! the error for each weight of a nota on a série, and above and below the floor. With the animes
+//! and their model, the notas on animes: informational, since animes have no gate.
 
 /// MovieLens's MAE on all the owner's notas, from the predictions in the logs (design §6.6).
 const MOVIELENS_BASELINE: f32 = 0.654;
@@ -40,11 +42,19 @@ fn run() -> Result<(), String> {
     if let Some(series) = flag("--series") {
         core.load_series(&cinelens_train::read_maybe_gzipped(series)?).map_err(|e| e.to_string())?;
     }
+    if let Some(animes) = flag("--animes") {
+        core.load_animes(&cinelens_train::read_maybe_gzipped(animes)?).map_err(|e| e.to_string())?;
+        let anime_model = flag("--anime-model").ok_or("--animes needs --anime-model")?;
+        core.load_anime_model(&cinelens_train::read_maybe_gzipped(anime_model)?).map_err(|e| e.to_string())?;
+    }
     if let Some(owner) = flag("--owner") {
-        flag("--series").ok_or("--owner needs --series")?;
+        let de_animes = flag("--animes").is_some();
+        if !de_animes {
+            flag("--series").ok_or("--owner needs --series or --animes")?;
+        }
         let owner = std::fs::read(owner).map_err(|e| format!("{owner}: {e}"))?;
         core.load_owner_data(&owner).map_err(|e| e.to_string())?;
-        return series(&core, fraction);
+        return if de_animes { animes(&core, fraction) } else { series(&core, fraction) };
     }
     let files: Vec<&str> = files.iter().map(String::as_str).collect();
     core.import_movielens(&files).map_err(|e| e.to_string())?;
@@ -61,6 +71,13 @@ fn run() -> Result<(), String> {
     if let Some(mae) = accuracy.content_mae {
         println!("MAE cinelens on {} held-out notas outside the model, from their content: {mae:.3}", accuracy.content_notas);
     }
+    Ok(())
+}
+
+fn animes(core: &cinelens_core::Core, fraction: f32) -> Result<(), String> {
+    println!("anime model {}", core.anime_model_version().unwrap_or("?"));
+    let a = core.accuracy_animes(fraction).ok_or("no held-out nota on an anime can be predicted")?;
+    println!("MAE {:.3}, mean nota {:.2} on {} notas", a.mae, a.media, a.notas);
     Ok(())
 }
 

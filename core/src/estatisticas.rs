@@ -10,6 +10,8 @@ use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Cor
 const LISTA: usize = 10;
 /// Notas on séries from which Perfil shows how well the app predicts them.
 const MAE_SERIES_MIN_NOTAS: usize = 30;
+/// The same for animes.
+const MAE_ANIMES_MIN_NOTAS: usize = 30;
 
 /// Notas grouped by something the movies share.
 #[derive(Debug, Serialize)]
@@ -51,6 +53,10 @@ pub struct Estatisticas {
     /// The most recent notas on séries, hidden and predicted, from `MAE_SERIES_MIN_NOTAS` of them.
     /// Informational: it never rejects a model. Whatever the tipo.
     pub mae_series: Option<Acerto>,
+    /// The same as `acerto`, on notas on the whole of an anime: a temporada stores no prediction.
+    pub acerto_animes: Option<Acerto>,
+    /// The same as `mae_series`, on animes.
+    pub mae_animes: Option<Acerto>,
 }
 
 /// Notas given in one year.
@@ -130,7 +136,8 @@ fn grupos(pares: impl Iterator<Item = (String, f32)>) -> Vec<Grupo> {
 impl Core {
     /// Of `tipo`'s notas; `None` is Tudo.
     pub fn estatisticas(&self, tipo: Option<Tipo>) -> Estatisticas {
-        let notas = || self.owner.notas.iter().filter(move |(id, _)| tipo.is_none_or(|t| t == self.tipo(**id)));
+        let de_temporada = || self.owner.notas_temporada.iter().flat_map(|(id, de)| de.values().map(move |h| (id, h)));
+        let notas = || self.owner.notas.iter().chain(de_temporada()).filter(move |(id, _)| tipo.is_none_or(|t| t == self.tipo(**id)));
         let atuais: Vec<(ObraId, f32)> =
             notas().filter_map(|(&id, h)| Some((id, h.last()?.nota))).filter(|&(_, nota)| is_valid_nota(nota)).collect();
         let (mut distribuicao, mut reacoes) = ([0; 10], [0; 3]);
@@ -180,6 +187,10 @@ impl Core {
             .then(|| self.accuracy_series(MAE_FRACAO, SERIE_WEIGHT))
             .flatten()
             .map(|a| Acerto { notas: a.geral.notas, mae: a.geral.mae });
+        let mae_animes = (self.notas_em_animes() >= MAE_ANIMES_MIN_NOTAS)
+            .then(|| self.accuracy_animes(MAE_FRACAO))
+            .flatten()
+            .map(|a| Acerto { notas: a.notas, mae: a.mae });
         Estatisticas {
             distribuicao,
             reacoes,
@@ -194,6 +205,8 @@ impl Core {
             acerto: acerto(Tipo::Filme),
             acerto_series: acerto(Tipo::Serie),
             mae_series,
+            acerto_animes: acerto(Tipo::Anime),
+            mae_animes,
         }
     }
 

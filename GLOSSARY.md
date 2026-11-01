@@ -16,6 +16,10 @@ _Avoid_: desenho, animação
 One season of an anime as TMDB lists it. A nota on a temporada wins over the nota on the whole anime for that temporada. Séries have no notas by temporada.
 _Avoid_: parte, cour
 
+**Próxima temporada** (Next season):
+A row on Início with the temporada after what the owner has seen of an anime they rated well or are Assistindo; a plain reminder, with no nota prevista or notification.
+_Avoid_: continuação, nova temporada
+
 **Série** (Series):
 A scripted series, miniseries or documentary series, rated as a whole; not reality, talk shows, news, daily telenovelas or anime.
 _Avoid_: show, programa, seriado
@@ -73,7 +77,7 @@ A named, app-defined combination of filters and ranking, such as "Sessão da Tar
 _Avoid_: filtro salvo, coleção, playlist
 
 **Parecidos** (Similar titles):
-Obras close to a given obra and of the same type, shown from its page: for a filme, those that people who liked it also liked; for a série, those with the closest content.
+Obras close to a given obra and of the same type, shown from its page: for a filme, those that people who liked it also liked; for a série, those with the closest content; for an anime, those closest in its factors or, without them, its content.
 _Avoid_: relacionados, mais como este
 
 **Populares ↔ Garimpo** (Popularity bias):
@@ -81,7 +85,7 @@ The owner's setting for how much popularity weighs in ranking recomendações, f
 _Avoid_: algoritmo, modo
 
 **Rodada rápida** (Quick rating session):
-A sequence of obras of one type the owner has likely seen, chosen to teach the recommender the most, each one answered (a nota on a filme, a Reação on a série) or skipped as "não vi".
+A sequence of obras of one type the owner has likely seen, chosen to teach the recommender the most, each one answered (a nota on a filme, a Reação on a série or a whole anime) or skipped as "não vi".
 _Avoid_: avaliação rápida, onboarding, calibração
 
 **Já vi** (Seen):
