@@ -570,10 +570,11 @@ fn filme_genres(tv_genre: u32) -> Vec<u32> {
 
 /// The série as an obra; `None` for what the catálogo leaves out. Discover already asks for the
 /// right types, but trending does not, and TMDB labels some telenovelas and anime as scripted.
+/// A série without genres leaves too: nothing shows it is none of those.
 fn serie(mut d: SerieDetails) -> Option<(Movie, Vec<Provider>)> {
     let has = |id: u32| d.genres.iter().any(|g| g.id == id);
     let japonesa = d.original_language == "ja" || d.origin_country.iter().any(|c| c == "JP");
-    if !SERIE_TYPES.contains(&d.kind.as_str()) || SERIE_GENEROS_FORA.iter().any(|&g| has(g)) || (has(ANIMACAO) && japonesa) {
+    if d.genres.is_empty() || !SERIE_TYPES.contains(&d.kind.as_str()) || SERIE_GENEROS_FORA.iter().any(|&g| has(g)) || (has(ANIMACAO) && japonesa) {
         return None;
     }
     let (watch, providers) = watch(std::mem::take(&mut d.watch_providers));

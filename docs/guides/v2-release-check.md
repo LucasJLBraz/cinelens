@@ -47,7 +47,7 @@ git push origin v2.0.0
 - [x] Merge e push da `main` (`dcc0e3e`).
 - [x] `series.json.gz` publicado em 2026-11-01: 5.786 séries, 2,1 MB, 7% do tamanho do catálogo (limite de 25%).
 - [x] Release `v2.0.0` publicada, com as notas de licença e atribuição. Instalada por cima da 1.0.0 no S20 FE, mantendo os dados.
-- [ ] Obtainium detecta `v2.0.0`. Não confirmado: o app foi instalado por `adb`, e o Obtainium não está no aparelho medido.
+- [x] Obtainium detecta `v2.0.0`, confirmado pelo dono em 2026-11-01. No aparelho medido, o app foi instalado por `adb`.
 
 ## 4) Velocidade manual no celular do dono
 
@@ -68,7 +68,7 @@ Medir no aparelho real, com a `v2.0.0` e as séries já baixadas. O roteiro é o
 
 Medido em 2026-11-01 na `v2.0.0`, com séries baixadas, sem crash. Toques por `adb`: do fim do toque no log do sistema (`ViewPostIme pointer 1`) ao primeiro quadro do app no SurfaceFlinger, o mesmo relógio. A abertura do zero vem de vídeo (`screenrecord`), da primeira à última mudança grande da tela. Métodos diferentes dos da v1, então os números não são diretamente comparáveis.
 
-- [ ] Medidas fora da meta aceitas pelo dono, como na v1 (87–114 ms na troca de filtro).
+- [x] Medidas fora da meta aceitas pelo dono em 2026-11-01, como na v1 (87–114 ms na troca de filtro).
 - [ ] Nota medida, numa conta de teste.
 
 ## 5) README e guias

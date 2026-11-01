@@ -66,6 +66,8 @@ fn scripted_miniseries_and_documentary_stay_and_the_rest_leave() {
     // Animation from elsewhere, and a Japanese drama, stay.
     series.push(serie(14, json!({"genres": animation})));
     series.push(serie(15, json!({"origin_country": ["JP"], "original_language": "ja"})));
+    // Without genres, nothing shows it is none of the above.
+    series.push(serie(16, json!({"genres": []})));
 
     assert_eq!(ids(&built(series)), [1, 2, 3, 14, 15]);
 }
