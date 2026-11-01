@@ -1163,9 +1163,7 @@
     });
     document.getElementById('abrir-tmdb').addEventListener('click', () => {
       filmeEl.querySelector('.menu').open = false;
-      // A série's id has the high bit set (ADR 0003).
-      const id = Number(filmeEl.dataset.id);
-      abrirUrl(id >= 2 ** 31 ? `https://www.themoviedb.org/tv/${id - 2 ** 31}` : `https://www.themoviedb.org/movie/${id}`);
+      abrirUrl(filmeAtual.tmdb_url);
     });
 
     const decayEl = document.getElementById('decay');

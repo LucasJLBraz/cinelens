@@ -411,6 +411,8 @@ pub struct MoviePage {
     /// Critics' score (Metacritic, else Rotten Tomatoes, from OMDb), 0–100.
     pub critica: Option<u8>,
     pub backdrop_url: Option<String>,
+    /// Its page on TMDB.
+    pub tmdb_url: String,
     /// Minutes.
     pub runtime: Option<u32>,
     pub generos: Vec<String>,
@@ -831,7 +833,8 @@ impl Core {
     /// Per `GENOME_ASPECTS` aspect, its share of all the aspects the owner said weighed.
     fn pesos(&self) -> Vec<f32> {
         let mut pesos = vec![0f32; GENOME_ASPECTS.len()];
-        let marked: Vec<usize> = self.owner.pesou.values().flatten().map(|a| a.genome()).collect();
+        let filmes = self.owner.pesou.iter().filter(|(id, _)| !id.is_serie());
+        let marked: Vec<usize> = filmes.flat_map(|(_, aspectos)| aspectos).map(|a| a.genome()).collect();
         marked.iter().for_each(|&a| pesos[a] += 1.0 / marked.len() as f32);
         pesos
     }
@@ -1167,6 +1170,7 @@ impl Core {
             publico: (m.vote_count >= filtro::PUBLICO_MIN_VOTOS).then_some(m.vote_average / 2.0),
             critica: m.critic_score,
             backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),
+            tmdb_url: format!("https://www.themoviedb.org/{}/{}", if id.is_serie() { "tv" } else { "movie" }, id.tmdb_id()),
             runtime: m.runtime,
             generos: m.genre_ids.iter().filter_map(genre).collect(),
             idioma: m.original_language.clone(),

@@ -445,7 +445,11 @@ fn update_catalog(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Brings the séries up to date with the published ones; nothing to do before they are published.
+/// Only once there is a catálogo: on a first run the setup's download brings them, after it.
 fn update_series(app: &AppHandle) -> Result<(), String> {
+    if app.state::<RwLock<Core>>().read().unwrap().data_version().is_none() {
+        return Ok(());
+    }
     let Some(latest) = fetch(&catalog_release("series-version.txt"))? else { return Ok(()) };
     let version = app.state::<RwLock<Core>>().read().unwrap().series_version().map(str::to_string);
     if version.as_deref() == Some(String::from_utf8_lossy(&latest).trim()) {

@@ -1,6 +1,6 @@
 //! Séries come from their own asset and live beside filmes in the same catálogo.
 
-use cinelens_core::{Core, Filtro, ObraId, Tipo};
+use cinelens_core::{Aspecto, Core, Filtro, ObraId, Tipo};
 
 /// A filme and a série share TMDB number 7.
 const FILMES: &str = r#"{"format_version": 1, "data_version": "f1", "genres": [{"id": 878, "name": "Ficção científica"}], "trending": [], "providers": [{"id": 8, "name": "Netflix", "logo_path": null}], "movies": [
@@ -255,4 +255,38 @@ mod previsoes {
         core.rate(ObraId::serie(1), 5.0, 200).unwrap();
         assert!(!core.movie(ObraId::filme(7)).unwrap().porque.contains(&"S1".to_string()));
     }
+}
+
+#[test]
+fn o_que_pesou_on_a_serie_does_not_reorder_filmes() {
+    let catalog = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 10, "title": "A", "original_title": "A", "year": 2000, "poster_path": null},
+        {"tmdb_id": 11, "title": "B", "original_title": "B", "year": 2000, "poster_path": null}
+    ]}"#;
+    let model = r#"{"format_version": 2, "data_version": "m", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [
+            {"tmdb_id": 10, "bias": 0.5, "factors": [1.0], "ratings": 50000},
+            {"tmdb_id": 11, "bias": 0.4, "factors": [1.0], "ratings": 50000}
+        ],
+        "content": [],
+        "genome": {"aspects": ["fotografia"], "movies": [{"tmdb_id": 10, "scores": [0.1]}, {"tmdb_id": 11, "scores": [0.9]}]}
+    }"#;
+    let mut core = Core::open(catalog.as_bytes()).unwrap();
+    core.load_model(model.as_bytes()).unwrap();
+    let before = ids(&core, &Filtro::default());
+    assert_eq!(before, [ObraId::filme(10), ObraId::filme(11)]);
+
+    core.set_pesou(ObraId::serie(1), &[Aspecto::Fotografia], 1);
+    assert_eq!(ids(&core, &Filtro::default()), before);
+
+    // The same mark on a filme does reorder them, so the test can tell.
+    core.set_pesou(ObraId::filme(11), &[Aspecto::Fotografia], 2);
+    assert_ne!(ids(&core, &Filtro::default()), before);
+}
+
+#[test]
+fn a_page_links_to_tmdb_by_type_and_number() {
+    let core = core();
+    assert_eq!(core.movie(FILME).unwrap().tmdb_url, "https://www.themoviedb.org/movie/7");
+    assert_eq!(core.movie(SERIE).unwrap().tmdb_url, "https://www.themoviedb.org/tv/7");
 }

@@ -123,6 +123,12 @@ fn a_filme_catalogo_reader_never_sees_the_asset_as_filmes() {
 }
 
 #[test]
+fn a_serie_without_a_first_episode_date_still_builds() {
+    let artifact = built(vec![serie(1, json!({"first_air_date": null}))]);
+    assert_eq!(artifact["movies"][0]["release_date"], Value::Null);
+}
+
+#[test]
 fn a_failure_fails_the_build() {
     let flaky = |request: &str| if request.starts_with("/tv/1") { Err("HTTP 500".to_string()) } else { tmdb(vec![serie(1, json!({}))])(request) };
     assert!(build_series(&flaky, &config()).is_err());

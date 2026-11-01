@@ -195,8 +195,7 @@ struct SerieDetails {
     id: u32,
     name: String,
     original_name: String,
-    #[serde(default)]
-    first_air_date: String,
+    first_air_date: Option<String>,
     #[serde(default)]
     episode_run_time: Vec<u32>,
     last_episode_to_air: Option<Episode>,
@@ -592,8 +591,8 @@ fn serie(mut d: SerieDetails) -> Option<(Movie, Vec<Provider>)> {
         cast: d.credits.cast.iter().take(CAST_SIZE).cloned().collect(),
         trailer_youtube: trailer(&d.videos),
         certification: d.content_ratings.results.into_iter().find(|c| c.iso_3166_1 == "BR" && !c.rating.is_empty()).map(|c| c.rating),
-        year: d.first_air_date.get(..4).and_then(|y| y.parse().ok()),
-        release_date: Some(d.first_air_date).filter(|r| !r.is_empty()),
+        year: d.first_air_date.as_deref().and_then(|r| r.get(..4)).and_then(|y| y.parse().ok()),
+        release_date: d.first_air_date.filter(|r| !r.is_empty()),
         title: d.name,
         original_title: d.original_name,
         runtime: d.episode_run_time.first().copied().or(d.last_episode_to_air.and_then(|e| e.runtime)).filter(|&r| r > 0),

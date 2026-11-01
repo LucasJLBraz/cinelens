@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Filtro, Tipo};
+use cinelens_core::{Core, Filtro};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
@@ -40,7 +40,6 @@ fn main() {
 
     // Every movie passes every filter, so all of them are checked and every recomendação re-sorted.
     let filtro = Filtro {
-        tipo: Some(Tipo::Filme),
         incluir: vec![18, 35],
         excluir: vec![99],
         ano_min: Some(1900),
