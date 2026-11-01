@@ -1,7 +1,10 @@
 //! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE]`
 //! `cinelens-catalog --series-up-to BYTES --out series.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
 //!
-//! `--series-up-to` builds the séries' asset instead, raising the vote cut until it fits in BYTES.
+//! `cinelens-catalog --animes-up-to BYTES --out animes.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
+//!
+//! `--series-up-to` and `--animes-up-to` build those assets instead, raising the vote cut until
+//! each fits in BYTES. Both read `Fribb/anime-lists`, and animes also AniList's popularity.
 //! Reads the TMDB API Read Access Token from `TMDB_TOKEN` and the OMDb key from `OMDB_KEY`
 //! (without it, no critics' scores are fetched). `--extra-ids` is a file with one TMDB id per
 //! line (the training data); blank and non-numeric lines are ignored. `--omdb-cache` is a JSON
@@ -11,7 +14,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;
 
-use cinelens_catalog::{build, build_series, Config};
+use cinelens_catalog::{build, build_animes, build_series, AniList, Artifact, Config, ANILIST_POPULAR};
 use serde_json::Value;
 
 const API: &str = "https://api.themoviedb.org/3";
@@ -19,6 +22,11 @@ const OMDB_API: &str = "https://www.omdbapi.com/";
 /// OMDb's free keys allow 1000 a day; the rest is left for retries and manual runs.
 const OMDB_BUDGET: usize = 900;
 const ATTEMPTS: u32 = 6;
+const ANIME_LISTS: &str = "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json";
+const ANILIST_API: &str = "https://graphql.anilist.co";
+/// AniList allows 30 requests a minute.
+const ANILIST_PAUSE: Duration = Duration::from_millis(2100);
+const ANILIST_QUERY: &str = "query($page:Int){Page(page:$page,perPage:50){media(type:ANIME,isAdult:false,format_in:[TV,TV_SHORT,ONA],sort:POPULARITY_DESC){id popularity}}}";
 
 fn main() {
     if let Err(e) = run() {
@@ -46,16 +54,11 @@ fn run() -> Result<(), String> {
         None => Vec::new(),
     };
     let series_up_to = arg("--series-up-to").map(|b| b.parse::<usize>().map_err(|e| format!("--series-up-to: {e}"))).transpose()?;
+    let animes_up_to = arg("--animes-up-to").map(|b| b.parse::<usize>().map_err(|e| format!("--animes-up-to: {e}"))).transpose()?;
     let omdb_key = std::env::var("OMDB_KEY").ok().filter(|k| !k.is_empty());
-    if omdb_key.is_none() && series_up_to.is_none() {
+    if omdb_key.is_none() && series_up_to.is_none() && animes_up_to.is_none() {
         eprintln!("::warning::OMDB_KEY is not set: no new critics' scores, see docs/guides/omdb.md");
     }
-    let config = Config {
-        today: required("--today")?,
-        recent_since: required("--recent-since")?,
-        extra_ids: &extra_ids,
-        omdb_budget: if omdb_key.is_some() { OMDB_BUDGET } else { 0 },
-    };
     let cache_path = arg("--omdb-cache");
     let mut critica = match cache_path.map(std::fs::read) {
         Some(Ok(bytes)) => serde_json::from_slice(&bytes).map_err(|e| format!("OMDb cache: {e}"))?,
@@ -78,13 +81,33 @@ fn run() -> Result<(), String> {
         get(imdb_id, true, || agent.get(OMDB_API).query("apikey", key).query("i", imdb_id).call())
     };
 
-    if let Some(max) = series_up_to {
-        let mut artifact = build_series(&fetch, &config)?;
-        let size = |a: &cinelens_catalog::Artifact| gz(&serde_json::to_vec(a).expect("artifact serializes")).map_or(usize::MAX, |g| g.len());
+    let anilist = if series_up_to.is_some() || animes_up_to.is_some() {
+        let mapping = get(ANIME_LISTS, false, || agent.get(ANIME_LISTS).call())?.ok_or("anime-lists: not found")?;
+        let popularidade = if animes_up_to.is_some() { anilist_popularity(&agent)? } else { BTreeMap::new() };
+        AniList::new(&serde_json::to_vec(&mapping).map_err(|e| e.to_string())?, &popularidade)?
+    } else {
+        AniList::default()
+    };
+    let config = Config {
+        today: required("--today")?,
+        recent_since: required("--recent-since")?,
+        extra_ids: &extra_ids,
+        omdb_budget: if omdb_key.is_some() { OMDB_BUDGET } else { 0 },
+        anilist: &anilist,
+    };
+
+    let up_to = |nome: &str, mut artifact: Artifact, max: usize| {
+        let size = |a: &Artifact| gz(&serde_json::to_vec(a).expect("artifact serializes")).map_or(usize::MAX, |g| g.len());
         let cut = artifact.raise_votes_to_fit(max, size);
         let bytes = gz(&serde_json::to_vec(&artifact).map_err(|e| e.to_string())?)?;
-        println!("::notice::Séries: {} no catálogo, corte de {cut} votos, {} bytes (limite {max})", artifact.obras(), bytes.len());
-        return std::fs::write(out, bytes).map_err(|e| format!("{out}: {e}"));
+        println!("::notice::{nome}: {} no catálogo, corte de {cut} votos, {} bytes (limite {max})", artifact.obras(), bytes.len());
+        std::fs::write(out, bytes).map_err(|e| format!("{out}: {e}"))
+    };
+    if let Some(max) = series_up_to {
+        return up_to("Séries", build_series(&fetch, &config)?, max);
+    }
+    if let Some(max) = animes_up_to {
+        return up_to("Animes", build_animes(&fetch, &config)?, max);
     }
     let artifact = build(&fetch, &omdb, &mut critica, &config)?;
     if let Some(path) = cache_path {
@@ -92,6 +115,26 @@ fn run() -> Result<(), String> {
     }
     let json = serde_json::to_vec(&artifact).map_err(|e| e.to_string())?;
     std::fs::write(out, gz(&json)?).map_err(|e| format!("{out}: {e}"))
+}
+
+/// AniList id → popularity, of the most popular down to `ANILIST_POPULAR`: what is below it brings
+/// nothing in.
+fn anilist_popularity(agent: &ureq::Agent) -> Result<BTreeMap<u32, u32>, String> {
+    let mut popularidade = BTreeMap::new();
+    for page in 1.. {
+        std::thread::sleep(ANILIST_PAUSE);
+        let body = serde_json::json!({"query": ANILIST_QUERY, "variables": {"page": page}}).to_string();
+        let call = || agent.post(ANILIST_API).header("Content-Type", "application/json").send(body.as_str());
+        let answer = get(ANILIST_API, false, call)?.ok_or("AniList: not found")?;
+        let media = answer["data"]["Page"]["media"].as_array().ok_or("AniList: no media in the answer")?;
+        let pares = media.iter().filter_map(|m| Some((m["id"].as_u64()? as u32, m["popularity"].as_u64()? as u32)));
+        let pares: Vec<(u32, u32)> = pares.collect();
+        popularidade.extend(pares.iter().copied());
+        if pares.last().is_none_or(|&(_, p)| p < ANILIST_POPULAR) {
+            break;
+        }
+    }
+    Ok(popularidade)
 }
 
 fn gz(bytes: &[u8]) -> Result<Vec<u8>, String> {

@@ -4,7 +4,7 @@ name: Catalog
 # `catalog.json.gz` of the release `catalog-v<format version>`, with `catalog-version.txt`
 # (its data version): the app checks the version and downloads the catálogo when it changed.
 # Séries go out the same way as `series.json.gz` and `series-version.txt`, which an app without
-# séries never asks for.
+# séries never asks for, and animes as `animes.json.gz` and `animes-version.txt`.
 # See docs/guides/tmdb.md and docs/guides/omdb.md.
 on:
   schedule:
@@ -87,6 +87,19 @@ jobs:
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)"
 
+      # At most a quarter more on the first download, filmes and séries together; same terms.
+      - name: Build animes
+        continue-on-error: true
+        env:
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          SERIES=$(stat -c%s series.json.gz 2>/dev/null || echo 0)
+          cargo run --release -p cinelens-catalog -- \
+            --animes-up-to "$(( ($(stat -c%s catalog.json.gz) + SERIES) / 4 ))" \
+            --out animes.json.gz \
+            --today "$TODAY" \
+            --recent-since "$(date -u -d '-180 days' +%F)"
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,6 +116,11 @@ jobs:
             echo -n "$TODAY" > series-version.txt
             gh release upload "$TAG" series.json.gz --clobber
             gh release upload "$TAG" series-version.txt --clobber
+          fi
+          if [ -f animes.json.gz ]; then
+            echo -n "$TODAY" > animes-version.txt
+            gh release upload "$TAG" animes.json.gz --clobber
+            gh release upload "$TAG" animes-version.txt --clobber
           fi
           # Deltas older than 60 days: an app that far behind downloads the full catálogo.
           CUTOFF=$(date -u -d '-60 days' +%F)

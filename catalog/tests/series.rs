@@ -41,7 +41,7 @@ fn tmdb(series: Vec<Value>) -> impl Fn(&str) -> Result<Option<Value>, String> + 
 }
 
 fn config() -> Config<'static> {
-    Config { today: "2026-10-25", recent_since: "2026-04-28", extra_ids: &[], omdb_budget: 0 }
+    Config { today: "2026-10-25", recent_since: "2026-04-28", extra_ids: &[], omdb_budget: 0, anilist: Box::leak(Box::default()) }
 }
 
 fn built(series: Vec<Value>) -> Value {

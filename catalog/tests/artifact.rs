@@ -33,6 +33,7 @@ fn config(omdb_budget: usize) -> Config<'static> {
         // 999999 is a training-data id TMDB no longer knows.
         extra_ids: &[13, 999999],
         omdb_budget,
+        anilist: Box::leak(Box::default()),
     }
 }
 

@@ -23,11 +23,11 @@ fn main() {
     let mut failed = false;
 
     failed |= !budget("startup: load catálogo, séries and model", Duration::from_secs(1), || {
-        Core::default().load_saved(Some(&catalog), Some(&series), Some(&model));
+        Core::default().load_saved(Some(&catalog), Some(&series), None, Some(&model));
     });
 
     let mut core = Core::default();
-    core.load_saved(Some(&catalog), Some(&series), Some(&model));
+    core.load_saved(Some(&catalog), Some(&series), None, Some(&model));
     for id in 0..NOTAS {
         core.rate(ObraId::filme(id * 97), 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
     }

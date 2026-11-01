@@ -20,11 +20,12 @@ pub enum Mostrar {
     So,
 }
 
-/// Filmes or séries.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Filmes, séries or animes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tipo {
     Filme,
     Serie,
+    Anime,
 }
 
 /// Explorar's filters; the default is no filter. Every set field must pass.
@@ -123,7 +124,7 @@ impl<'a> Matcher<'a> {
             Mostrar::So => marked,
         };
         let watch = m.watch.as_ref();
-        if f.tipo.is_none_or(|t| (t == Tipo::Serie) == m.id.is_serie())
+        if f.tipo.is_none_or(|t| t == m.tipo())
             && (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
             && !m.genre_ids.iter().any(|g| self.excluir.contains(g))
             && in_range(m.year.map(u32::from), f.ano_min.map(u32::from), f.ano_max.map(u32::from))
@@ -134,7 +135,7 @@ impl<'a> Matcher<'a> {
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
             && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa(p, core.ranked_de(i)) <= min))
-            && (!f.em_alta || core.em_alta.contains(&m.id))
+            && (!f.em_alta || core.em_alta[m.tipo() as usize].contains(&m.id))
             && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
             && f.votos_max.is_none_or(|max| m.vote_count <= max)
             && f.media_tmdb_min.is_none_or(|min| m.vote_average >= min)

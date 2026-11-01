@@ -16,7 +16,7 @@ mod sync;
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar, Tipo};
-pub use obra::ObraId;
+pub use obra::{read_mapeamento, Mapeamento, ObraId};
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION, SERIE_WEIGHT};
 pub use sync::SyncStorage;
 use recommender::Model;
@@ -107,7 +107,7 @@ fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> 
     })
 }
 
-/// The filmes' or the séries' asset; both have this shape, and a série's `tmdb_id` is its `ObraId`.
+/// The filmes', séries' or animes' asset; all have this shape, and `tmdb_id` is the `ObraId`.
 #[derive(Deserialize)]
 struct CatalogArtifact {
     format_version: u32,
@@ -165,10 +165,33 @@ struct Watch {
     buy: Vec<u32>,
 }
 
+/// What the asset says an obra is; the only way to tell an anime from a série (ADR 0003).
+#[derive(Deserialize, Default, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum WorkType {
+    #[default]
+    Movie,
+    Tv,
+    Anime,
+}
+
+/// One of an anime's temporadas, as TMDB lists it.
+#[derive(Deserialize)]
+struct Temporada {
+    numero: u32,
+    nome: String,
+    episodios: Option<u32>,
+    ano: Option<u16>,
+    /// MyAnimeList has an entry for it: there are ratings behind it.
+    entrada: bool,
+}
+
 #[derive(Deserialize)]
 struct Movie {
     #[serde(rename = "tmdb_id")]
     id: ObraId,
+    #[serde(default)]
+    work_type: WorkType,
     title: String,
     original_title: String,
     year: Option<u16>,
@@ -215,6 +238,9 @@ struct Movie {
     /// Séries only: `em_andamento` or `terminada`.
     #[serde(default)]
     situacao: Option<String>,
+    /// Animes only.
+    #[serde(default)]
+    temporadas: Vec<Temporada>,
 }
 
 #[derive(Deserialize)]
@@ -224,19 +250,27 @@ struct Person {
     name: String,
 }
 
-fn parse_artifact(bytes: &[u8], series: bool) -> Result<CatalogArtifact, Error> {
+fn parse_artifact(bytes: &[u8], tipo: Tipo) -> Result<CatalogArtifact, Error> {
     let artifact: CatalogArtifact =
         serde_json::from_slice(bytes).map_err(|e| Error::InvalidArtifact(e.to_string()))?;
     if artifact.format_version != CATALOG_FORMAT_VERSION {
         return Err(Error::InvalidArtifact(format!("unknown format version {}", artifact.format_version)));
     }
-    if artifact.movies.iter().any(|m| m.id.is_serie() != series) {
+    if artifact.movies.iter().any(|m| m.tipo() != tipo) {
         return Err(Error::InvalidArtifact("an obra of the wrong type".into()));
     }
     Ok(artifact)
 }
 
 impl Movie {
+    fn tipo(&self) -> Tipo {
+        match (self.work_type, self.id.is_serie()) {
+            (WorkType::Anime, _) => Tipo::Anime,
+            (_, true) => Tipo::Serie,
+            (_, false) => Tipo::Filme,
+        }
+    }
+
     /// Directors, cast and composers.
     fn people(&self) -> impl Iterator<Item = &Person> {
         self.directors.iter().chain(&self.cast).chain(&self.composers)
@@ -641,6 +675,7 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 pub struct Core {
     data_version: Option<String>,
     series_version: Option<String>,
+    animes_version: Option<String>,
     movies: Vec<Movie>,
     /// id → index into `movies`.
     index: HashMap<ObraId, usize>,
@@ -650,8 +685,8 @@ pub struct Core {
     busca: Vec<filtro::Busca>,
     /// Aligned with `movies`: 0 (no votes) to 1 (the most voted), on a log scale.
     popularidade: Vec<f32>,
-    /// TMDB trending this week.
-    em_alta: HashSet<ObraId>,
+    /// TMDB trending this week, per `Tipo`.
+    em_alta: [HashSet<ObraId>; 3],
     /// Some movie has a critics' score.
     tem_critica: bool,
     /// The floor: séries with enough votes and a nota do público below this are no recomendações.
@@ -688,7 +723,7 @@ impl Core {
 
     /// Replaces the filmes of the catálogo. On error the current ones stay in place.
     pub fn load_catalog(&mut self, catalog_artifact: &[u8]) -> Result<(), Error> {
-        self.merge(parse_artifact(catalog_artifact, false)?, false);
+        self.merge(parse_artifact(catalog_artifact, Tipo::Filme)?, Tipo::Filme);
         self.index_catalog();
         self.refresh_items();
         Ok(())
@@ -696,28 +731,49 @@ impl Core {
 
     /// Replaces the séries of the catálogo. On error the current ones stay in place.
     pub fn load_series(&mut self, series_artifact: &[u8]) -> Result<(), Error> {
-        self.merge(parse_artifact(series_artifact, true)?, true);
+        self.merge(parse_artifact(series_artifact, Tipo::Serie)?, Tipo::Serie);
         self.index_catalog();
         self.refresh_items();
         Ok(())
     }
 
-    /// Swaps in one type's obras, leaving the other's.
-    fn merge(&mut self, artifact: CatalogArtifact, series: bool) {
-        if series {
-            self.series_version = Some(artifact.data_version);
-        } else {
-            self.data_version = Some(artifact.data_version);
-            self.generos = artifact.genres;
+    /// Replaces the animes of the catálogo. On error the current ones stay in place.
+    pub fn load_animes(&mut self, animes_artifact: &[u8]) -> Result<(), Error> {
+        self.merge(parse_artifact(animes_artifact, Tipo::Anime)?, Tipo::Anime);
+        self.index_catalog();
+        self.refresh_items();
+        Ok(())
+    }
+
+    /// What the catálogo says the id names; an id it lacks reads by its bit.
+    pub fn tipo(&self, id: ObraId) -> Tipo {
+        match self.index.get(&id) {
+            Some(&i) => self.movies[i].tipo(),
+            None if id.is_serie() => Tipo::Serie,
+            None => Tipo::Filme,
         }
-        self.movies.retain(|m| m.id.is_serie() != series);
+    }
+
+    /// Swaps in one type's obras, leaving the other's.
+    fn merge(&mut self, artifact: CatalogArtifact, tipo: Tipo) {
+        match tipo {
+            Tipo::Serie => self.series_version = Some(artifact.data_version),
+            Tipo::Anime => self.animes_version = Some(artifact.data_version),
+            Tipo::Filme => {
+                self.data_version = Some(artifact.data_version);
+                self.generos = artifact.genres;
+            }
+        }
+        self.movies.retain(|m| m.tipo() != tipo);
         self.movies.extend(artifact.movies);
+        // A série that became an anime stays in the séries' asset until its next build.
+        let animes: HashSet<ObraId> = self.movies.iter().filter(|m| m.tipo() == Tipo::Anime).map(|m| m.id).collect();
+        self.movies.retain(|m| m.tipo() != Tipo::Serie || !animes.contains(&m.id));
         // Stable, and each asset is most voted first: only needed once there are two.
         if self.movies.iter().any(|m| m.id.is_serie()) {
             self.movies.sort_by_key(|m| std::cmp::Reverse(m.vote_count));
         }
-        self.em_alta.retain(|id| id.is_serie() != series);
-        self.em_alta.extend(artifact.trending);
+        self.em_alta[tipo as usize] = artifact.trending.into_iter().collect();
         for p in artifact.providers {
             if !self.provedores.iter().any(|known| known.id == p.id) {
                 self.provedores.push(Provedor { id: p.id, name: p.name, logo_url: p.logo_path.map(|l| format!("{LOGO_BASE}{l}")) });
@@ -733,7 +789,7 @@ impl Core {
         self.popularidade = self.movies.iter().map(|m| log_votes(m) / most).collect();
         self.index = self.movies.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
         self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
-        let com_votos = self.movies.iter().filter(|m| m.id.is_serie() && m.vote_count >= PISO_MIN_VOTOS);
+        let com_votos = self.movies.iter().filter(|m| m.tipo() == Tipo::Serie && m.vote_count >= PISO_MIN_VOTOS);
         let mut medias: Vec<f32> = com_votos.map(|m| m.vote_average).collect();
         medias.sort_by(f32::total_cmp);
         self.piso_series = medias.get(medias.len() / 4).copied().unwrap_or(0.0);
@@ -746,18 +802,23 @@ impl Core {
 
     /// Loads what a launch finds on disk, parsing all of it at once to open faster. Whatever is
     /// missing or invalid stays out: the UI downloads it again.
-    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, series_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
-        let (catalog, series, model) = std::thread::scope(|s| {
+    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, series_artifact: Option<&[u8]>, animes_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
+        let (catalog, series, animes, model) = std::thread::scope(|s| {
             let model = s.spawn(|| model_artifact.and_then(|bytes| Model::parse(bytes).ok()));
-            let series = s.spawn(|| series_artifact.and_then(|bytes| parse_artifact(bytes, true).ok()));
-            let catalog = catalog_artifact.and_then(|bytes| parse_artifact(bytes, false).ok());
-            (catalog, series.join().expect("series parse does not panic"), model.join().expect("model parse does not panic"))
+            let series = s.spawn(|| series_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Serie).ok()));
+            let animes = s.spawn(|| animes_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Anime).ok()));
+            let catalog = catalog_artifact.and_then(|bytes| parse_artifact(bytes, Tipo::Filme).ok());
+            let joined = |what| format!("{what} parse does not panic");
+            (catalog, series.join().expect(&joined("series")), animes.join().expect(&joined("animes")), model.join().expect(&joined("model")))
         });
         if let Some(catalog) = catalog {
-            self.merge(catalog, false);
+            self.merge(catalog, Tipo::Filme);
         }
         if let Some(series) = series {
-            self.merge(series, true);
+            self.merge(series, Tipo::Serie);
+        }
+        if let Some(animes) = animes {
+            self.merge(animes, Tipo::Anime);
         }
         if model.is_some() {
             self.model = model;
@@ -905,7 +966,8 @@ impl Core {
         self.previstas[i].is_some() && !marcada && !self.dispensado(i) && !self.abaixo_do_piso(i)
     }
 
-    /// A série in the lowest quarter of nota do público, among those with enough votes.
+    /// A série or anime under the floor of the séries: the lowest quarter of their nota do
+    /// público, among those with enough votes.
     pub(crate) fn abaixo_do_piso(&self, i: usize) -> bool {
         let m = &self.movies[i];
         m.id.is_serie() && m.vote_count >= PISO_MIN_VOTOS && m.vote_average < self.piso_series
@@ -1210,6 +1272,10 @@ impl Core {
 
     pub fn series_version(&self) -> Option<&str> {
         self.series_version.as_deref()
+    }
+
+    pub fn animes_version(&self) -> Option<&str> {
+        self.animes_version.as_deref()
     }
 
     /// Imports the MovieLens export files (in any order). Safe to re-run: notas already
