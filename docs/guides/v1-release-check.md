@@ -21,14 +21,20 @@ Roteiro curto (design §8), medindo com cronômetro no aparelho real:
 
 Preencher e manter no git:
 
-| Medida | Meta | Resultado |
+| Medida | Meta | Resultado no S20 FE |
 |---|---|---|
-| Abrir app pronto para uso | < 1 s | Aprovado pelo dono, sem cronômetro |
-| Trocar aba / abrir página de filme | < 100 ms | Aprovado pelo dono, sem cronômetro |
-| Trocar filtro | < 100 ms | Aprovado pelo dono, sem cronômetro |
-| Depois de dar nota | < 200 ms | Aprovado pelo dono, sem cronômetro |
+| Abrir do zero até o Início com pôster | < 1 s | 0,71–0,78 s (3 aberturas, `v0.7.2`) |
+| Voltar ao app já aberto | < 1 s | 69–73 ms (3 aberturas, `v0.7.0`, tempo do `am start`) |
+| Trocar aba | < 100 ms | 74–121 ms, mediana 87 ms (10 trocas, `v0.7.0`) |
+| Abrir página de filme | < 100 ms | conteúdo pronto em 76–106 ms (5 aberturas, `v0.7.0`) |
+| Trocar filtro | < 100 ms | 87–114 ms, 3 de 6 acima (`v0.7.0`) |
+| Depois de dar nota | < 200 ms | Não medido: o aparelho usa a conta real do dono |
 
-Avaliação do dono no próprio celular em 2026-10-31: sem latência perceptível, tudo imediato. Não há tempos medidos.
+Medido em 2026-11-01 em vídeo (`screenrecord`), do toque ou do início da abertura até a tela mudar. A gravação pode somar tempo. Na abertura do zero, o Início mostrado é o salvo da abertura anterior, e um toque espera a carga do catálogo terminar; esse tempo não foi medido. O dono aceitou os tempos e encerrou as otimizações. Ele também avaliou o uso no próprio celular em 2026-10-31: sem latência perceptível.
+
+Atualização do catálogo em 2026-11-01 (`v0.7.2`): baixou o catálogo publicado, cerca de 31 MB, sem crash, com pico de memória amostrado de 490 MB; a abertura seguinte não baixou de novo. A primeira abertura depois da publicação não baixou, e a causa não foi apurada.
+
+Prints: [Início](../prints/inicio.png), [Explorar](../prints/explorar.png), [página de filme](../prints/filme.png).
 
 ## 3) CI verde (testes + benchmarks)
 
