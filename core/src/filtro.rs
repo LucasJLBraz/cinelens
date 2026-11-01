@@ -177,7 +177,7 @@ impl<'a> Matcher<'a> {
                 // An exact word would have been found above, so 1 is the best a typo can do.
                 let typo = |text: &str| {
                     let mut best = None;
-                    for d in text.split_whitespace().filter_map(|t| typo(w, t)) {
+                    for d in text.split_ascii_whitespace().filter_map(|t| typo(w, t)) {
                         if d == 1 {
                             return Some(1);
                         }
@@ -233,23 +233,23 @@ fn typo(w: &str, t: &str) -> Option<usize> {
     if n >= MAX {
         return None;
     }
-    let (mut antes, mut cima, mut linha) = ([0; MAX], [0; MAX], [0; MAX]);
-    (0..=n).for_each(|j| linha[j] = j);
+    let (mut antes, mut cima, mut linha) = ([0u8; MAX], [0u8; MAX], [0u8; MAX]);
+    (0..=n).for_each(|j| linha[j] = j as u8);
     for i in 1..=w.len() {
         (antes, cima, linha) = (cima, linha, antes);
-        linha[0] = i;
+        linha[0] = i as u8;
         for j in 1..=n {
-            let mut e = (cima[j] + 1).min(linha[j - 1] + 1).min(cima[j - 1] + usize::from(w[i - 1] != t[j - 1]));
+            let mut e = (cima[j] + 1).min(linha[j - 1] + 1).min(cima[j - 1] + u8::from(w[i - 1] != t[j - 1]));
             if i > 1 && j > 1 && w[i - 1] == t[j - 2] && w[i - 2] == t[j - 1] {
                 e = e.min(antes[j - 2] + 1);
             }
             linha[j] = e;
         }
-        if linha[..=n].iter().all(|&e| e > k) {
+        if linha[..=n].iter().all(|&e| usize::from(e) > k) {
             return None;
         }
     }
-    linha[..=n].iter().copied().min().filter(|&e| e <= k)
+    linha[..=n].iter().map(|&e| usize::from(e)).min().filter(|&e| e <= k)
 }
 
 /// Lowercase without accents or punctuation, so "amelie" finds "Amélie" and "homem aranha"
