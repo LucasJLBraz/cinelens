@@ -1,12 +1,60 @@
-# Cinelens
+<div align="center">
 
-Um substituto pessoal do MovieLens para Android: escolher o que assistir pela nota prevista, dar notas, achar parecidos. Tudo roda no aparelho, sem servidor e sem esperar nada carregar.
+# 🎬 Cinelens
+
+**Pare de rolar catálogo. Descubra o que você vai gostar de assistir hoje.**
+
+Recomendações de filmes feitas para o seu gosto, que rodam no seu Android, sem servidor e sem anúncios.
+
+[**Baixar o APK**](https://github.com/LucasJLBraz/cinelens/releases/latest) · [Instalar pelo Obtainium](#instalar) · [Como funciona](#como-funciona)
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/prints/inicio.png" alt="Início com destaques e listas prontas" width="240"></td>
+    <td align="center"><img src="docs/prints/explorar.png" alt="Explorar com busca, filtros e o controle Populares–Garimpo" width="240"></td>
+    <td align="center"><img src="docs/prints/filme.png" alt="Página de filme com o motivo da recomendação e onde assistir" width="240"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Início</b><br>O que ver hoje, já escolhido</td>
+    <td align="center"><b>Explorar</b><br>Do popular ao garimpo</td>
+    <td align="center"><b>Filme</b><br>Por que ver e onde ver</td>
+  </tr>
+</table>
+
+</div>
+
+## Por que o Cinelens
+
+- **Entende o seu gosto.** Cada filme ganha uma nota prevista só para você, que se ajusta a cada nota que você dá. Medido nas notas mais recentes do dono do projeto, 38 filmes que o modelo conhece, o erro médio foi de 0,43 estrela ([medições](docs/adr/0002-letterboxd-in-training.md)).
+- **Explica a recomendação.** "Porque você amou Monty Python em Busca do Cálice Sagrado": você sabe de onde veio cada sugestão.
+- **Seus dados são seus.** As notas ficam no aparelho e, se você quiser, no seu próprio Google Drive. Não há servidor nem anúncios.
+- **Abre rápido.** Início na tela em menos de 1 s num Galaxy S20 FE, e o dia a dia roda no próprio aparelho.
+
+## O que dá para fazer
+
+| | |
+|---|---|
+| 🎯 **Início** | Destaques do dia, listas prontas e novas sugestões ao puxar a tela |
+| 🔎 **Explorar** | Mais de 91 mil filmes, com filtros e busca por título, direção ou elenco, que perdoa erro de digitação |
+| 🎚️ **Populares ↔ Garimpo** | Um controle vai dos filmes que todo mundo viu às joias escondidas |
+| ⚡ **Rodada rápida** | Dê notas em sequência e ensine seu gosto ao app em minutos |
+| 📺 **Onde assistir** | Assinatura, aluguel ou compra no Brasil, e um filtro para o que está nos seus streamings |
+| 🙈 **Sem spoiler de nota** | As notas ficam escondidas até você tocar, para não influenciar sua escolha |
+| 🧭 **Parecidos, mas…** | Parte de um filme que você gostou e pede algo mais leve, mais curto ou mais recente |
+| 📊 **Estatísticas** | O que suas notas dizem sobre você |
+| 🔔 **Aviso semanal** | Avisa quando sai um lançamento com cara de Aposta forte para você |
+| 🔁 **Sync e importação** | Traga seu histórico do MovieLens e sincronize aparelhos pelo Google Drive |
+| 📤 **Compartilhar** | Envie um filme como card pelo Android |
 
 ## Instalar
 
-Pelo [Obtainium](https://github.com/ImranR98/Obtainium): **Adicionar app** → `https://github.com/LucasJLBraz/cinelens`. Ele avisa e instala cada versão nova. O passo a passo está em [docs/guides/release.md](docs/guides/release.md#4-instalar-e-atualizar-pelo-obtainium).
+1. Instale o [Obtainium](https://github.com/ImranR98/Obtainium).
+2. Toque em **Adicionar app** e cole `https://github.com/LucasJLBraz/cinelens`.
+3. Pronto: ele avisa e instala cada versão nova.
 
-Na primeira abertura o app baixa o catálogo, uma vez só. Dá para importar o histórico do MovieLens e entrar com o Google para sincronizar as notas entre aparelhos.
+Prefere sem Obtainium? Baixe o APK em [Releases](https://github.com/LucasJLBraz/cinelens/releases/latest). O passo a passo está em [docs/guides/release.md](docs/guides/release.md#4-instalar-e-atualizar-pelo-obtainium).
+
+Na primeira abertura o app baixa o catálogo, uma vez só. Depois, é só dar notas. Conta Google é opcional.
 
 ## Como funciona
 
