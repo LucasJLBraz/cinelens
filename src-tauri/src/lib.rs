@@ -3,6 +3,7 @@
 
 mod compartilhar;
 mod google;
+mod tocada;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -365,6 +366,12 @@ fn set_notificacao(app: AppHandle, core: tauri::State<RwLock<Core>>, on: bool) -
     save_owner(&app, &core)
 }
 
+/// The obra of the notification the owner tapped since the last call.
+#[tauri::command]
+async fn obra_tocada(app: AppHandle) -> Result<Option<ObraId>, String> {
+    tauri::async_runtime::spawn_blocking(move || tocada::obra(&app)).await.map_err(|e| e.to_string())?
+}
+
 /// Shows the weekly notification if one is due, asking the owner for the permission the first
 /// time one is; it counts as shown only once it is.
 // ponytail: checked only while the app runs (after each update), so a week without opening it
@@ -380,7 +387,7 @@ fn notify(app: &AppHandle) -> Result<(), String> {
     if permission != PermissionState::Granted {
         return Ok(());
     }
-    notification.builder().title("Lançamento para você").body(due.texto).show().map_err(|e| e.to_string())?;
+    notification.builder().title("Lançamento para você").id(due.id.notificacao_id()).body(due.texto).show().map_err(|e| e.to_string())?;
     let state = app.state::<RwLock<Core>>();
     let mut core = state.write().unwrap();
     core.notificado(due.id, now());
@@ -709,7 +716,7 @@ pub fn run() {
     let builder =
         tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_notification::init());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(google::init()).plugin(compartilhar::init());
+    let builder = builder.plugin(google::init()).plugin(compartilhar::init()).plugin(tocada::init());
     builder
         .setup(|app| {
             let mut core = Core::default();
@@ -795,6 +802,7 @@ pub fn run() {
             remover_nota,
             poster_bytes,
             compartilhar,
+            obra_tocada,
             rodada,
             nao_vi,
             estatisticas,

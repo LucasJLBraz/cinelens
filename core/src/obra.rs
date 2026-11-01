@@ -36,6 +36,11 @@ impl ObraId {
     pub const fn tmdb_id(self) -> u32 {
         self.0 & !SERIE_BIT
     }
+
+    /// The obra as the id of its Android notification, which is an `i32`: a série's is negative.
+    pub const fn notificacao_id(self) -> i32 {
+        self.0 as i32
+    }
 }
 
 impl fmt::Display for ObraId {

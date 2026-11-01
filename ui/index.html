@@ -190,6 +190,7 @@
     #rodada-nao-vi { display: block; margin: 0 auto; }
     #rodada-tipos, #rodada-reacoes { justify-content: center; }
     #rodada-reacoes { margin: 16px auto 8px; }
+    #grid-dica { margin: 6px 16px 0; }
     #rodada-revelacao { text-align: center; font-size: 13px; min-height: 1.4em; }
     .busca-servico { width: 100%; margin-top: 8px; padding: 10px 14px; border: 1px solid var(--card); border-radius: 20px; background: var(--card); color: var(--text); font: inherit; }
     .servicos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
@@ -257,7 +258,7 @@
   </section>
   <section id="rodada" hidden>
     <h1>Rodada</h1>
-    <p>Dê nota aos que viu e pule os outros.</p>
+    <p>Dê nota ou pule. Toque na capa para ver a sinopse.</p>
     <div id="rodada-tipos" class="chips">
       <button class="chip" data-valor="Filme">Filmes</button>
       <button class="chip" data-valor="Serie">Séries</button>
@@ -332,6 +333,7 @@
         <span>Garimpo</span>
       </label>
     </div>
+    <p id="grid-dica" class="meta">Toque na capa para ver a sinopse.</p>
     <main id="grid"></main>
     <p id="vazio" hidden>Nada com esses filtros.</p>
     <button id="more" hidden>Mais</button>
@@ -793,6 +795,15 @@
       for (const chip of rodadaTiposEl.children) chip.classList.toggle('on', chip.dataset.valor === rodadaTipo);
       document.getElementById('rodada-vazio').hidden = Boolean(atual) || rodadaPedidos > 0;
     }
+    // The obra's page, opened from the Rodada, may have answered it: the core no longer asks those.
+    async function conferirRodada() {
+      const atual = rodadaFila[0];
+      const m = atual && await invoke('movie', { tmdbId: atual.m.tmdb_id });
+      if (!m || rodadaFila[0] !== atual || !(m.nota != null || m.ja_vi || m.assistindo || m.nao_me_interessa)) return;
+      rodadaFila.shift();
+      mostrarRodada();
+      encherRodada();
+    }
     // Keeps the shown movie and the next two queued, so quick answers never wait on a refill.
     async function encherRodada() {
       rodadaPedidos += 1;
@@ -872,7 +883,10 @@
         b.setAttribute('aria-current', b.dataset.aba === nome ? 'page' : 'false');
       }
       if (nome === 'ajustes') loadPerfil();
-      if (nome === 'rodada' && rodadaFila.length < 3) encherRodada();
+      if (nome === 'rodada') {
+        conferirRodada();
+        if (rodadaFila.length < 3) encherRodada();
+      }
       tela(abas[nome]);
       if (stale) {
         stale = false;
@@ -909,6 +923,8 @@
     function showMovie(m) {
       filmeEl.dataset.id = m.tmdb_id;
       filmeAtual = m;
+      // Opened from the Rodada before answering: the prediction would anchor the nota.
+      const semPrevisao = m.nota == null && aba === 'rodada' && rodadaFila[0]?.m.tmdb_id === m.tmdb_id;
       const fundo = document.getElementById('filme-fundo');
       fundo.replaceChildren();
       if (m.backdrop_url) {
@@ -927,14 +943,14 @@
       const meta = [temporadas, situacao, episodio, m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
-      document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
+      document.getElementById('filme-faixa').replaceChildren(...m.exibicao && !semPrevisao ? [faixaEl(m.exibicao)] : []);
       document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${notaDada(m)}` : '';
       const remover = document.getElementById('remover-nota');
       remover.hidden = m.nota == null;
       remover.textContent = 'Remover nota';
       delete remover.dataset.confirmar;
-      showPontuacoes(m);
-      document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
+      showPontuacoes(m, semPrevisao);
+      document.getElementById('porque').textContent = m.porque.length && !semPrevisao ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
       document.getElementById('onde').hidden = !onde;
       if (onde) {
@@ -989,9 +1005,9 @@
     const revelados = new Set();
     let filmeAtual = null;
     const pontuacoesEl = document.getElementById('pontuacoes');
-    function showPontuacoes(m) {
+    function showPontuacoes(m, semPrevisao) {
       const pontuacoes = [
-        ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · Confiança ${Math.round(m.confianca * 100)}%`],
+        ['prevista', 'Nota prevista', !semPrevisao && m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · Confiança ${Math.round(m.confianca * 100)}%`],
         ['sem-nota', 'Previsão sem sua nota', m.prevista_sem_a_nota != null && `★ ${decimal(m.prevista_sem_a_nota)} (${decimal(Math.round(m.prevista_sem_a_nota * 2) / 2)}) · ${m.faixa}`],
         ['publico', 'Público', m.publico != null && `★ ${decimal(m.publico)}`],
         ['critica', 'Crítica', m.critica != null && `${m.critica}/100`],
@@ -1739,6 +1755,14 @@
       if (b.dataset.acao === 'rodada') abrirAba('rodada');
     });
 
+    // The release notification the owner tapped, if any; Android calls it when the app was running.
+    window.notificacaoTocada = async () => {
+      const id = await invoke('obra_tocada');
+      if (!id) return;
+      abrirAba('inicio');
+      await openMovie(id);
+    };
+
     // Explorar works in catálogo order until the model arrives; it is fetched in the
     // background, so the app never waits on it (and retries on the next launch if offline).
     async function start() {
@@ -1746,6 +1770,7 @@
       loadOpcoes();
       load();
       loadInicio();
+      notificacaoTocada();
       const [, model] = await invoke('status');
       if (!model) invoke('download_model').then(() => { reloadGrid(); loadInicio(); }, () => {});
     }
