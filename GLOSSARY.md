@@ -1,12 +1,20 @@
 # Movie recommender
 
-A personal, single-user replacement for MovieLens: rate movies, get predictions and recommendations, kept in sync across the owner's devices.
+A personal replacement for MovieLens: rate movies, get predictions and recommendations, kept in sync across the owner's devices. The **owner** is whoever uses an installation; two people mean two owners, each with their own notas and Drive, sharing nothing.
 
 ## Language
 
 **Obra** (Work):
-Anything the app can recommend: a filme or a série.
+Anything the app can recommend: a filme, a série or an anime.
 _Avoid_: título, item, conteúdo
+
+**Anime**:
+A serialized animation in the anime style, from any country (Cyberpunk: Edgerunners, Link Click, Castlevania; not Scooby-Doo or Ben 10), rated as a whole or by temporada, and recommended as a whole. An animated feature is a filme, not an anime; hentai is left out.
+_Avoid_: desenho, animação
+
+**Temporada** (Season):
+One season of an anime as TMDB lists it. A nota on a temporada wins over the nota on the whole anime for that temporada. Séries have no notas by temporada.
+_Avoid_: parte, cour
 
 **Série** (Series):
 A scripted series, miniseries or documentary series, rated as a whole; not reality, talk shows, news, daily telenovelas or anime.
@@ -17,7 +25,7 @@ A score the owner gives an obra, from 0.5 to 5 in half-star steps.
 _Avoid_: avaliação, score, estrela
 
 **Reação** (Reaction):
-A quick verdict on a whole série, up to where the owner has seen it: Não gostei, Gostei or Amei; it counts as a fixed nota. The owner may give a série a nota in stars instead.
+A quick verdict on a whole série or anime, up to where the owner has seen it: Não gostei, Gostei or Amei; it counts as a fixed nota. The owner may give it a nota in stars instead.
 _Avoid_: joinha, like, curtida
 
 **Assistindo** (Watching):
