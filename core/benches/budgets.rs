@@ -6,12 +6,10 @@ use std::time::{Duration, Instant};
 use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, Reacao, Tipo};
 
-/// Realistic catálogo size for v1 (feature films above a vote threshold).
-const CATALOG_SIZE: usize = 60_000;
-/// A quarter of the download, the most the catalog job publishes.
-const SERIES_SIZE: usize = 15_000;
-/// A quarter more of the download, the most the catalog job publishes, at the séries' density.
-const ANIMES_SIZE: usize = 19_000;
+/// As published on 2026-11-01, like the two sizes below.
+const CATALOG_SIZE: usize = 91_000;
+const SERIES_SIZE: usize = 5_800;
+const ANIMES_SIZE: usize = 2_900;
 /// Well above the entries the dump joins to TMDB.
 const ANIME_MODEL_SIZE: usize = 12_000;
 /// No série has these numbers.
