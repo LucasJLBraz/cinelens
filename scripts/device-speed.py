@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measures the app's speed on a phone over adb, and prints the Perfil, as a release check asks.
 
-    scripts/device-speed.py SERIAL "exact title of an anime on the first Explorar screen"
+    scripts/device-speed.py SERIAL
 
 The phone may hold the owner's real account, so every tap goes through `tocar`: it finds an
 allowed label on the screen and refuses anything else. Nothing here gives a nota or a mark.
@@ -17,8 +17,6 @@ APP = "io.github.lucasjlbraz.cinelens"
 # What only navigates. Add here only labels that change no data.
 PERMITIDOS = {"Início", "Explorar", "Perfil", "Tudo", "Animes"}
 serial = sys.argv[1]
-titulo = sys.argv[2]
-PERMITIDOS.add(titulo)
 
 
 def adb(*args):
@@ -29,12 +27,26 @@ def shell(*args):
     return adb("shell", *args)
 
 
-def nos():
-    """What is on screen: (text, clickable, bounds), hidden elements left out."""
+def arvore():
     shell("uiautomator", "dump", "/sdcard/cinelens-ui.xml")
     xml = shell("cat", "/sdcard/cinelens-ui.xml")
     shell("rm", "/sdcard/cinelens-ui.xml")
-    for no in ET.fromstring(xml[xml.index("<"):]).iter("node"):
+    return ET.fromstring(xml[xml.index("<"):]).iter("node")
+
+
+def primeira_capa():
+    """The center of the first poster on screen, whose tap only opens the obra's page."""
+    for no in arvore():
+        if no.get("class") == "android.widget.Image" and no.get("content-desc"):
+            x1, y1, x2, y2 = map(int, re.findall(r"\d+", no.get("bounds")))
+            if x2 > x1 and y2 > y1:
+                return (x1 + x2) // 2, (y1 + y2) // 2
+    sys.exit("nenhuma capa na tela: parei sem tocar em nada")
+
+
+def nos():
+    """What is on screen: (text, clickable, bounds), hidden elements left out."""
+    for no in arvore():
         x1, y1, x2, y2 = map(int, re.findall(r"\d+", no.get("bounds")))
         if no.get("text") and x2 > x1 and y2 > y1:
             yield no.get("text"), no.get("clickable") == "true", (x1, y1, x2, y2)
@@ -103,12 +115,13 @@ def main():
     animes, tudo = tocar("Animes"), tocar("Tudo")
     print("filtro para Animes e de volta para Tudo", [medir(*p) for p in [animes, tudo] * 3])
 
-    obra = tocar(titulo)
+    medir(*animes)
+    obra = primeira_capa()
     paginas = []
     for _ in range(5):
         paginas.append(medir(*obra))
         voltar()
-    print(f"página de {titulo}", paginas)
+    print("página do primeiro anime", paginas)
 
     # To compare before and after an update, without a screenshot.
     medir(*abas["Perfil"])

@@ -66,10 +66,10 @@ Se a release falhar, corrija e publique o próximo patch (`v0.1.1`). A tag que f
 5. **Medir no celular:** instale por cima da versão anterior e rode o script abaixo, antes e depois de atualizar, para comparar o Perfil.
 
 ```bash
-scripts/device-speed.py SERIAL "Frieren e a Jornada para o Além"
+scripts/device-speed.py SERIAL
 ```
 
-`SERIAL` vem de `adb devices`, e o título é o de um anime na primeira tela de Explorar. Depois de uma atualização, abra o app uma vez e espere os downloads: a ordem e as previsões de animes mudam quando o modelo deles chega. O script só toca em rótulos de navegação e para se não achar o rótulo na tela, então pode rodar na conta real. Dar nota, medir o tempo depois de uma nota e testar marcas exige uma conta de teste.
+`SERIAL` vem de `adb devices`. Depois de uma atualização, abra o app uma vez e espere os downloads: a ordem e as previsões de animes mudam quando o modelo deles chega. O script só toca em rótulos de navegação e na primeira capa de Animes, e para se não achar o rótulo na tela, então pode rodar na conta real. Dar nota, medir o tempo depois de uma nota e testar marcas exige uma conta de teste.
 
 O bench não prevê o celular: no S20 FE, na v3, a busca com erro de digitação levou 1,7 vez o tempo do bench, e voltar o filtro para Tudo, cerca de 1,9 vez. Passar no bench não basta: compare no aparelho.
 
