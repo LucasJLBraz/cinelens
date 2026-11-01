@@ -587,8 +587,10 @@ pub struct Core {
     tem_critica: bool,
     owner: OwnerData,
     model: Option<Model>,
-    /// The owner's side of the model, from the last fold-in.
+    /// The owner's side of the model for filmes, from the last fold-in: only notas on filmes.
     profile: Option<recommender::Profile>,
+    /// The same for séries, always predicted through content.
+    profile_series: Option<recommender::Profile>,
     /// Aligned with `movies`: what the model knows of each, refreshed when either changes.
     items: Vec<Option<recommender::Item>>,
     /// Aligned with `movies`: (nota prevista, confiança).
@@ -598,8 +600,10 @@ pub struct Core {
     /// Explorar order: indexes into `movies`, recomendações first (highest nota prevista
     /// first), then the rest in catálogo order; não me interessa left out.
     para_voce: Vec<usize>,
-    /// Every current nota prevista, highest first: what Faixa is relative to.
+    /// Every current nota prevista of a filme, highest first: what a filme's Faixa is relative to.
     ranked: Vec<f32>,
+    /// The same for séries.
+    ranked_series: Vec<f32>,
     /// In effect in the last fold-in.
     half_life_days: Option<u32>,
 }
@@ -731,8 +735,7 @@ impl Core {
     fn refresh_items(&mut self) {
         self.items = match &self.model {
             None => vec![None; self.movies.len()],
-            // Séries get no nota prevista yet.
-            Some(model) => par_map(&self.movies, |m| if m.id.is_serie() { None } else { model.item(m.id, &m.content_features()) }),
+            Some(model) => par_map(&self.movies, |m| model.item(m.id, &m.content_features())),
         };
         self.recompute();
     }
@@ -740,15 +743,18 @@ impl Core {
     /// Folds the owner's notas into the model and re-ranks the catálogo; called after every
     /// change to the notas or settings, and by `refresh_items` after the catálogo or model.
     fn recompute(&mut self) {
-        self.half_life_days = self.half_life(self.model.as_ref(), &self.owner.notas);
-        self.profile =
-            self.model.as_ref().map(|m| m.profile(&self.owner.notas, &self.owner.nao_me_interessa, self.half_life_days));
-        self.previstas = match (&self.model, &self.profile) {
-            (Some(model), Some(profile)) => {
+        let notas = self.notas_de_filmes();
+        self.half_life_days = self.half_life(self.model.as_ref(), &notas);
+        self.profile = self.model.as_ref().map(|m| m.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days));
+        // Notas on séries do not teach yet, so with only filmes behind it the two are the same.
+        self.profile_series = self.profile.clone();
+        self.previstas = match (&self.model, &self.profile, &self.profile_series) {
+            (Some(model), Some(filmes), Some(series)) => {
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
                     if self.rated(m.id) {
                         None
                     } else {
+                        let profile = if m.id.is_serie() { series } else { filmes };
                         item.as_ref()
                             .map(|item| (model.predict(profile, item), item.confianca))
                     }
@@ -757,8 +763,13 @@ impl Core {
             }
             _ => vec![None; self.movies.len()],
         };
-        self.ranked = self.previstas.iter().flatten().map(|(p, _)| *p).collect();
-        self.ranked.sort_by(|a, b| b.total_cmp(a));
+        let ranked = |series: bool| {
+            let of_type = self.movies.iter().zip(&self.previstas).filter(|(m, _)| m.id.is_serie() == series);
+            let mut ranked: Vec<f32> = of_type.filter_map(|(_, p)| p.map(|(p, _)| p)).collect();
+            ranked.sort_by(|a, b| b.total_cmp(a));
+            ranked
+        };
+        (self.ranked, self.ranked_series) = (ranked(false), ranked(true));
         let pesos = self.pesos();
         self.boost = (0..self.movies.len()).map(|i| self.fa_boost(i) + self.pesou_boost(i, &pesos)).collect();
         let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !self.dispensado(i)).collect();
@@ -768,6 +779,17 @@ impl Core {
             key(b).total_cmp(&key(a))
         });
         self.para_voce = para_voce;
+    }
+
+    /// Only notas on filmes reach what predicts filmes, the owner's mean and the accuracy gate
+    /// included: a nota on a série never changes a prediction for a filme.
+    fn notas_de_filmes(&self) -> BTreeMap<ObraId, Vec<NotaEntry>> {
+        self.owner.notas.iter().filter(|(id, _)| !id.is_serie()).map(|(&id, h)| (id, h.clone())).collect()
+    }
+
+    /// What the Faixa of obra `i` is relative to: its own type's predictions.
+    pub(crate) fn ranked_de(&self, i: usize) -> &[f32] {
+        if self.movies[i].id.is_serie() { &self.ranked_series } else { &self.ranked }
     }
 
     /// A recomendação: predicted, neither já vi nor não me interessa.
@@ -795,7 +817,8 @@ impl Core {
     /// does not outrank a well-known 4.6; only the order uses it, never what is shown.
     fn encolhida(&self, i: usize) -> Option<f32> {
         let (p, c) = self.previstas[i]?;
-        let mean = self.profile.as_ref().map_or(p, |profile| profile.mean);
+        let profile = if self.movies[i].id.is_serie() { &self.profile_series } else { &self.profile };
+        let mean = profile.as_ref().map_or(p, |profile| profile.mean);
         Some(mean + (p - mean) * c * c)
     }
 
@@ -916,9 +939,12 @@ impl Core {
         self.destaques(at, 1).next().map(|i| self.card(i))
     }
 
-    /// The top `n` recomendações not set aside with agora não, best first.
+    /// The top `n` recomendações of filmes not set aside with agora não, best first.
     fn destaques(&self, at: i64, n: usize) -> impl Iterator<Item = usize> + '_ {
-        let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].id).is_some_and(|&until| at < until);
+        let set_aside = move |i: usize| {
+            let id = self.movies[i].id;
+            id.is_serie() || self.owner.agora_nao.get(&id).is_some_and(|&until| at < until)
+        };
         self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
     }
 
@@ -1015,7 +1041,7 @@ impl Core {
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, &self.ranked) == Faixa::ApostaForte);
-            alta && novo(m) && !self.owner.notificados.contains_key(&m.id)
+            alta && novo(m) && !m.id.is_serie() && !self.owner.notificados.contains_key(&m.id)
         })?;
         let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {
@@ -1118,7 +1144,10 @@ impl Core {
         if !self.rated(id) {
             return None;
         }
-        let mut notas = self.owner.notas.clone();
+        if id.is_serie() {
+            return Some(model.predict(self.profile_series.as_ref()?, item));
+        }
+        let mut notas = self.notas_de_filmes();
         notas.remove(&id);
         Some(model.predict(&model.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days), item))
     }
@@ -1133,7 +1162,7 @@ impl Core {
         let sem_a_nota = self.prevista_sem_a_nota(i);
         Some(MoviePage {
             card: self.card(i),
-            faixa: self.previstas[i].map(|(p, _)| p).or(sem_a_nota).map(|p| display::faixa(p, &self.ranked)),
+            faixa: self.previstas[i].map(|(p, _)| p).or(sem_a_nota).map(|p| display::faixa(p, self.ranked_de(i))),
             prevista_sem_a_nota: sem_a_nota,
             publico: (m.vote_count >= filtro::PUBLICO_MIN_VOTOS).then_some(m.vote_average / 2.0),
             critica: m.critic_score,
@@ -1212,14 +1241,14 @@ impl Core {
         scored.into_iter().map(|(_, j)| j).collect()
     }
 
-    /// Titles of the loved movies most like this one.
+    /// Titles of the loved movies most like this one; a série never explains a filme.
     fn porque(&self, i: usize) -> Vec<String> {
         let Some(item) = &self.items[i] else { return Vec::new() };
         let mut loved: Vec<(f32, usize)> = self
             .owner
             .notas
             .iter()
-            .filter(|(_, h)| h.last().is_some_and(|e| e.nota >= LOVED))
+            .filter(|(id, h)| h.last().is_some_and(|e| e.nota >= LOVED) && (self.movies[i].id.is_serie() || !id.is_serie()))
             .filter_map(|(id, _)| {
                 let j = *self.index.get(id)?;
                 let similarity = item.similarity(self.items[j].as_ref()?);
@@ -1250,7 +1279,7 @@ impl Core {
 
     /// `content`: also measure the movies outside the model; the accuracy gate never reads it.
     fn accuracy_with(&self, model: &Model, fraction: f32, content: bool) -> Option<Accuracy> {
-        let (known, hidden) = recommender::hold_out(&self.owner.notas, fraction);
+        let (known, hidden) = recommender::hold_out(&self.notas_de_filmes(), fraction);
         // Calibrated on the notas left in, so the hidden ones never pick their own decay.
         let half_life = self.half_life(Some(model), &known);
         let errors = recommender::errors(model, &known, &hidden, half_life, |id| model.item(id, &[]));
@@ -1337,7 +1366,7 @@ impl Core {
             nota_prevista: self.previstas[i].map(|(p, _)| p),
             confianca: self.previstas[i].map(|(_, c)| c),
             exibicao: self.previstas[i]
-                .and_then(|(p, c)| display::exibicao(self.owner.settings.display_mode, p, c, &self.ranked)),
+                .and_then(|(p, c)| display::exibicao(self.owner.settings.display_mode, p, c, self.ranked_de(i))),
         }
     }
 }

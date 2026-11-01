@@ -103,3 +103,156 @@ fn invalid_saved_series_leave_the_filmes() {
     assert_eq!(ids(&core, &Filtro::default()).len(), 2);
     assert_eq!(core.series_version(), None);
 }
+
+mod previsoes {
+    use cinelens_core::{Core, Faixa, Filtro, Marca, ObraId, Tipo};
+
+    /// Filmes 1 (sci-fi by 900) and 4 (drama by 901) are in the model. Séries: 1 is sci-fi by
+    /// creator 900, 2 drama by creator 901, 3 shares nothing with the model, 4 sci-fi with an
+    /// unmapped creator.
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "A", "original_title": "A", "year": 1999, "poster_path": null, "genre_ids": [878], "directors": [{"id": 900, "name": "X"}], "original_language": "en"},
+        {"tmdb_id": 4, "title": "D", "original_title": "D", "year": 1999, "poster_path": null, "genre_ids": [18], "directors": [{"id": 901, "name": "Y"}], "original_language": "en"},
+        {"tmdb_id": 7, "title": "G", "original_title": "G", "year": 2026, "poster_path": null, "genre_ids": [878], "directors": [{"id": 900, "name": "X"}], "original_language": "en"}
+    ]}"#;
+
+    const SERIES: &str = r#"{"format_version": 1, "data_version": "s", "movies": [
+        {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "genre_ids": [878], "directors": [{"id": 900, "name": "X"}], "original_language": "en"},
+        {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "genre_ids": [18], "directors": [{"id": 901, "name": "Y"}], "original_language": "en"},
+        {"tmdb_id": 2147483651, "title": "S3", "original_title": "S3", "year": 2020, "poster_path": null, "genre_ids": [99], "directors": [{"id": 902, "name": "Z"}], "original_language": "xx"},
+        {"tmdb_id": 2147483652, "title": "S4", "original_title": "S4", "year": 2020, "poster_path": null, "genre_ids": [878], "directors": [{"id": 903, "name": "W"}], "original_language": "xx"}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [
+            {"tmdb_id": 1, "bias": 0.3, "factors": [1.0, 0.0], "ratings": 50000},
+            {"tmdb_id": 4, "bias": 0.3, "factors": [0.0, 1.0], "ratings": 40000}
+        ],
+        "content": [
+            {"feature": "g878", "bias": 0.2, "factors": [0.9, 0.0]},
+            {"feature": "d900", "bias": 0.2, "factors": [1.0, 0.0]},
+            {"feature": "g18", "bias": 0.2, "factors": [0.0, 0.9]},
+            {"feature": "d901", "bias": 0.2, "factors": [0.0, 1.0]}
+        ]
+    }"#;
+
+    fn with_series() -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), Some(MODEL.as_bytes()));
+        core.rate(ObraId::filme(1), 5.0, 100).unwrap();
+        core.rate(ObraId::filme(4), 1.0, 100).unwrap();
+        core
+    }
+
+    fn prevista(core: &Core, id: ObraId) -> Option<f32> {
+        core.movie(id).unwrap().card.nota_prevista
+    }
+
+    #[test]
+    fn a_nota_on_a_filme_predicts_a_serie_through_genres_and_creators() {
+        let core = with_series();
+        let (scifi, drama) = (prevista(&core, ObraId::serie(1)).unwrap(), prevista(&core, ObraId::serie(2)).unwrap());
+        assert!(scifi > drama + 1.0, "{scifi} vs {drama}");
+    }
+
+    #[test]
+    fn a_creator_the_owner_likes_raises_the_serie() {
+        let core = with_series();
+        let (com_criador, sem) = (prevista(&core, ObraId::serie(1)).unwrap(), prevista(&core, ObraId::serie(4)).unwrap());
+        assert!(com_criador > sem, "{com_criador} vs {sem}");
+    }
+
+    #[test]
+    fn a_serie_has_content_level_confianca() {
+        let core = with_series();
+        let confianca = core.movie(ObraId::serie(1)).unwrap().card.confianca.unwrap();
+        assert!(confianca > 0.0 && confianca <= 0.3, "{confianca}");
+    }
+
+    #[test]
+    fn a_serie_with_unknown_content_has_no_nota_prevista() {
+        assert_eq!(prevista(&with_series(), ObraId::serie(3)), None);
+    }
+
+    #[test]
+    fn faixa_on_a_serie_is_set_among_series_and_stars_stay_raw() {
+        let core = with_series();
+        // Filme 7 has the same content, so the same raw number.
+        let best = core.movie(ObraId::serie(1)).unwrap();
+        assert_eq!(best.card.nota_prevista, prevista(&core, ObraId::filme(7)));
+        assert_eq!(best.faixa, Some(Faixa::ApostaForte));
+        assert_eq!(core.movie(ObraId::serie(2)).unwrap().faixa, Some(Faixa::Arriscado));
+    }
+
+    #[test]
+    fn the_faixa_filter_compares_a_serie_among_series() {
+        let core = with_series();
+        let filtro = Filtro { tipo: Some(Tipo::Serie), faixa_min: Some(Faixa::ApostaForte), ..Default::default() };
+        let ids: Vec<ObraId> = core.explorar(&filtro, 0).movies.iter().map(|m| m.id).collect();
+        assert_eq!(ids, [ObraId::serie(1)]);
+    }
+
+    /// A filme: id, nota prevista, the same with its nota left out, faixa.
+    type Visto = (u32, Option<f32>, Option<f32>, Option<Faixa>);
+
+    fn filmes_seen(core: &Core) -> Vec<Visto> {
+        [1, 4, 7]
+            .map(|id| {
+                let page = core.movie(ObraId::filme(id)).unwrap();
+                (id, page.card.nota_prevista, page.prevista_sem_a_nota, page.faixa)
+            })
+            .to_vec()
+    }
+
+    #[test]
+    fn predictions_for_filmes_are_the_same_with_and_without_series() {
+        let mut sem = Core::default();
+        sem.load_saved(Some(FILMES.as_bytes()), None, Some(MODEL.as_bytes()));
+        sem.rate(ObraId::filme(1), 5.0, 100).unwrap();
+        sem.rate(ObraId::filme(4), 1.0, 100).unwrap();
+        assert_eq!(filmes_seen(&with_series()), filmes_seen(&sem));
+    }
+
+    #[test]
+    fn a_nota_or_a_mark_on_a_serie_changes_no_prediction_for_a_filme() {
+        let mut core = with_series();
+        let before = filmes_seen(&core);
+        core.rate(ObraId::serie(1), 0.5, 200).unwrap();
+        core.marcar(ObraId::serie(2), Marca::NaoMeInteressa, true, 200);
+        assert_eq!(filmes_seen(&core), before);
+    }
+
+    #[test]
+    fn the_accuracy_gate_measures_only_filmes() {
+        let mut core = with_series();
+        let before = core.accuracy(0.5).unwrap().held_out;
+        core.rate(ObraId::serie(1), 0.5, 200).unwrap();
+        assert_eq!(core.accuracy(0.5).unwrap().held_out, before);
+    }
+
+    #[test]
+    fn a_rated_serie_keeps_a_prediction_with_its_nota_left_out() {
+        let mut core = with_series();
+        core.rate(ObraId::serie(1), 1.0, 200).unwrap();
+        let page = core.movie(ObraId::serie(1)).unwrap();
+        assert_eq!(page.card.nota_prevista, None);
+        assert!(page.prevista_sem_a_nota.is_some());
+    }
+
+    #[test]
+    fn series_stay_out_of_the_destaque_listas_and_notification_for_now() {
+        let core = with_series();
+        let at = 1_800_000_000;
+        assert!(core.inicio(at, 0).destaques.iter().all(|d| !d.card.id.is_serie()));
+        assert!(core.inicio(at, 0).fileiras.iter().flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
+        assert!(core.notificacao_devida(at).is_none_or(|n| !n.id.is_serie()));
+        assert!(core.rodada(10).iter().all(|m| !m.id.is_serie()));
+    }
+
+    #[test]
+    fn a_filme_is_never_explained_by_a_loved_serie() {
+        let mut core = with_series();
+        core.rate(ObraId::serie(1), 5.0, 200).unwrap();
+        assert!(!core.movie(ObraId::filme(7)).unwrap().porque.contains(&"S1".to_string()));
+    }
+}

@@ -75,6 +75,12 @@ fn main() {
         assert_eq!(core.rodada(2).len(), 2);
     });
 
+    failed |= !budget("série page: open", Duration::from_millis(100), || {
+        id += 1;
+        let page = core.movie(ObraId::serie(id % SERIES_SIZE as u32)).unwrap();
+        assert!(page.card.nota_prevista.is_some());
+    });
+
     failed |= !budget("perfil: every statistic", Duration::from_millis(100), || {
         assert!(core.estatisticas().acerto.is_some());
     });
@@ -114,8 +120,9 @@ fn synthetic_model(n: usize) -> Vec<u8> {
         })
         .collect();
     format!(
-        r#"{{"format_version":2,"data_version":"bench","global_mean":3.5,"lambda":0.05,"movies":[{}],"content":[]}}"#,
-        movies.join(",")
+        r#"{{"format_version":2,"data_version":"bench","global_mean":3.5,"lambda":0.05,"movies":[{}],"content":[{{"feature":"g18","bias":0.1,"factors":[{}]}}]}}"#,
+        movies.join(","),
+        vec!["0.1"; FACTORS].join(",")
     )
     .into_bytes()
 }

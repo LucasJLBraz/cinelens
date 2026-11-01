@@ -140,6 +140,7 @@ pub(crate) struct Model {
 }
 
 /// The owner's side of the prediction, recomputed after every change to the notas.
+#[derive(Clone)]
 pub(crate) struct Profile {
     pub mean: f32,
     factors: Vec<f32>,

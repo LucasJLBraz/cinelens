@@ -127,7 +127,7 @@ impl<'a> Matcher<'a> {
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
-            && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa(p, &core.ranked) <= min))
+            && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa(p, core.ranked_de(i)) <= min))
             && (!f.em_alta || core.em_alta.contains(&m.id))
             && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
             && f.votos_max.is_none_or(|max| m.vote_count <= max)
