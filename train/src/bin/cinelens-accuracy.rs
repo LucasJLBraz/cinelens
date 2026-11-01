@@ -41,6 +41,7 @@ fn run() -> Result<(), String> {
         core.load_series(&cinelens_train::read_maybe_gzipped(series)?).map_err(|e| e.to_string())?;
     }
     if let Some(owner) = flag("--owner") {
+        flag("--series").ok_or("--owner needs --series")?;
         let owner = std::fs::read(owner).map_err(|e| format!("{owner}: {e}"))?;
         core.load_owner_data(&owner).map_err(|e| e.to_string())?;
         return series(&core, fraction);

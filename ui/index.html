@@ -444,7 +444,7 @@
     <div id="resumo">
       <div class="numeros">
         <div><strong id="resumo-notas">0</strong><span>notas</span></div>
-        <div id="resumo-acerto-box" hidden><strong id="resumo-acerto"></strong><span>erro médio do app</span></div>
+        <div id="resumo-acerto-box" hidden><strong id="resumo-acerto"></strong><span id="resumo-acerto-nome"></span></div>
       </div>
       <button id="ver-minhas-notas" class="pill">Minhas notas ›</button>
     </div>
@@ -548,9 +548,8 @@
 
     // Explorar's filters, as the core's Filtro; {} is no filter.
     let filtro = {};
-    // Tudo, Filmes or Séries as the owner last chose; a lista pronta's own tipo does not change it.
     let statsTipo = '';
-    try { statsTipo = localStorage.getItem('stats-tipo') || ''; } catch {}
+    // Tudo, Filmes or Séries as the owner last chose; a lista pronta's own tipo does not change it.
     let tipoEscolhido = '';
     try { tipoEscolhido = localStorage.getItem('tipo') || ''; } catch {}
     if (tipoEscolhido) filtro.tipo = tipoEscolhido;
@@ -579,6 +578,8 @@
     const tiposEl = document.getElementById('tipos');
     const controlados = new Set([...campos.map(el => el.dataset.campo), 'tipo', 'incluir', 'excluir', 'duracao_min', 'duracao_max', 'no_meu_streaming']);
 
+    const DURACOES = duracaoEl.innerHTML;
+    const DURACOES_EPISODIO = '<option value="">Qualquer duração</option><option value="-30">Até 30 min</option><option value="30-60">30 min a 1h</option><option value="60-">Mais de 1h</option>';
     // Controls → filtro.
     function readFiltro() {
       const f = { ...extras, incluir: filtro.incluir || [], excluir: filtro.excluir || [] };
@@ -604,8 +605,18 @@
         else if (el.dataset.tipo === 'bool') el.value = v ? '1' : '';
         else el.value = v ?? (el.dataset.campo === 'garimpo' ? 0 : el.tagName === 'SELECT' ? el.options[0].value : '');
       }
+      // On séries the choices are episode lengths; one that does not fit the type is dropped.
+      const faixas = filtro.tipo === 'Serie' ? DURACOES_EPISODIO : DURACOES;
+      if (duracaoEl.dataset.faixas !== faixas) {
+        duracaoEl.dataset.faixas = faixas;
+        duracaoEl.innerHTML = faixas;
+      }
       duracaoEl.value = filtro.duracao_min || filtro.duracao_max ? `${filtro.duracao_min ?? ''}-${filtro.duracao_max ?? ''}` : '';
-      if (duracaoEl.selectedIndex < 0) duracaoEl.value = '';
+      if (duracaoEl.selectedIndex < 0) {
+        duracaoEl.value = '';
+        delete filtro.duracao_min;
+        delete filtro.duracao_max;
+      }
       document.getElementById('streaming').classList.toggle('on', Boolean(filtro.no_meu_streaming));
       for (const chip of tiposEl.children) chip.classList.toggle('on', chip.dataset.valor === (filtro.tipo || ''));
       for (const chip of generosEl.children) {
@@ -623,7 +634,8 @@
     // {} clears them.
     function abrirExplorar(preset, nome) {
       filtro = { ...preset };
-      if (!filtro.tipo && tipoEscolhido) filtro.tipo = tipoEscolhido;
+      // A lista pronta's own mix stands; only plain Explorar opens on the owner's choice.
+      if (!nome && !filtro.tipo && tipoEscolhido) filtro.tipo = tipoEscolhido;
       extras = Object.fromEntries(Object.entries(preset).filter(([k]) => !controlados.has(k)));
       document.getElementById('explorar-lista').textContent = nome || 'Para você';
       showFiltro();
@@ -1279,7 +1291,9 @@
       const soma = valores => valores.reduce((a, b) => a + b, 0);
       const total = soma(e.distribuicao) + soma(e.reacoes);
       // Always the type's own accuracy: the two are never mixed.
-      const acertoResumo = statsTipo === 'Serie' ? e.acerto_series : e.acerto;
+      const resumoSeries = statsTipo === 'Serie' || (!statsTipo && !e.acerto);
+      const acertoResumo = resumoSeries ? e.acerto_series : e.acerto;
+      document.getElementById('resumo-acerto-nome').textContent = resumoSeries ? 'erro médio em séries' : 'erro médio em filmes';
       document.getElementById('resumo-notas').textContent = total;
       document.getElementById('resumo-acerto-box').hidden = !acertoResumo;
       if (acertoResumo) document.getElementById('resumo-acerto').textContent = `${estrelas(acertoResumo.mae)} ★`;
@@ -1302,7 +1316,7 @@
       if (e.mae_series && statsTipo !== 'Filme') hint(`Escondendo suas ${e.mae_series.notas} notas mais recentes em séries, o app erra ${estrelas(e.mae_series.mae)} ★ em média.`);
       if (e.por_mes.length) {
         const meses = e.por_mes.slice(-24);
-        titulo(meses.length < e.por_mes.length ? 'Avaliados por mês (últimos 24)' : 'Avaliados por mês');
+        titulo(meses.length < e.por_mes.length ? 'Notas por mês (últimos 24)' : 'Notas por mês');
         colunas(meses.map(m => m[1]), meses[0][0], meses[meses.length - 1][0]);
       }
       titulo(e.por_genero.length > 8 ? 'Por gênero (os 8 com mais notas)' : 'Por gênero');
@@ -1331,7 +1345,6 @@
     statsTiposEl.addEventListener('click', e => {
       if (e.target === statsTiposEl) return;
       statsTipo = e.target.dataset.valor;
-      try { localStorage.setItem('stats-tipo', statsTipo); } catch {}
       loadStats();
     });
     const googleEl = document.getElementById('google');

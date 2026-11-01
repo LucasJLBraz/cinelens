@@ -66,7 +66,7 @@ cargo run --release -p cinelens-train --bin cinelens-accuracy -- --model data/mo
 A medição esconde as notas mais recentes em séries e imprime:
 
 - O MAE para cada peso de uma nota em série. Para calibrar, escolha o peso que não piora nenhum dos três cortes (`--held-out` 0,1, 0,2 e 0,3) e mude `SERIE_WEIGHT` em `core/src/recommender.rs`.
-- O MAE e a média das suas notas nas séries acima e abaixo do piso da nota do público.
+- O MAE e a média das suas notas nas séries acima e abaixo do piso da nota do público. Para decidir sobre o piso, rode com `--held-out 1`: com todas as notas em séries escondidas, os dois grupos usam todas elas, e não só as mais recentes.
 
 Séries não têm limite de MAE: esse número aparece no Perfil só como informação e nunca rejeita um modelo.
 

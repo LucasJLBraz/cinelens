@@ -93,7 +93,7 @@ A mark that keeps an obra out of the destaque for a few weeks; it hides it nowhe
 _Avoid_: adiar, não me interessa
 
 **Para rever** (Rewatch list):
-A lista pronta of movies marked já vi whose nota prevista is high.
+A lista pronta of obras marked já vi whose nota prevista is high.
 _Avoid_: reassistir, revisitar
 
 **Sou fã** (Favorite person):

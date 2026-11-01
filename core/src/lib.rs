@@ -882,6 +882,11 @@ impl Core {
         self.owner.notas.iter().filter(|(id, _)| !id.is_serie()).map(|(&id, h)| (id, h.clone())).collect()
     }
 
+    /// How many séries the owner gave a nota.
+    pub(crate) fn notas_em_series(&self) -> usize {
+        self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count()
+    }
+
     /// What predicts séries: notas on filmes and, through their content, notas on séries.
     fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>, peso: f32) -> recommender::Profile {
         let item = |id: ObraId| self.items.get(*self.index.get(&id)?)?.as_ref();
@@ -1161,11 +1166,11 @@ impl Core {
         }
         let (desde, hoje) = (listas::date(at - NOVO_DIAS * 86_400), listas::date(at));
         let novo = |m: &Movie| m.release_date.as_ref().is_some_and(|d| *d >= desde && *d <= hoje);
-        let series = self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count() >= NOTIFICACAO_MIN_NOTAS_SERIES;
+        let series_competem = self.notas_em_series() >= NOTIFICACAO_MIN_NOTAS_SERIES;
         let i = self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).find(|&i| {
             let m = &self.movies[i];
             let alta = self.previstas[i].is_some_and(|(p, _)| display::faixa(p, self.ranked_de(i)) == Faixa::ApostaForte);
-            alta && novo(m) && (series || !m.id.is_serie()) && !self.owner.notificados.contains_key(&m.id)
+            alta && novo(m) && (series_competem || !m.id.is_serie()) && !self.owner.notificados.contains_key(&m.id)
         })?;
         let m = &self.movies[i];
         let texto = match self.owner.settings.display_mode {

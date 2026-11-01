@@ -174,8 +174,7 @@ impl Core {
             let erros: Vec<f32> = de_tipo.filter_map(|e| Some((e.prevista? - e.nota).abs())).collect();
             media(&erros).map(|mae| Acerto { notas: erros.len(), mae })
         };
-        let com_nota = self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count();
-        let mae_series = (com_nota >= MAE_SERIES_MIN_NOTAS)
+        let mae_series = (self.notas_em_series() >= MAE_SERIES_MIN_NOTAS)
             .then(|| self.accuracy_series(MAE_FRACAO, SERIE_WEIGHT))
             .flatten()
             .map(|a| Acerto { notas: a.geral.notas, mae: a.geral.mae });

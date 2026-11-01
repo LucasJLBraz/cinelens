@@ -237,6 +237,12 @@ mod series {
     }
 
     #[test]
+    fn hiding_every_nota_on_series_measures_them_all() {
+        let a = com_notas(40).accuracy_series(1.0, 3.0).unwrap();
+        assert_eq!((a.geral.notas, a.acima.unwrap().notas, a.abaixo.unwrap().notas), (40, 30, 10));
+    }
+
+    #[test]
     fn the_accuracy_tool_tries_other_weights_for_notas_on_series() {
         // A filme pulls the mean down; the heavier the notas on séries, the less it matters.
         let mut core = com_notas(40);
