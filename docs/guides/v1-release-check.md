@@ -41,6 +41,7 @@ Avaliação do dono no próprio celular em 2026-10-31: sem latência perceptíve
 - [x] Workflow `Release` gera a release do app pelo tag `v*`.
 - [x] Notas da release incluem licença/atribuição (MovieLens, TMDB, OMDb, JustWatch).
 - [x] Repo público `https://github.com/LucasJLBraz/cinelens` usado no Obtainium.
+- [ ] Obtainium detecta a versão publicada (confirmação do dono no aparelho).
 - Fontes: `.github/workflows/release.yml`, `README.md`, `docs/guides/release.md`.
 
 ## 5) Guias de setup completos e linkados no README
@@ -53,7 +54,7 @@ Avaliação do dono no próprio celular em 2026-10-31: sem latência perceptíve
 - [x] Baseline MovieLens-only registrado no ADR (`MAE 0,428` no corte de 20%).
 - [x] Modelo com Letterboxd treinado e medido com `cinelens-accuracy`.
 - [x] Última linha do ADR preenchida com a decisão.
-- [x] `KAGGLE_API_TOKEN` só entra no repositório se o MAE com Letterboxd não passar da baseline.
+- [x] Letterboxd desligado: o secret `KAGGLE_API_TOKEN` existe, mas só uma execução manual do workflow **Model** usa a base.
 - Fontes: `docs/adr/0002-letterboxd-in-training.md`, `docs/guides/accuracy.md`, `.github/workflows/model.yml`.
 
 ## 7) Download do ml-latest pela cópia pinada do Internet Archive (com SHA-256)

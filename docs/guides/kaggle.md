@@ -2,9 +2,9 @@
 
 O modelo de recomendação é treinado uma vez por mês no GitHub Actions com duas bases públicas: MovieLens `ml-latest` e a amostra Letterboxd de abril de 2026, que cobre os filmes de 2023 até abril de 2026. A amostra Letterboxd fica no Kaggle, e o Kaggle só libera o download com um token da sua conta. **O token fica só nos secrets do repositório; nunca vai para dentro do app.**
 
-No estado atual (ADR 0002), a base Letterboxd está **desligada** porque piorou o MAE. Só configure `KAGGLE_API_TOKEN` quando uma medição nova mostrar MAE do modelo com Letterboxd menor ou igual à baseline MovieLens-only.
+No estado atual (ADR 0002), a base Letterboxd está **desligada** porque piorou o MAE. O secret `KAGGLE_API_TOKEN` só é usado quando uma execução manual do workflow **Model** pede a base Letterboxd. As execuções agendadas treinam só com o MovieLens, com ou sem o secret.
 
-Faça isto uma vez. Enquanto o secret não existir, o workflow **Model** treina só com o MovieLens.
+Faça isto uma vez. Sem o secret, a execução manual com Letterboxd falha.
 
 ## 1. Criar a conta no Kaggle
 
@@ -48,7 +48,7 @@ Depois abra um editor, cole o token num arquivo novo `~/.kaggle/access_token` e 
 
 ## Se o job falhar
 
-- Aviso `KAGGLE_API_TOKEN secret missing` e modelo treinado só com o MovieLens: o secret do passo 3 não existe ou tem outro nome.
+- Erro `KAGGLE_API_TOKEN secret missing`: o secret do passo 3 não existe ou tem outro nome.
 - Mensagem com `401` ou `Unauthorized`: o token foi copiado errado ou foi revogado. Gere outro (passo 2) e atualize o secret.
 - Mensagem com `403`: falta aceitar os termos do dataset (passo 1.2).
 - Mensagem `release not found` no passo **Download catálogo**: o catálogo ainda não foi publicado; rode o workflow **Catalog** antes.
