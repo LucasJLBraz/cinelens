@@ -37,6 +37,14 @@ npm ci && npm run tauri -- android dev
 
 Guias de configuração (chaves, secrets, publicar versão) em [docs/guides/](docs/guides/).
 
+- [Checklist final da v1](docs/guides/v1-release-check.md)
+- [TMDB](docs/guides/tmdb.md)
+- [OMDb](docs/guides/omdb.md)
+- [Google Drive sync](docs/guides/google.md)
+- [Kaggle / Letterboxd](docs/guides/kaggle.md)
+- [Publicar versão + Obtainium](docs/guides/release.md)
+- [Medição de precisão](docs/guides/accuracy.md)
+
 ## Dados e licenças
 
 - [MovieLens](https://grouplens.org/datasets/movielens/) `ml-latest`, GroupLens: F. Maxwell Harper e Joseph A. Konstan, "The MovieLens Datasets: History and Context", ACM TiiS 5(4), 2015. Uso não comercial.

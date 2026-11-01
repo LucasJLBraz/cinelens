@@ -63,4 +63,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "cinelens-$VERSION.apk"
-          gh release create "$GITHUB_REF_NAME" "cinelens-$VERSION.apk" --title "Cinelens $VERSION" --generate-notes
+          cat > notes.md <<NOTES
+          Cinelens $VERSION (Android APK assinado).
+
+          Dados e atribuição:
+          - MovieLens \`ml-latest\` (GroupLens): uso não comercial.
+          - Metadados e imagens do TMDB (não endossado/certificado pelo TMDB).
+          - Onde assistir via JustWatch (dados fornecidos pelo TMDB).
+          - Pontuação da crítica via OMDb.
+          NOTES
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Cinelens $VERSION" --notes-file notes.md
+          gh release upload "$GITHUB_REF_NAME" "cinelens-$VERSION.apk" --clobber
+          gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
