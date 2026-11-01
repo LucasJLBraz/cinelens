@@ -602,6 +602,9 @@ mod piso {
         let core = core();
         let busca = Filtro { busca: "S1".into(), ..Default::default() };
         assert_eq!(ids(&core, &busca), [RUIM]);
+        // Also from a lista pronta opened in Explorar.
+        let da_lista = Filtro { acima_do_piso: true, ..busca };
+        assert_eq!(ids(&core, &da_lista), [RUIM]);
         let series = ids(&core, &Filtro { tipo: Some(Tipo::Serie), ..Default::default() });
         assert_eq!(series.last(), Some(&RUIM));
         assert_eq!(series.len(), 6);

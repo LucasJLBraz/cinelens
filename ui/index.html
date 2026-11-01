@@ -1397,10 +1397,10 @@
       stale = true;
       if (m) showMovie(m);
       // Unmarking Assistindo offers a verdict; ignoring it costs nothing.
-      if (b.dataset.marca === 'Assistindo' && !on) {
-        document.getElementById('painel-nota').hidden = false;
-        document.getElementById('como-foi').hidden = false;
-        filmeEl.classList.add('dando-nota');
+      if (b.dataset.marca === 'Assistindo') {
+        document.getElementById('painel-nota').hidden = on;
+        document.getElementById('como-foi').hidden = on;
+        filmeEl.classList.toggle('dando-nota', !on);
       }
     }));
 
@@ -1548,7 +1548,8 @@
       destaquesEl.scrollLeft = 0;
       pontosEl.replaceChildren(...inicio.destaques.map((_, i) => Object.assign(document.createElement('span'), { className: i ? '' : 'on' })));
       const fileiras = inicio.fileiras.filter(f => f.movies.length);
-      document.getElementById('atalhos').replaceChildren(...fileiras.map(f =>
+      // Assistindo stays a row below the rest, with no chip at the top.
+      document.getElementById('atalhos').replaceChildren(...fileiras.filter(f => f.nome !== 'Assistindo').map(f =>
         Object.assign(document.createElement('button'), { className: 'chip', textContent: f.nome, onclick: () => verLista(f) })));
       document.getElementById('fileiras').replaceChildren(...fileiras.map(f => {
         const section = document.createElement('section');

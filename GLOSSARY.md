@@ -29,7 +29,7 @@ The score the recommender expects the owner would give an obra not yet rated; a 
 _Avoid_: previsão, match, recomendação
 
 **Nota do público** (Public score):
-The average of other people's votes on an obra, shown as it is and never mixed into the nota prevista. Séries in the lowest quarter of it do not become recomendações.
+The average of other people's votes on an obra, shown as it is and never mixed into the nota prevista. Séries in the lowest quarter of it, among those with at least 50 votes, are below the **piso** and do not become recomendações.
 _Avoid_: nota (alone), nota da crítica
 
 **Confiança** (Confidence):
@@ -73,7 +73,7 @@ The owner's setting for how much popularity weighs in ranking recomendações, f
 _Avoid_: algoritmo, modo
 
 **Rodada rápida** (Quick rating session):
-A sequence of movies the owner has likely seen, chosen to teach the recommender the most, each one rated or skipped as "não vi".
+A sequence of obras of one type the owner has likely seen, chosen to teach the recommender the most, each one answered (a nota on a filme, a Reação on a série) or skipped as "não vi".
 _Avoid_: avaliação rápida, onboarding, calibração
 
 **Já vi** (Seen):

@@ -241,7 +241,7 @@ fn remover_nota(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraI
     Ok(core.movie(tmdb_id))
 }
 
-/// The rodada rápida's next `n` movies.
+/// The rodada rápida's next `n` obras of `tipo`.
 #[tauri::command]
 fn rodada(core: tauri::State<RwLock<Core>>, tipo: Tipo, n: usize) -> Vec<MovieCard> {
     core.read().unwrap().rodada(tipo, n)

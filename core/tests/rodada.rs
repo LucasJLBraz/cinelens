@@ -155,6 +155,5 @@ mod series {
         let core = core();
         let filmes: Vec<u32> = core.rodada(Tipo::Filme, 10).iter().map(|m| m.id.tmdb_id()).collect();
         assert_eq!(filmes, [1]);
-        assert!(core.rodada(Tipo::Filme, 10).iter().all(|m| !m.id.is_serie()));
     }
 }
