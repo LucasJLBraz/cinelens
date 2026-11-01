@@ -1428,6 +1428,13 @@
 
     async function loadInicio() {
       const inicio = await invoke('inicio', { sorteio });
+      // What the next launch paints first, while the catálogo loads. Not another sorteio: the
+      // launch's own list would replace it right away.
+      if (!sorteio) try { localStorage.setItem('inicio', JSON.stringify(inicio)); } catch {}
+      mostrarInicio(inicio);
+    }
+
+    function mostrarInicio(inicio) {
       destaquesEl.replaceChildren(...inicio.destaques.map(destaque));
       destaquesEl.scrollLeft = 0;
       pontosEl.replaceChildren(...inicio.destaques.map((_, i) => Object.assign(document.createElement('span'), { className: i ? '' : 'on' })));
@@ -1510,6 +1517,13 @@
 
     more.addEventListener('click', load);
     document.getElementById('retry').addEventListener('click', setup);
+    try {
+      const salvo = JSON.parse(localStorage.getItem('inicio'));
+      if (salvo) {
+        mostrarInicio(salvo);
+        abrirAba('inicio');
+      }
+    } catch {}
     invoke('status').then(([catalog]) => catalog ? start() : setup());
   </script>
 </body>
