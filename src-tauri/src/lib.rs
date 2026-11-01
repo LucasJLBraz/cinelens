@@ -594,14 +594,9 @@ pub fn run() {
                     let state = handle.state::<RwLock<Core>>();
                     let mut core = state.write().unwrap();
                     let _ = locked.send(());
-                    // A missing or unreadable catálogo means the UI downloads it again.
-                    if let Ok(json) = std::fs::read(catalog_file(&handle)) {
-                        let _ = core.load_catalog(&json);
-                    }
-                    // Same for the model.
-                    if let Ok(json) = std::fs::read(model_file(&handle)) {
-                        let _ = core.load_model(&json);
-                    }
+                    let catalog = std::fs::read(catalog_file(&handle)).ok();
+                    let model = std::fs::read(model_file(&handle)).ok();
+                    core.load_saved(catalog.as_deref(), model.as_deref());
                 }
                 loop {
                     let updates = [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))];

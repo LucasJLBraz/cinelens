@@ -91,6 +91,16 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// `f` over `items` on every core, in order. The launch runs this over the whole catálogo.
+fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let chunk = items.len().div_ceil(cores).max(1);
+    std::thread::scope(|s| {
+        let parts: Vec<_> = items.chunks(chunk).map(|c| s.spawn(|| c.iter().map(&f).collect::<Vec<_>>())).collect();
+        parts.into_iter().flat_map(|p| p.join().expect("par_map worker panicked")).collect()
+    })
+}
+
 #[derive(Deserialize)]
 struct CatalogArtifact {
     format_version: u32,
@@ -598,7 +608,7 @@ impl Core {
             )));
         }
         self.data_version = Some(artifact.data_version);
-        self.busca = artifact.movies.iter().map(filtro::searchable).collect();
+        self.busca = par_map(&artifact.movies, filtro::searchable);
         let log_votes = |m: &Movie| (m.vote_count as f32).ln_1p();
         let most = artifact.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
         self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
@@ -607,16 +617,35 @@ impl Core {
         self.em_alta = artifact.trending.into_iter().collect();
         self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
         self.generos = artifact.genres;
-        let na_assinatura = |id: u32| self.movies.iter().filter(|m| m.watch.as_ref().is_some_and(|w| w.flatrate.contains(&id))).count();
+        let mut na_assinatura: HashMap<u32, usize> = HashMap::new();
+        for id in self.movies.iter().filter_map(|m| m.watch.as_ref()).flat_map(|w| &w.flatrate) {
+            *na_assinatura.entry(*id).or_default() += 1;
+        }
         let mut provedores: Vec<Provedor> = artifact
             .providers
             .into_iter()
             .map(|p| Provedor { id: p.id, name: p.name, logo_url: p.logo_path.map(|l| format!("{LOGO_BASE}{l}")) })
             .collect();
-        provedores.sort_by_cached_key(|p| (std::cmp::Reverse(na_assinatura(p.id)), p.name.clone()));
+        provedores.sort_by_cached_key(|p| (std::cmp::Reverse(na_assinatura.get(&p.id).copied().unwrap_or(0)), p.name.clone()));
         self.provedores = provedores;
         self.refresh_items();
         Ok(())
+    }
+
+    /// Loads what a launch finds on disk, parsing the two at once to open faster. Whichever is
+    /// missing or invalid stays out: the UI downloads it again.
+    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
+        let model = std::thread::scope(|s| {
+            let model = s.spawn(|| model_artifact.and_then(|bytes| Model::parse(bytes).ok()));
+            if let Some(bytes) = catalog_artifact {
+                let _ = self.load_catalog(bytes);
+            }
+            model.join().expect("model parse does not panic")
+        });
+        if model.is_some() {
+            self.model = model;
+            self.refresh_items();
+        }
     }
 
     /// Replaces the model. On error the current one stays in place.
@@ -663,11 +692,7 @@ impl Core {
     fn refresh_items(&mut self) {
         self.items = match &self.model {
             None => vec![None; self.movies.len()],
-            Some(model) => self
-                .movies
-                .iter()
-                .map(|m| model.item(m.id, &m.content_features()))
-                .collect(),
+            Some(model) => par_map(&self.movies, |m| model.item(m.id, &m.content_features())),
         };
         self.recompute();
     }
