@@ -240,11 +240,12 @@ mod previsoes {
     }
 
     #[test]
-    fn series_stay_out_of_the_destaque_listas_and_notification_for_now() {
+    fn series_stay_out_of_the_listas_of_filmes_and_notification_for_now() {
         let core = with_series();
         let at = 1_800_000_000;
-        assert!(core.inicio(at, 0).destaques.iter().all(|d| !d.card.id.is_serie()));
-        assert!(core.inicio(at, 0).fileiras.iter().flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
+        let inicio = core.inicio(at, 0);
+        let de_filmes = inicio.fileiras.iter().filter(|f| f.filtro.tipo == Some(Tipo::Filme));
+        assert!(de_filmes.flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
         assert!(core.notificacao_devida(at).is_none_or(|n| !n.id.is_serie()));
         assert!(core.rodada(10).iter().all(|m| !m.id.is_serie()));
     }
@@ -429,4 +430,101 @@ fn a_page_links_to_tmdb_by_type_and_number() {
     let core = core();
     assert_eq!(core.movie(FILME).unwrap().tmdb_url, "https://www.themoviedb.org/movie/7");
     assert_eq!(core.movie(SERIE).unwrap().tmdb_url, "https://www.themoviedb.org/tv/7");
+}
+
+mod ranking_misto {
+    use cinelens_core::{Core, Filtro, Marca, ObraId};
+
+    /// Filmes 1 > 2 > 3, all predicted above every série; séries 1 > 2 through content alone.
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "A", "original_title": "A", "year": 1999, "poster_path": null, "vote_count": 900, "genre_ids": [878]},
+        {"tmdb_id": 2, "title": "B", "original_title": "B", "year": 1999, "poster_path": null, "vote_count": 800, "genre_ids": [878]},
+        {"tmdb_id": 3, "title": "C", "original_title": "C", "year": 1999, "poster_path": null, "vote_count": 700, "genre_ids": [878]}
+    ]}"#;
+
+    const SERIES: &str = r#"{"format_version": 1, "data_version": "s", "movies": [
+        {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "vote_count": 10, "genre_ids": [878]},
+        {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "vote_count": 5, "genre_ids": [18]}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [
+            {"tmdb_id": 1, "bias": 1.3, "factors": [0.0, 0.0], "ratings": 50000},
+            {"tmdb_id": 2, "bias": 1.2, "factors": [0.0, 0.0], "ratings": 50000},
+            {"tmdb_id": 3, "bias": 1.1, "factors": [0.0, 0.0], "ratings": 50000}
+        ],
+        "content": [
+            {"feature": "g878", "bias": 0.2, "factors": [0.0, 0.0]},
+            {"feature": "g18", "bias": 0.1, "factors": [0.0, 0.0]}
+        ]
+    }"#;
+
+    const S1: ObraId = ObraId::serie(1);
+    const S2: ObraId = ObraId::serie(2);
+
+    fn core() -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), Some(MODEL.as_bytes()));
+        core
+    }
+
+    fn tudo(core: &Core, garimpo: f32) -> Vec<ObraId> {
+        let filtro = Filtro { garimpo, ..Default::default() };
+        core.explorar(&filtro, 0).movies.iter().map(|m| m.id).collect()
+    }
+
+    #[test]
+    fn para_voce_on_tudo_compares_each_obra_within_its_type() {
+        let core = core();
+        let prevista = |id| core.movie(id).unwrap().card.nota_prevista.unwrap();
+        assert!(prevista(S1) < prevista(ObraId::filme(3)), "the série must be predicted lower for this to show anything");
+        // Tops tie at their type's first place; S2 is halfway down, ahead of the last of three.
+        assert_eq!(tudo(&core, 0.0), [ObraId::filme(1), S1, ObraId::filme(2), S2, ObraId::filme(3)]);
+    }
+
+    #[test]
+    fn garimpo_on_tudo_compares_within_type_too() {
+        // Garimpo lifts the less voted S2 over S1, and it stays level with the best filme.
+        let order = tudo(&core(), 1.0);
+        assert_eq!(order[..2], [ObraId::filme(1), S2]);
+    }
+
+    #[test]
+    fn a_filter_on_tudo_compares_among_what_passes_whatever_the_garimpo() {
+        let core = core();
+        let order = |garimpo| {
+            let filtro = Filtro { votos_max: Some(800), garimpo, ..Default::default() };
+            core.explorar(&filtro, 0).movies.iter().map(|m| m.id).collect::<Vec<_>>()
+        };
+        let esperado = [ObraId::filme(2), S1, ObraId::filme(3), S2];
+        assert_eq!(order(0.0), esperado);
+        assert_eq!(order(0.001), esperado);
+    }
+
+    #[test]
+    fn the_destaque_mixes_filmes_and_series() {
+        let inicio = core().inicio(0, 0);
+        let ids: Vec<ObraId> = inicio.destaques.iter().map(|d| d.card.id).collect();
+        assert_eq!(ids[..2], [ObraId::filme(1), S1]);
+    }
+
+    #[test]
+    fn agora_nao_sets_aside_a_serie_in_the_destaque() {
+        let mut core = core();
+        core.marcar(ObraId::filme(1), Marca::AgoraNao, true, 0);
+        assert_eq!(core.destaque(1).unwrap().id, S1);
+        core.marcar(S1, Marca::AgoraNao, true, 0);
+        assert_ne!(core.destaque(1).unwrap().id, S1);
+    }
+
+    #[test]
+    fn inicio_has_rows_of_series_set_to_the_serie_filter() {
+        let core = core();
+        let inicio = core.inicio(0, 0);
+        let row = inicio.fileiras.iter().find(|f| f.nome == "Séries para você").unwrap();
+        let ids: Vec<ObraId> = row.movies.iter().map(|m| m.id).collect();
+        assert_eq!(ids, [S1, S2]);
+        let explorar: Vec<ObraId> = core.explorar(&row.filtro, 0).movies.iter().map(|m| m.id).collect();
+        assert_eq!(explorar, ids);
+    }
 }

@@ -625,8 +625,8 @@ pub struct Core {
     previstas: Vec<Option<(f32, f32)>>,
     /// Aligned with `movies`: what sou fã and o que pesou add to the nota prevista in the ranking.
     boost: Vec<f32>,
-    /// Explorar order: indexes into `movies`, recomendações first (highest nota prevista
-    /// first), then the rest in catálogo order; não me interessa left out.
+    /// Explorar order: indexes into `movies`, recomendações first (best percentile within their
+    /// type first), then the rest in catálogo order; não me interessa left out.
     para_voce: Vec<usize>,
     /// Every current nota prevista of a filme, highest first: what a filme's Faixa is relative to.
     ranked: Vec<f32>,
@@ -799,13 +799,34 @@ impl Core {
         (self.ranked, self.ranked_series) = (ranked(false), ranked(true));
         let pesos = self.pesos();
         self.boost = (0..self.movies.len()).map(|i| self.fa_boost(i) + self.pesou_boost(i, &pesos)).collect();
-        let mut para_voce: Vec<usize> = (0..self.movies.len()).filter(|&i| !self.dispensado(i)).collect();
-        // Stable: the rest keep catálogo order, after the recomendações.
-        para_voce.sort_by(|&a, &b| {
-            let key = |i: usize| if self.recomendavel(i) { self.ranking(i) } else { f32::NEG_INFINITY };
-            key(b).total_cmp(&key(a))
-        });
+        // The rest keep catálogo order, after the recomendações.
+        let (mut para_voce, resto): (Vec<usize>, Vec<usize>) =
+            (0..self.movies.len()).filter(|&i| !self.dispensado(i)).partition(|&i| self.recomendavel(i));
+        self.por_percentil(&mut para_voce, |i| self.ranking(i));
+        para_voce.extend(resto);
         self.para_voce = para_voce;
+    }
+
+    /// Orders `obras` by `score` within each type, then by place within their type, so that
+    /// filmes do not crowd out séries only because content-based predictions sit closer to the
+    /// mean. With one type it is the order by `score`; ties across types keep the order by score.
+    fn por_percentil(&self, obras: &mut [usize], score: impl Fn(usize) -> f32) {
+        obras.sort_by(|&a, &b| score(b).total_cmp(&score(a)));
+        let series = obras.iter().filter(|&&i| self.movies[i].id.is_serie()).count();
+        let total = [obras.len() - series, series];
+        let mut contados = [0usize; 2];
+        let mut lugares: Vec<(f32, usize)> = obras
+            .iter()
+            .map(|&i| {
+                let tipo = usize::from(self.movies[i].id.is_serie());
+                contados[tipo] += 1;
+                ((contados[tipo] - 1) as f32 / total[tipo] as f32, i)
+            })
+            .collect();
+        lugares.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (obra, (_, i)) in obras.iter_mut().zip(lugares) {
+            *obra = i;
+        }
     }
 
     /// Only notas on filmes reach what predicts filmes, the owner's mean and the accuracy gate
@@ -973,12 +994,9 @@ impl Core {
         self.destaques(at, 1).next().map(|i| self.card(i))
     }
 
-    /// The top `n` recomendações of filmes not set aside with agora não, best first.
+    /// The top `n` recomendações not set aside with agora não, best first.
     fn destaques(&self, at: i64, n: usize) -> impl Iterator<Item = usize> + '_ {
-        let set_aside = move |i: usize| {
-            let id = self.movies[i].id;
-            id.is_serie() || self.owner.agora_nao.get(&id).is_some_and(|&until| at < until)
-        };
+        let set_aside = move |i: usize| self.owner.agora_nao.get(&self.movies[i].id).is_some_and(|&until| at < until);
         self.para_voce.iter().copied().take_while(|&i| self.recomendavel(i)).filter(move |&i| !set_aside(i)).take(n)
     }
 
@@ -1356,8 +1374,9 @@ impl Core {
         })
     }
 
-    /// The catálogo movies passing `filtro`, recomendações first ("Para você": highest nota
-    /// prevista first, popularity weighed by `filtro.garimpo`), then the rest in catálogo order.
+    /// The catálogo obras passing `filtro`, recomendações first ("Para você": best percentile
+    /// within their type first, popularity weighed by `filtro.garimpo`), then the rest in
+    /// catálogo order.
     pub fn explorar(&self, filtro: &Filtro, page: usize) -> ExplorarPage {
         let matcher = filtro::Matcher::new(filtro);
         let mut relevancia = vec![(false, 0); self.movies.len()];
@@ -1368,19 +1387,19 @@ impl Core {
             self.para_voce.iter().copied().filter(passes).collect()
         };
         // Já vi movies are no recomendações, so Para você leaves them in catálogo order; shown
-        // alone (Para rever) they rank by nota prevista too.
+        // alone (Para rever) they rank too.
         let so_ja_vi = filtro.ja_vi == Mostrar::So;
         let ordenado = |i: usize| if so_ja_vi { self.previstas[i].is_some() } else { self.recomendavel(i) };
         if so_ja_vi {
-            let key = |i: usize| if ordenado(i) { self.ranking(i) } else { f32::NEG_INFINITY };
-            found.sort_by(|&a, &b| key(b).total_cmp(&key(a)));
+            found.sort_by_key(|&i| !ordenado(i));
         }
-        if filtro.garimpo != 0.0 {
+        // On Tudo, places are among what passes `filtro`, whatever the garimpo.
+        if so_ja_vi || filtro.garimpo != 0.0 || filtro.tipo.is_none() {
             // ponytail: popularity is log TMDB votes, one star at either end of the slider; tune
             // the weight once the owner has used it.
             let score = |i: usize| self.ranking(i) - filtro.garimpo * self.popularidade[i];
             let n = found.partition_point(|&i| ordenado(i));
-            found[..n].sort_by(|&a, &b| score(b).total_cmp(&score(a)));
+            self.por_percentil(&mut found[..n], score);
         }
         // Stable: equally good matches keep the order above.
         found.sort_by_key(|&i| relevancia[i]);

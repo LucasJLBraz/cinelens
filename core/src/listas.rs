@@ -19,8 +19,11 @@ const ACLAMADO: u8 = 75;
 pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> {
     let filmes = Filtro { tipo: Some(Tipo::Filme), ..Default::default() };
     let nao_visto = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, ..filmes.clone() };
+    let series = Filtro { tipo: Some(Tipo::Serie), ..nao_visto.clone() };
     vec![
         ("Em alta, do seu jeito", Filtro { em_alta: true, ..nao_visto.clone() }),
+        ("Séries para você", series.clone()),
+        ("Séries em alta", Filtro { em_alta: true, ..series }),
         ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..nao_visto.clone() }),
         (
             "Lançamentos para você",
