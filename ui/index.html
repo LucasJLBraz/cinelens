@@ -304,6 +304,7 @@
           <label>Com nota <select data-campo="com_nota"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Já vi <select data-campo="ja_vi"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Quero assistir <select data-campo="quero_assistir"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
+          <label>Assistindo <select data-campo="assistindo"><option value="Todos">Mostrar</option><option value="Esconder">Esconder</option><option value="So">Só estes</option></select></label>
           <label>Não me interessa <select data-campo="nao_me_interessa" data-tipo="bool"><option value="">Esconder</option><option value="1">Só estes</option></select></label>
         </div>
         <button id="limpar" class="chip">Limpar filtros</button>
@@ -339,6 +340,7 @@
       <button id="dar-nota" class="pill">Dar nota</button>
       <button class="pill" data-marca="QueroAssistir">Quero assistir</button>
       <button class="pill" data-marca="JaVi">Já vi</button>
+      <button class="pill" data-marca="Assistindo">Assistindo</button>
       <details class="menu">
         <summary class="pill">⋯</summary>
         <div class="menu-items">
@@ -352,6 +354,7 @@
       </details>
     </div>
     <div id="painel-nota" hidden>
+      <p id="como-foi" class="meta" hidden>Como foi?</p>
       <div id="reacoes" class="chips">
         <button class="chip" data-reacao="NaoGostei">Não gostei</button>
         <button class="chip" data-reacao="Gostei">Gostei</button>
@@ -872,12 +875,13 @@
         document.getElementById('onde-link').hidden = !onde.link;
         document.getElementById('onde-link').onclick = () => abrirUrl(onde.link);
       }
-      const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, NaoMeInteressa: m.nao_me_interessa };
+      const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, Assistindo: m.assistindo, NaoMeInteressa: m.nao_me_interessa };
       for (const b of filmeEl.querySelectorAll('[data-marca]')) b.classList.toggle('on', marcas[b.dataset.marca]);
       for (const b of notasEl.children) b.classList.toggle('on', !m.reacao && Number(b.dataset.nota) === m.nota);
       // On a série the reactions come first, the stars on request or when its nota is in stars.
       const serie = ehSerie(m.tmdb_id);
       reacoesEl.hidden = !serie;
+      filmeEl.querySelector('[data-marca="Assistindo"]').hidden = !serie;
       for (const b of reacoesEl.children) b.classList.toggle('on', b.dataset.reacao === m.reacao);
       notasEl.hidden = serie && (m.nota == null || m.reacao != null);
       usarEstrelasEl.hidden = !notasEl.hidden;
@@ -973,6 +977,7 @@
     function closeRating() {
       document.getElementById('painel-nota').hidden = true;
       document.getElementById('revelacao').hidden = true;
+      document.getElementById('como-foi').hidden = true;
       pesouEl.hidden = true;
       filmeEl.classList.remove('dando-nota');
     }
@@ -1075,6 +1080,7 @@
       // The rating screen never shows the prediction, so it cannot anchor the nota.
       const painelNota = document.getElementById('painel-nota');
       painelNota.hidden = !painelNota.hidden;
+      document.getElementById('como-foi').hidden = true;
       filmeEl.classList.toggle('dando-nota', !painelNota.hidden);
     });
     // Takes the whole history with it, so a stray tap only asks.
@@ -1346,10 +1352,17 @@
     });
 
     filmeEl.querySelectorAll('[data-marca]').forEach(b => b.addEventListener('click', async () => {
-      const m = await invoke('marcar', { tmdbId: Number(filmeEl.dataset.id), marca: b.dataset.marca, on: !b.classList.contains('on') });
+      const on = !b.classList.contains('on');
+      const m = await invoke('marcar', { tmdbId: Number(filmeEl.dataset.id), marca: b.dataset.marca, on });
       filmeEl.querySelector('.menu').open = false;
       stale = true;
       if (m) showMovie(m);
+      // Unmarking Assistindo offers a verdict; ignoring it costs nothing.
+      if (b.dataset.marca === 'Assistindo' && !on) {
+        document.getElementById('painel-nota').hidden = false;
+        document.getElementById('como-foi').hidden = false;
+        filmeEl.classList.add('dando-nota');
+      }
     }));
 
     usarEstrelasEl.addEventListener('click', () => {
@@ -1370,6 +1383,7 @@
       stale = true;
       if (m) showMovie(m);
       filmeEl.classList.remove('dando-nota');
+      document.getElementById('como-foi').hidden = true;
       const revelacao = document.getElementById('revelacao');
       revelacao.hidden = !revealed;
       if (revealed) revelacao.textContent = `O app achava: ${revealed.faixa}`;

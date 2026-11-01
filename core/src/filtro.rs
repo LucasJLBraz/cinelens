@@ -68,6 +68,7 @@ pub struct Filtro {
     pub com_nota: Mostrar,
     pub ja_vi: Mostrar,
     pub quero_assistir: Mostrar,
+    pub assistindo: Mostrar,
     /// Only the movies marked não me interessa (hidden otherwise), so they can be restored.
     pub nao_me_interessa: bool,
     /// Leave out séries below the nota do público floor, as the listas prontas do.
@@ -143,6 +144,7 @@ impl<'a> Matcher<'a> {
             && shown(f.com_nota, rated)
             && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
+            && shown(f.assistindo, owner.assistindo.contains(&m.id))
             && (!f.no_meu_streaming
                 || watch.is_some_and(|w| w.flatrate.iter().any(|p| owner.settings.servicos.contains(p))))
         {

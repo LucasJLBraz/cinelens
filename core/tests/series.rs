@@ -632,3 +632,152 @@ mod piso {
         assert_eq!(prevista(&baixa), prevista(&alta));
     }
 }
+
+mod assistindo {
+    use cinelens_core::{Core, Filtro, Marca, Mostrar, ObraId, Reacao, SyncStorage, Tipo};
+
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "F", "original_title": "F", "year": 2000, "poster_path": null, "genre_ids": [18], "vote_count": 900}
+    ]}"#;
+
+    const SERIES: &str = r#"{"format_version": 1, "data_version": "s", "movies": [
+        {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "genre_ids": [18], "vote_count": 800},
+        {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "genre_ids": [18], "vote_count": 700}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [{"tmdb_id": 1, "bias": 0.0, "factors": [1.0], "ratings": 50000}],
+        "content": [{"feature": "g18", "bias": 0.0, "factors": [1.0]}]}"#;
+
+    const S1: ObraId = ObraId::serie(1);
+    const S2: ObraId = ObraId::serie(2);
+
+    fn core() -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), Some(MODEL.as_bytes()));
+        core
+    }
+
+    fn assistindo(core: &Core) -> Vec<ObraId> {
+        let filtro = Filtro { assistindo: Mostrar::So, ..Default::default() };
+        core.explorar(&filtro, 0).movies.iter().map(|m| m.id).collect()
+    }
+
+    fn fileira(core: &Core, nome: &str) -> Vec<ObraId> {
+        let fileira = core.inicio(0, 0).fileiras.into_iter().find(|f| f.nome == nome).unwrap();
+        fileira.movies.iter().map(|m| m.id).collect()
+    }
+
+    #[test]
+    fn the_mark_exists_only_on_series() {
+        let mut core = core();
+        core.marcar(ObraId::filme(1), Marca::Assistindo, true, 100);
+        assert!(!core.movie(ObraId::filme(1)).unwrap().assistindo);
+        assert_eq!(assistindo(&core), []);
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        assert!(core.movie(S1).unwrap().assistindo);
+        core.marcar(S1, Marca::Assistindo, false, 200);
+        assert!(!core.movie(S1).unwrap().assistindo);
+    }
+
+    #[test]
+    fn it_takes_the_serie_out_of_recomendacoes() {
+        let mut core = core();
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        let inicio = core.inicio(0, 0);
+        assert!(inicio.destaques.iter().all(|d| d.card.id != S1));
+        assert_eq!(fileira(&core, "Séries para você"), [S2]);
+        let series = Filtro { tipo: Some(Tipo::Serie), ..Default::default() };
+        let ids: Vec<ObraId> = core.explorar(&series, 0).movies.iter().map(|m| m.id).collect();
+        assert_eq!(ids, [S2, S1]);
+    }
+
+    #[test]
+    fn it_takes_the_serie_out_of_quero_assistir() {
+        let mut core = core();
+        core.marcar(S1, Marca::QueroAssistir, true, 100);
+        core.marcar(S1, Marca::Assistindo, true, 200);
+        let page = core.movie(S1).unwrap();
+        assert!(page.assistindo && !page.quero_assistir);
+    }
+
+    #[test]
+    fn quero_assistir_takes_the_serie_out_of_assistindo() {
+        let mut core = core();
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        core.marcar(S1, Marca::QueroAssistir, true, 200);
+        let page = core.movie(S1).unwrap();
+        assert!(!page.assistindo && page.quero_assistir);
+    }
+
+    #[test]
+    fn it_teaches_nothing() {
+        let mut core = core();
+        core.rate(ObraId::filme(1), 5.0, 50).unwrap();
+        let before = core.movie(S2).unwrap().card.nota_prevista;
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        assert_eq!(core.movie(S2).unwrap().card.nota_prevista, before);
+    }
+
+    #[test]
+    fn a_reacao_does_not_clear_it() {
+        let mut core = core();
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        core.reagir(S1, Reacao::Gostei, 200).unwrap();
+        let page = core.movie(S1).unwrap();
+        assert!(page.assistindo);
+        assert_eq!(page.reacao, Some(Reacao::Gostei));
+    }
+
+    #[test]
+    fn inicio_has_a_last_row_empty_until_marked() {
+        let mut core = core();
+        assert_eq!(fileira(&core, "Assistindo"), []);
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        assert_eq!(fileira(&core, "Assistindo"), [S1]);
+        assert_eq!(core.inicio(0, 0).fileiras.last().unwrap().nome, "Assistindo");
+    }
+
+    #[test]
+    fn explorar_filters_by_it() {
+        let mut core = core();
+        core.marcar(S1, Marca::Assistindo, true, 100);
+        assert_eq!(assistindo(&core), [S1]);
+        let sem = Filtro { assistindo: Mostrar::Esconder, tipo: Some(Tipo::Serie), ..Default::default() };
+        let ids: Vec<ObraId> = core.explorar(&sem, 0).movies.iter().map(|m| m.id).collect();
+        assert_eq!(ids, [S2]);
+    }
+
+    struct Nuvem(Option<Vec<u8>>);
+
+    impl SyncStorage for Nuvem {
+        fn get(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(self.0.clone())
+        }
+
+        fn put(&mut self, bytes: &[u8]) -> Result<(), String> {
+            self.0 = Some(bytes.to_vec());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn it_syncs_per_item_with_the_quero_assistir_it_removed() {
+        let (mut celular, mut tablet, mut nuvem) = (core(), core(), Nuvem(None));
+        celular.marcar(S1, Marca::QueroAssistir, true, 100);
+        celular.sync(&mut nuvem).unwrap();
+        tablet.sync(&mut nuvem).unwrap();
+        assert!(tablet.movie(S1).unwrap().quero_assistir);
+
+        tablet.marcar(S1, Marca::Assistindo, true, 200);
+        tablet.sync(&mut nuvem).unwrap();
+        celular.sync(&mut nuvem).unwrap();
+        let page = celular.movie(S1).unwrap();
+        assert!(page.assistindo && !page.quero_assistir);
+
+        celular.marcar(S1, Marca::Assistindo, false, 300);
+        celular.sync(&mut nuvem).unwrap();
+        tablet.sync(&mut nuvem).unwrap();
+        assert!(!tablet.movie(S1).unwrap().assistindo);
+    }
+}

@@ -52,6 +52,7 @@ impl OwnerData {
         let (mine, other) = (&self.changed, &theirs.changed);
         lww_set("quero_assistir", &mut self.quero_assistir, &theirs.quero_assistir, mine, other);
         lww_set("ja_vi", &mut self.ja_vi, &theirs.ja_vi, mine, other);
+        lww_set("assistindo", &mut self.assistindo, &theirs.assistindo, mine, other);
         lww_set("nao_me_interessa", &mut self.nao_me_interessa, &theirs.nao_me_interessa, mine, other);
         lww_set("fas", &mut self.fas, &theirs.fas, mine, other);
         lww("agora_nao", &mut self.agora_nao, &theirs.agora_nao, mine, other);

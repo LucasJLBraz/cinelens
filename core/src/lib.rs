@@ -459,6 +459,7 @@ pub struct MoviePage {
     pub history: Vec<NotaEntry>,
     pub quero_assistir: bool,
     pub ja_vi: bool,
+    pub assistindo: bool,
     pub nao_me_interessa: bool,
     pub onde_assistir: Option<OndeAssistir>,
     /// What the owner said weighed in their nota.
@@ -471,6 +472,9 @@ pub enum Marca {
     QueroAssistir,
     /// Watched, no nota: out of the recomendações, teaches nothing about taste.
     JaVi,
+    /// Partway through a série (séries only): out of the recomendações and of quero assistir,
+    /// teaches nothing about taste.
+    Assistindo,
     /// Hidden everywhere for good; a weak negative signal.
     NaoMeInteressa,
     /// Out of the destaque for a few weeks.
@@ -545,6 +549,8 @@ struct OwnerData {
     quero_assistir: BTreeSet<ObraId>,
     #[serde(default)]
     ja_vi: BTreeSet<ObraId>,
+    #[serde(default)]
+    assistindo: BTreeSet<ObraId>,
     #[serde(default)]
     nao_me_interessa: BTreeSet<ObraId>,
     /// Movie → until when (Unix seconds) it stays out of the destaque.
@@ -854,10 +860,11 @@ impl Core {
         if self.movies[i].id.is_serie() { &self.ranked_series } else { &self.ranked }
     }
 
-    /// A recomendação: predicted, neither já vi nor não me interessa, not below the floor.
+    /// A recomendação: predicted, not já vi, assistindo or não me interessa, not below the floor.
     fn recomendavel(&self, i: usize) -> bool {
         let id = self.movies[i].id;
-        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.dispensado(i) && !self.abaixo_do_piso(i)
+        let marcada = self.owner.ja_vi.contains(&id) || self.owner.assistindo.contains(&id);
+        self.previstas[i].is_some() && !marcada && !self.dispensado(i) && !self.abaixo_do_piso(i)
     }
 
     /// A série in the lowest quarter of nota do público, among those with enough votes.
@@ -981,12 +988,16 @@ impl Core {
 
     /// Marks or unmarks a movie at `at` (Unix seconds), which also starts agora não's few weeks.
     pub fn marcar(&mut self, id: ObraId, marca: Marca, on: bool, at: i64) {
+        if marca == Marca::Assistindo && !id.is_serie() {
+            return;
+        }
         fn set(marks: &mut BTreeSet<ObraId>, id: ObraId, on: bool) {
             if on { marks.insert(id); } else { marks.remove(&id); }
         }
         let field = match marca {
             Marca::QueroAssistir => "quero_assistir",
             Marca::JaVi => "ja_vi",
+            Marca::Assistindo => "assistindo",
             Marca::NaoMeInteressa => "nao_me_interessa",
             Marca::AgoraNao => "agora_nao",
         };
@@ -994,11 +1005,20 @@ impl Core {
         match marca {
             Marca::QueroAssistir => set(&mut self.owner.quero_assistir, id, on),
             Marca::JaVi => set(&mut self.owner.ja_vi, id, on),
+            Marca::Assistindo => set(&mut self.owner.assistindo, id, on),
             Marca::NaoMeInteressa => set(&mut self.owner.nao_me_interessa, id, on),
             Marca::AgoraNao if on => _ = self.owner.agora_nao.insert(id, at + AGORA_NAO_SECS),
             Marca::AgoraNao => _ = self.owner.agora_nao.remove(&id),
         }
-        if matches!(marca, Marca::JaVi | Marca::NaoMeInteressa) {
+        // An obra is in one of the two at most.
+        if on && marca == Marca::Assistindo && self.owner.quero_assistir.remove(&id) {
+            self.owner.stamp(sync::key("quero_assistir", id), at);
+        }
+        if on && marca == Marca::QueroAssistir && self.owner.assistindo.remove(&id) {
+            self.owner.stamp(sync::key("assistindo", id), at);
+            self.recompute();
+        }
+        if matches!(marca, Marca::JaVi | Marca::NaoMeInteressa | Marca::Assistindo) {
             self.recompute();
         }
     }
@@ -1263,6 +1283,7 @@ impl Core {
             history,
             quero_assistir: self.owner.quero_assistir.contains(&id),
             ja_vi: self.owner.ja_vi.contains(&id),
+            assistindo: self.owner.assistindo.contains(&id),
             nao_me_interessa: self.owner.nao_me_interessa.contains(&id),
             onde_assistir: self.movies[i].watch.as_ref().map(|w| {
                 let named = |ids: &[u32]| ids.iter().filter_map(|id| self.provedores.iter().find(|p| p.id == *id).cloned()).collect();

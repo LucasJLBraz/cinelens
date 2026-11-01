@@ -68,6 +68,7 @@ fn every_row_is_explorar_with_its_listas_filtro() {
             "Clássicos que você não viu",
             "Aclamados pela crítica",
             "Para rever",
+            "Assistindo",
         ]
     );
     for f in &inicio.fileiras {
