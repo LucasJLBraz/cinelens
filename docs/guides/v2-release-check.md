@@ -22,7 +22,7 @@ Use este roteiro para fechar a v2. A meta é a mesma da v1: com séries no catá
 | Rodada rápida: próximas obras depois de uma nota | 100 ms | 24 ms |
 | Perfil: todas as estatísticas | 100 ms | 0,3 ms |
 
-- [ ] Workflow CI verde no GitHub. Ele só roda em pull request, em push na `main` e no workflow **Release**. A execução de `dcc0e3e` falhou no Início, com 107 ms e 134 ms contra o limite de 100 ms; o runner é mais lento que o computador do dono. A busca chegou a 99 ms na mesma execução.
+- [x] Workflow CI verde no GitHub em `eac41c5`: Início 77 ms, busca 67 ms. A execução anterior, `dcc0e3e`, falhou no Início (107 ms e 134 ms, limite de 100 ms).
 
 ## 2) Precisão em filmes
 
@@ -46,25 +46,30 @@ git push origin v2.0.0
 
 - [x] Merge e push da `main` (`dcc0e3e`).
 - [x] `series.json.gz` publicado em 2026-11-01: 5.786 séries, 2,1 MB, 7% do tamanho do catálogo (limite de 25%).
-- [ ] Release `v2.0.0` publicada, com as notas de licença e atribuição.
-- [ ] Obtainium detecta `v2.0.0` e atualiza o app no celular do dono.
+- [x] Release `v2.0.0` publicada, com as notas de licença e atribuição. Instalada por cima da 1.0.0 no S20 FE, mantendo os dados.
+- [ ] Obtainium detecta `v2.0.0`. Não confirmado: o app foi instalado por `adb`, e o Obtainium não está no aparelho medido.
 
 ## 4) Velocidade manual no celular do dono
 
 Medir no aparelho real, com a `v2.0.0` e as séries já baixadas. O roteiro é o da [v1](v1-release-check.md), mais a página de série.
 
-| Medida | Meta | Resultado |
+| Medida | Meta | Resultado no S20 FE |
 |---|---|---|
-| Abrir do zero até o Início com pôster | < 1 s | |
-| Voltar ao app já aberto | < 1 s | |
-| Trocar aba | < 100 ms | |
-| Abrir página de filme | < 100 ms | |
-| Abrir página de série | < 100 ms | |
-| Trocar filtro | < 100 ms | |
-| Depois de dar nota em filme | < 200 ms | |
-| Depois de dar nota em série | < 200 ms | |
+| Abrir do zero até o Início com pôster | < 1 s | 643–829 ms (3 aberturas) |
+| Voltar ao app já aberto | < 1 s | 61–74 ms (3 aberturas, tempo do `am start`) |
+| Trocar aba | < 100 ms | 33–63 ms, mediana 49 ms (10 trocas) |
+| Abrir página de filme | < 100 ms | 36–45 ms (5 aberturas); a primeira levou 494 ms até o último quadro, com o pôster |
+| Abrir página de série | < 100 ms | 34–49 ms até o primeiro quadro, 56–102 ms até o último (5 aberturas) |
+| Trocar filtro para Séries | < 100 ms | 34–42 ms (3 trocas) |
+| Voltar o filtro para Tudo | < 100 ms | **108–112 ms, acima da meta** (3 trocas) |
+| Filtro de gênero | < 100 ms | 73–120 ms, **2 de 4 acima** |
+| Depois de dar nota em filme | < 200 ms | Não medido: o aparelho usa a conta real do dono |
+| Depois de dar nota em série | < 200 ms | Não medido, pelo mesmo motivo |
 
-- [ ] Todas as medidas preenchidas e dentro da meta, ou aceitas pelo dono.
+Medido em 2026-11-01 na `v2.0.0`, com séries baixadas, sem crash. Toques por `adb`: do fim do toque no log do sistema (`ViewPostIme pointer 1`) ao primeiro quadro do app no SurfaceFlinger, o mesmo relógio. A abertura do zero vem de vídeo (`screenrecord`), da primeira à última mudança grande da tela. Métodos diferentes dos da v1, então os números não são diretamente comparáveis.
+
+- [ ] Medidas fora da meta aceitas pelo dono, como na v1 (87–114 ms na troca de filtro).
+- [ ] Nota medida, numa conta de teste.
 
 ## 5) README e guias
 
