@@ -167,7 +167,7 @@ struct Watch {
     buy: Vec<u32>,
 }
 
-/// What the asset says an obra is; the only way to tell an anime from a série (ADR 0003).
+/// What the asset says an obra is; the only way to tell an anime from a série, which share the id's bit.
 #[derive(Deserialize, Default, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum WorkType {
@@ -1040,8 +1040,13 @@ impl Core {
             let com_fatores = model.temporadas.get(&id);
             for (t, h) in de_temporada {
                 let Some(e) = h.last() else { continue };
-                let item = com_fatores.and_then(|f| f.get(t)).unwrap_or(base);
-                rows.push((item.clone(), e.nota, e.at, recommender::ANIME_WEIGHT));
+                // Past the dump, a temporada of an anime with factors teaches nothing: read as the
+                // first, a weak late one would count against what the owner liked.
+                let item = match com_fatores {
+                    Some(f) => f.get(t),
+                    None => Some(base),
+                };
+                rows.extend(item.map(|item| (item.clone(), e.nota, e.at, recommender::ANIME_WEIGHT)));
             }
             let Some(e) = self.owner.notas.get(&id).and_then(|h| h.last()) else { continue };
             // The whole speaks for the temporadas with no nota of their own, as one nota in all.

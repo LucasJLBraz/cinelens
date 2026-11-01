@@ -33,6 +33,9 @@ const ANIMACAO: u32 = 16;
 /// Anime in style that AniList lacks and TMDB's keyword misses: Castlevania, Blue Eye Samurai and
 /// The Boys Presents: Diabolical.
 const ANIMES_MANUAIS: [u32; 3] = [71024, 225180, 152483];
+/// Stands for AniList popularity on the manual list, which AniList lacks: past any vote cut the
+/// download limit should ever need.
+const ANILIST_MANUAL: u32 = 100_000_000;
 /// AniList popularity that brings an anime in whatever its TMDB votes; the vote cut rises from
 /// `MIN_VOTES`, and this one with it.
 pub const ANILIST_POPULAR: u32 = 5_000;
@@ -63,6 +66,8 @@ pub struct AniList {
 #[derive(Default)]
 struct ObraAniList {
     popularidade: u32,
+    /// AniList has it, not only MyAnimeList.
+    conhecida: bool,
     /// TMDB seasons with a serialized entry of their own.
     temporadas: BTreeSet<u32>,
 }
@@ -72,11 +77,15 @@ impl AniList {
     pub fn new(mapping: &[u8], popularidade: &BTreeMap<u32, u32>) -> Result<AniList, String> {
         let mut obras: HashMap<u32, ObraAniList> = HashMap::new();
         for row in read_mapeamento(mapping)? {
-            let (Some(tv), Some(anilist)) = (row.tmdb_tv(), row.anilist_id) else { continue };
+            let Some(tv) = row.tmdb_tv() else { continue };
             let obra = obras.entry(tv).or_default();
-            obra.popularidade = obra.popularidade.max(popularidade.get(&anilist).copied().unwrap_or(0));
-            if let Some(temporada) = row.temporada().filter(|_| row.serializado()) {
-                obra.temporadas.insert(temporada);
+            if let Some(anilist) = row.anilist_id {
+                obra.conhecida = true;
+                obra.popularidade = obra.popularidade.max(popularidade.get(&anilist).copied().unwrap_or(0));
+            }
+            // As the trainer joins them: a run the mapping does not split is its first temporada.
+            if row.serializado() && row.mal_id.is_some() {
+                obra.temporadas.insert(row.temporada().unwrap_or(1));
             }
         }
         Ok(AniList { obras })
@@ -708,7 +717,7 @@ impl SerieDetails {
         self.genres.iter().any(|g| g.id == ANIMACAO)
             && (self.original_language == "ja"
                 || self.origin_country.iter().any(|c| c == "JP")
-                || anilist.obras.contains_key(&self.id)
+                || anilist.obras.get(&self.id).is_some_and(|o| o.conhecida)
                 || self.palavra_chave("anime")
                 || ANIMES_MANUAIS.contains(&self.id))
     }
@@ -739,7 +748,7 @@ fn anime(d: SerieDetails, anilist: &AniList) -> Option<(Movie, Vec<Provider>)> {
         entrada: entradas.is_some_and(|e| e.contains(&s.season_number)),
     });
     let temporadas: Vec<Temporada> = temporadas.collect();
-    let popularidade = anilist.popularidade(d.id);
+    let popularidade = if ANIMES_MANUAIS.contains(&d.id) { ANILIST_MANUAL } else { anilist.popularidade(d.id) };
     let (mut anime, providers) = obra_tv(d, ObraId::anime, "anime");
     anime.temporadas = temporadas;
     anime.anilist = popularidade;

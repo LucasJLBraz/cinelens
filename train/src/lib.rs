@@ -559,7 +559,10 @@ impl Ratings {
             let field = |i: usize| fields.get(i).map(String::as_str).ok_or_else(bad);
             let score: f32 = field(score_col)?.parse().map_err(|_| bad())?;
             let anime: u32 = field(anime_col)?.parse().map_err(|_| bad())?;
-            let Some(rating) = parse_rating(&(score / 2.0).to_string()).filter(|_| !hentai.contains(&anime)) else { continue };
+            let rating = score / 2.0;
+            if !(0.5..=5.0).contains(&rating) || hentai.contains(&anime) {
+                continue;
+            }
             let next_user = users.len() as u32;
             let user = *users.entry(field(user_col)?.to_string()).or_insert(next_user);
             self.push(MOVIELENS, user, anime as u64, rating);

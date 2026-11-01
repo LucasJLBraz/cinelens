@@ -224,3 +224,27 @@ fn a_movie_in_the_mapping_is_not_taken_for_the_tv_obra_with_its_number() {
     let known = AniList::new(&serde_json::to_vec(&mapping).unwrap(), &BTreeMap::new()).unwrap();
     assert!(ids(&built(vec![obra(ARCANE, json!({}))], &known)).is_empty());
 }
+
+#[test]
+fn the_manual_list_survives_any_realistic_vote_cut() {
+    let all = vec![obra(CASTLEVANIA, json!({"vote_count": 60})), obra(EDGERUNNERS, json!({"origin_country": ["JP"], "vote_count": 60}))];
+    let none = anilist(&[]);
+    let mut artifact = build_animes(&tmdb(all, 2), &config(&none)).unwrap();
+    artifact.raise_votes_to_fit(1, |a| a.obras());
+    assert_eq!(ids(&serde_json::to_value(&artifact).unwrap()), [CASTLEVANIA]);
+}
+
+#[test]
+fn entries_count_as_the_trainer_counts_them() {
+    // No AniList id, and no season: temporada 1, as in the trainer. It recognizes nothing.
+    let mapping = json!([
+        {"mal_id": 1, "type": "TV", "themoviedb_id": {"tv": 7}, "season": null},
+        {"mal_id": 2, "type": "TV", "themoviedb_id": {"tv": 7}, "season": {"tmdb": 2}}
+    ]);
+    let known = AniList::new(&serde_json::to_vec(&mapping).unwrap(), &BTreeMap::new()).unwrap();
+    assert!(ids(&built(vec![obra(7, json!({}))], &known)).is_empty());
+    let seasons = json!([{"season_number": 1, "name": "T1"}, {"season_number": 2, "name": "T2"}]);
+    let artifact = built(vec![obra(7, json!({"origin_country": ["JP"], "seasons": seasons}))], &known);
+    let entradas: Vec<&Value> = artifact["movies"][0]["temporadas"].as_array().unwrap().iter().map(|t| &t["entrada"]).collect();
+    assert_eq!(entradas, [true, true]);
+}

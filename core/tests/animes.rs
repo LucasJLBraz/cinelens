@@ -350,6 +350,14 @@ mod temporadas {
     }
 
     #[test]
+    fn a_temporada_the_dump_lacks_teaches_nothing_against_the_first() {
+        let mut core = core();
+        let before = prevista(&core, id(11));
+        core.rate_temporada(id(10), 3, 0.5, 100).unwrap();
+        assert_eq!(prevista(&core, id(11)), before);
+    }
+
+    #[test]
     fn when_every_temporada_has_a_nota_the_whole_no_longer_counts() {
         let notas = |todo: f32| {
             let mut c = core();

@@ -25,7 +25,7 @@ A score the owner gives an obra, from 0.5 to 5 in half-star steps.
 _Avoid_: avaliação, score, estrela
 
 **Reação** (Reaction):
-A quick verdict on a whole série or anime, up to where the owner has seen it: Não gostei, Gostei or Amei; it counts as a fixed nota. The owner may give it a nota in stars instead.
+A quick verdict on a whole série or anime, or on one temporada of an anime, up to where the owner has seen it: Não gostei, Gostei or Amei; it counts as a fixed nota. The owner may give it a nota in stars instead.
 _Avoid_: joinha, like, curtida
 
 **Assistindo** (Watching):
@@ -37,7 +37,7 @@ The score the recommender expects the owner would give an obra not yet rated; a 
 _Avoid_: previsão, match, recomendação
 
 **Nota do público** (Public score):
-The average of other people's votes on an obra, shown as it is and never mixed into the nota prevista. Séries in the lowest quarter of it, among those with at least 50 votes, are below the **piso** and do not become recomendações.
+The average of other people's votes on an obra, shown as it is and never mixed into the nota prevista. Séries in the lowest quarter of it, among those with at least 50 votes, are below the **piso** and do not become recomendações; animes face the same value.
 _Avoid_: nota (alone), nota da crítica
 
 **Confiança** (Confidence):
