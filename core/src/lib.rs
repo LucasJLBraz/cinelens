@@ -1845,6 +1845,9 @@ impl Core {
         let passes = |&i: &usize| matcher.passes(self, i).map(|r| relevancia[i] = r).is_some();
         let mut found: Vec<usize> = if filtro.nao_me_interessa {
             (0..self.movies.len()).filter(|&i| self.dispensado(i)).filter(passes).collect()
+        } else if filtro.tipo.is_some() && filtro.garimpo == 0.0 && filtro.ja_vi != Mostrar::So && filtro.busca.trim().is_empty() {
+            // Para você's order is the answer: stop at the page, and one more to tell has_more.
+            self.para_voce.iter().copied().filter(passes).take((page + 1) * PAGE_SIZE + 1).collect()
         } else {
             self.para_voce.iter().copied().filter(passes).collect()
         };

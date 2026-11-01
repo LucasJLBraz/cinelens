@@ -111,7 +111,7 @@ fn main() {
 
     failed |= !budget("anime page: open", Duration::from_millis(100), || {
         id += 1;
-        let page = core.movie(ObraId::anime(ANIME_IDS_FROM + 40 + id % 5_000)).unwrap();
+        let page = core.movie(ObraId::anime(ANIME_IDS_FROM + 40 + id % (ANIMES_SIZE as u32 - 40))).unwrap();
         assert!(page.card.nota_prevista.is_some() || page.nota.is_some());
     });
 

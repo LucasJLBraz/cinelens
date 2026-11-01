@@ -124,7 +124,11 @@ impl<'a> Matcher<'a> {
             Mostrar::So => marked,
         };
         let watch = m.watch.as_ref();
+        // What costs little or leaves few comes first: this runs on every obra, for every row of Início.
         if f.tipo.is_none_or(|t| t == m.tipo())
+            && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
+            && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
+            && shown(f.assistindo, owner.assistindo.contains(&m.id))
             && (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
             && !m.genre_ids.iter().any(|g| self.excluir.contains(g))
             && in_range(m.year.map(u32::from), f.ano_min.map(u32::from), f.ano_max.map(u32::from))
@@ -134,7 +138,6 @@ impl<'a> Matcher<'a> {
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))
             && f.confianca_min.is_none_or(|min| previsto.is_some_and(|(_, c)| c >= min))
-            && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa_por_posicao(p, core.ranked_de(i)) <= min))
             && (!f.em_alta || core.em_alta[m.tipo() as usize].contains(&m.id))
             && f.lancado_desde.as_ref().is_none_or(|d| m.release_date.as_ref().is_some_and(|r| r >= d))
             && f.votos_max.is_none_or(|max| m.vote_count <= max)
@@ -146,11 +149,9 @@ impl<'a> Matcher<'a> {
             && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
             && !(f.acima_do_piso && self.words.is_empty() && core.abaixo_do_piso(i))
             && shown(f.com_nota, core.rated(m.id))
-            && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
-            && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
-            && shown(f.assistindo, owner.assistindo.contains(&m.id))
             && (!f.no_meu_streaming
                 || watch.is_some_and(|w| w.flatrate.iter().any(|p| owner.settings.servicos.contains(p))))
+            && f.faixa_min.is_none_or(|min| previsto.is_some_and(|(p, _)| display::faixa_por_posicao(p, core.ranked_de(i)) <= min))
         {
             self.relevancia(core, i)
         } else {
