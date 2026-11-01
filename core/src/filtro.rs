@@ -43,6 +43,8 @@ pub struct Filtro {
     /// Minutes; of an episode, on a série.
     pub duracao_min: Option<u32>,
     pub duracao_max: Option<u32>,
+    /// `em_andamento` or `terminada`; only séries have one.
+    pub situacao: Option<String>,
     /// Original language, ISO 639-1.
     pub idioma: Option<String>,
     /// Production country, ISO 3166-1.
@@ -127,6 +129,7 @@ impl<'a> Matcher<'a> {
             && !m.genre_ids.iter().any(|g| self.excluir.contains(g))
             && in_range(m.year.map(u32::from), f.ano_min.map(u32::from), f.ano_max.map(u32::from))
             && in_range(m.runtime, f.duracao_min, f.duracao_max)
+            && (f.situacao.is_none() || f.situacao == m.situacao)
             && f.idioma.as_ref().is_none_or(|l| m.original_language.as_ref() == Some(l))
             && f.pais.as_ref().is_none_or(|c| m.countries.contains(c))
             && f.nota_prevista_min.is_none_or(|min| previsto.is_some_and(|(p, _)| p >= min))

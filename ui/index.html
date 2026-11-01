@@ -304,6 +304,7 @@
         <div class="grade">
           <label>Ano de <input type="number" inputmode="numeric" data-campo="ano_min" data-tipo="num" placeholder="1900"></label>
           <label>até <input type="number" inputmode="numeric" data-campo="ano_max" data-tipo="num" placeholder="2026"></label>
+          <label>Situação da série <select data-campo="situacao"><option value="">Qualquer</option><option value="em_andamento">Em andamento</option><option value="terminada">Terminada</option></select></label>
           <label>Idioma original <select id="idioma" data-campo="idioma"><option value="">Qualquer</option></select></label>
           <label>País <select id="pais" data-campo="pais"><option value="">Qualquer</option></select></label>
           <label>Nota prevista mínima <select data-campo="nota_prevista_min" data-tipo="num">
@@ -413,7 +414,7 @@
       <div id="parecidos" class="fileira"></div>
     </section>
     <section id="pessoas-secao" class="secao">
-      <h2>Direção e elenco</h2>
+      <h2 id="pessoas-titulo">Direção e elenco</h2>
       <div id="pessoas" class="pessoas"></div>
     </section>
   </section>
@@ -889,7 +890,10 @@
       document.getElementById('filme-poster').replaceChildren(posterOf(m));
       document.getElementById('filme-title').textContent = m.title;
       document.getElementById('filme-original').textContent = [m.original_title !== m.title && m.original_title, m.year].filter(Boolean).join(' · ');
-      const meta = [m.runtime && duracao(m.runtime), m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
+      const temporadas = m.temporadas && `${m.temporadas} ${m.temporadas === 1 ? 'temporada' : 'temporadas'}`;
+      const situacao = { em_andamento: 'Em andamento', terminada: 'Terminada' }[m.situacao];
+      const episodio = m.runtime && (ehSerie(m.tmdb_id) ? `${duracao(m.runtime)} por episódio` : duracao(m.runtime));
+      const meta = [temporadas, situacao, episodio, m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
       document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
@@ -936,9 +940,11 @@
       document.getElementById('parecidos-todos').hidden = m.parecidos.length < PARECIDOS_POR_PAGINA;
       parecidos = m.parecidos;
       showParecidos(m.parecidos);
+      parecidosMasEl.hidden = serie;
       for (const b of pesouEl.querySelectorAll('[data-aspecto]')) b.classList.toggle('on', m.pesou.includes(b.dataset.aspecto));
+      document.getElementById('pessoas-titulo').textContent = serie ? 'Criação e elenco' : 'Direção e elenco';
       document.getElementById('pessoas-secao').hidden = !m.direcao.length && !m.trilha.length && !m.elenco.length;
-      document.getElementById('pessoas').replaceChildren(...pessoas(m.direcao, 'Direção'), ...pessoas(m.trilha, 'Trilha sonora'), ...pessoas(m.elenco));
+      document.getElementById('pessoas').replaceChildren(...pessoas(m.direcao, serie ? 'Criação' : 'Direção'), ...pessoas(m.trilha, 'Trilha sonora'), ...pessoas(m.elenco));
       const trailer = document.getElementById('trailer');
       trailer.hidden = !m.trailer_youtube;
       trailer.onclick = () => {

@@ -240,7 +240,7 @@ mod previsoes {
     }
 
     #[test]
-    fn series_stay_out_of_the_listas_of_filmes_and_notification_for_now() {
+    fn series_stay_out_of_the_listas_of_filmes_and_of_a_first_notification() {
         let core = with_series();
         let at = 1_800_000_000;
         let inicio = core.inicio(at, 0);
@@ -782,5 +782,103 @@ mod assistindo {
         celular.sync(&mut nuvem).unwrap();
         tablet.sync(&mut nuvem).unwrap();
         assert!(!tablet.movie(S1).unwrap().assistindo);
+    }
+}
+
+mod pagina {
+    use cinelens_core::{Core, Direcao, Filtro, ObraId, Tipo};
+
+    /// Séries 1 and 2 are sci-fi, 3 is drama, 4 is a sci-fi with too little known to predict;
+    /// creator 900 made série 1 and filme 1.
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "F1", "original_title": "F1", "year": 1999, "poster_path": null, "genre_ids": [878], "directors": [{"id": 900, "name": "X"}]},
+        {"tmdb_id": 2, "title": "F2", "original_title": "F2", "year": 1999, "poster_path": null, "genre_ids": [878], "vote_count": 10}
+    ]}"#;
+
+    const SERIES: &str = r#"{"format_version": 1, "data_version": "s", "movies": [
+        {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "genre_ids": [878], "directors": [{"id": 900, "name": "X"}], "runtime": 45, "number_of_seasons": 3, "situacao": "terminada", "trailer_youtube": "yt", "watch": {"link": "l", "flatrate": []}},
+        {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "genre_ids": [878], "situacao": "em_andamento", "vote_count": 10},
+        {"tmdb_id": 2147483651, "title": "S3", "original_title": "S3", "year": 2020, "poster_path": null, "genre_ids": [18], "situacao": "em_andamento"}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [
+            {"tmdb_id": 1, "bias": 0.0, "factors": [1.0, 0.0], "ratings": 50000},
+            {"tmdb_id": 2, "bias": 0.0, "factors": [0.9, 0.1], "ratings": 50000}
+        ],
+        "content": [
+            {"feature": "g878", "bias": 0.0, "factors": [1.0, 0.0]},
+            {"feature": "g18", "bias": 0.0, "factors": [0.0, 1.0]}
+        ]
+    }"#;
+
+    fn core() -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(SERIES.as_bytes()), Some(MODEL.as_bytes()));
+        core
+    }
+
+    #[test]
+    fn the_page_shows_seasons_situacao_episode_length_onde_assistir_and_trailer() {
+        let page = core().movie(ObraId::serie(1)).unwrap();
+        assert_eq!(page.temporadas, Some(3));
+        assert_eq!(page.situacao.as_deref(), Some("terminada"));
+        assert_eq!(page.runtime, Some(45));
+        assert_eq!(page.trailer_youtube.as_deref(), Some("yt"));
+        assert!(page.onde_assistir.is_some());
+    }
+
+    #[test]
+    fn a_filme_has_no_seasons_or_situacao() {
+        let page = core().movie(ObraId::filme(1)).unwrap();
+        assert_eq!((page.temporadas, page.situacao), (None, None));
+    }
+
+    #[test]
+    fn parecidos_on_a_serie_are_the_closest_content_and_only_series() {
+        let core = core();
+        let ids: Vec<ObraId> = core.parecidos(ObraId::serie(1), 0).iter().map(|m| m.id).collect();
+        assert_eq!(ids, [ObraId::serie(2), ObraId::serie(3)]);
+    }
+
+    #[test]
+    fn parecidos_on_a_filme_stay_filmes() {
+        let core = core();
+        let ids: Vec<ObraId> = core.parecidos(ObraId::filme(1), 0).iter().map(|m| m.id).collect();
+        assert_eq!(ids, [ObraId::filme(2)]);
+    }
+
+    #[test]
+    fn parecidos_mas_has_nothing_on_a_serie() {
+        let core = core();
+        for direcao in [Direcao::MaisLeve, Direcao::MaisCurto, Direcao::MaisRecente, Direcao::MelhorFotografia] {
+            assert!(core.parecidos_mas(ObraId::serie(1), direcao).is_empty());
+        }
+    }
+
+    #[test]
+    fn sou_fa_of_a_creator_raises_their_series_and_filmes() {
+        let mut core = core();
+        let lugar = |core: &Core, tipo, id| {
+            let filtro = Filtro { tipo: Some(tipo), ..Default::default() };
+            core.explorar(&filtro, 0).movies.iter().position(|m| m.id == id).unwrap()
+        };
+        assert_eq!((lugar(&core, Tipo::Serie, ObraId::serie(1)), lugar(&core, Tipo::Filme, ObraId::filme(1))), (1, 1));
+        core.set_fa(900, true, 0);
+        assert_eq!(lugar(&core, Tipo::Serie, ObraId::serie(1)), 0);
+        assert_eq!(lugar(&core, Tipo::Filme, ObraId::filme(1)), 0);
+        let obras: Vec<ObraId> = core.pessoa(900).unwrap().movies.iter().map(|m| m.id).collect();
+        assert!(obras.contains(&ObraId::serie(1)) && obras.contains(&ObraId::filme(1)));
+    }
+
+    #[test]
+    fn explorar_filters_by_situacao_and_only_series_have_one() {
+        let core = core();
+        let ids = |s: &str| -> Vec<ObraId> {
+            let filtro = Filtro { situacao: Some(s.into()), ..Default::default() };
+            core.explorar(&filtro, 0).movies.iter().map(|m| m.id).collect()
+        };
+        assert_eq!(ids("terminada"), [ObraId::serie(1)]);
+        assert_eq!(ids("em_andamento"), [ObraId::serie(2), ObraId::serie(3)]);
     }
 }

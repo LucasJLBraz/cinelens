@@ -207,6 +207,12 @@ struct Movie {
     /// Critics' score (OMDb: Metacritic, else Rotten Tomatoes), 0–100.
     #[serde(default)]
     critic_score: Option<u8>,
+    /// Séries only.
+    #[serde(default)]
+    number_of_seasons: Option<u32>,
+    /// Séries only: `em_andamento` or `terminada`.
+    #[serde(default)]
+    situacao: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -439,8 +445,12 @@ pub struct MoviePage {
     pub backdrop_url: Option<String>,
     /// Its page on TMDB.
     pub tmdb_url: String,
-    /// Minutes.
+    /// Minutes; of an episode, on a série.
     pub runtime: Option<u32>,
+    /// Séries only.
+    pub temporadas: Option<u32>,
+    /// Séries only: `em_andamento` or `terminada`.
+    pub situacao: Option<String>,
     pub generos: Vec<String>,
     /// Original language, ISO 639-1.
     pub idioma: Option<String>,
@@ -1271,6 +1281,8 @@ impl Core {
             backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),
             tmdb_url: format!("https://www.themoviedb.org/{}/{}", if id.is_serie() { "tv" } else { "movie" }, id.tmdb_id()),
             runtime: m.runtime,
+            temporadas: m.number_of_seasons,
+            situacao: m.situacao.clone(),
             generos: m.genre_ids.iter().filter_map(genre).collect(),
             idioma: m.original_language.clone(),
             sinopse: m.overview.clone(),
@@ -1305,7 +1317,7 @@ impl Core {
     /// it, most alike first. A movie with no value to compare (no genome scores, no runtime)
     /// compares against its parecidos' median; parecidos without one are left out.
     pub fn parecidos_mas(&self, id: ObraId, direcao: Direcao) -> Vec<MovieCard> {
-        let Some(&i) = self.index.get(&id) else { return Vec::new() };
+        let Some(&i) = self.index.get(&id).filter(|_| !id.is_serie()) else { return Vec::new() };
         let genome = |j: usize, a: usize| self.items[j].as_ref()?.genome_score(a);
         let value = |j: usize| match direcao {
             Direcao::MaisLeve => genome(j, recommender::LEVE),
@@ -1324,17 +1336,21 @@ impl Core {
         pool.into_iter().filter(|&(_, v)| v > base).take(PARECIDOS).map(|(j, _)| self.card(j)).collect()
     }
 
-    /// Item-item among movies with collaborative factors: the `n` most like this one's, weighed
-    /// by confiança so sparsely rated movies do not crowd the top, most alike first. Not those
-    /// marked não me interessa.
+    /// Item-item among movies with collaborative factors, or among séries through the factors of
+    /// their content: the `n` most like this one's, weighed by confiança so sparsely rated movies
+    /// do not crowd the top, most alike first. Not those marked não me interessa.
     fn alike(&self, i: usize, n: usize) -> Vec<usize> {
-        let Some(item) = self.items[i].as_ref().filter(|item| item.collaborative) else { return Vec::new() };
+        let serie = self.movies[i].id.is_serie();
+        let Some(item) = self.items[i].as_ref().filter(|item| serie || item.collaborative) else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = self
             .items
             .iter()
             .enumerate()
             .filter(|&(j, _)| j != i && !self.dispensado(j))
-            .filter_map(|(j, other)| other.as_ref().filter(|o| o.collaborative).map(|o| (item.similarity(o) * o.confianca, j)))
+            .filter_map(|(j, other)| {
+                let same = other.as_ref().filter(|o| if serie { self.movies[j].id.is_serie() } else { o.collaborative })?;
+                Some((item.similarity(same) * same.confianca, j))
+            })
             .collect();
         let n = n.min(scored.len());
         if n == 0 {
