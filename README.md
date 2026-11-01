@@ -4,7 +4,7 @@
 
 **Pare de rolar catálogo. Descubra o que você vai gostar de assistir hoje.**
 
-Recomendações de filmes e séries feitas para o seu gosto, que rodam no seu Android, sem servidor e sem anúncios.
+Recomendações de filmes, séries e animes feitas para o seu gosto, que rodam no seu Android, sem servidor e sem anúncios.
 
 [**Baixar o APK**](https://github.com/LucasJLBraz/cinelens/releases/latest) · [Instalar pelo Obtainium](#instalar) · [Como funciona](#como-funciona)
 
@@ -25,27 +25,35 @@ Recomendações de filmes e séries feitas para o seu gosto, que rodam no seu An
 
 ## Por que o Cinelens
 
-- **Entende o seu gosto.** Cada filme ganha uma nota prevista só para você, que se ajusta a cada nota que você dá. Medido nas notas mais recentes do dono do projeto, 38 filmes que o modelo conhece, o erro médio foi de 0,43 estrela ([medições](docs/adr/0002-letterboxd-in-training.md)). Séries têm nota prevista desde o primeiro dia, a partir do conteúdo e das suas notas em filmes.
-- **Explica a recomendação.** "Porque você amou Monty Python em Busca do Cálice Sagrado": você sabe de onde veio cada sugestão.
-- **Seus dados são seus.** As notas ficam no aparelho e, se você quiser, no seu próprio Google Drive. Não há servidor nem anúncios.
-- **Abre rápido.** Início na tela em menos de 1 s num Galaxy S20 FE, e o dia a dia roda no próprio aparelho.
+- **Aprende o seu gosto.** Cada obra ganha uma nota prevista só para você, que muda a cada nota que você dá. Nas 38 notas mais recentes do dono do projeto em filmes que o modelo conhece, o erro médio foi de 0,43 estrela ([medições](docs/guides/v2-release-check.md#2-precisão-em-filmes)).
+- **Explica cada sugestão.** "Porque você amou Monty Python em Busca do Cálice Sagrado": você sabe de onde ela veio.
+- **Seus dados ficam com você.** As notas ficam no aparelho e, se quiser, no seu próprio Google Drive. Não há servidor nem anúncios, e nenhuma conta é obrigatória.
+- **Não faz esperar.** O Início aparece em menos de 1 s num Galaxy S20 FE, e tudo roda no aparelho.
 
 ## O que dá para fazer
 
-| | |
-|---|---|
-| 🎯 **Início** | Destaques do dia com filmes e séries, listas prontas e novas recomendações ao puxar a tela |
-| 📺 **Séries** | Dê nota à série inteira com uma Reação ou estrelas, e marque o que está Assistindo |
-| 🔎 **Explorar** | Mais de 91 mil filmes e também séries, com filtros e busca por título, direção ou elenco, que perdoa erro de digitação |
-| 🎚️ **Populares ↔ Garimpo** | Um controle vai dos filmes que todo mundo viu às joias escondidas |
-| ⚡ **Rodada rápida** | Dê notas em sequência e ensine seu gosto ao app em minutos |
-| 🍿 **Onde assistir** | Assinatura, aluguel ou compra no Brasil, e um filtro para o que está nos seus streamings |
-| 🙈 **Sem spoiler de nota** | As notas ficam escondidas até você tocar, para não influenciar sua escolha |
-| 🧭 **Parecidos, mas…** | Parte de um filme de que você gostou e pede algo mais leve, mais curto ou mais recente |
-| 📊 **Estatísticas** | O que suas notas dizem sobre você |
-| 🔔 **Aviso semanal** | Avisa quando sai um filme com cara de Aposta forte para você, uma série depois de 10 notas em séries e um anime depois de 10 notas em animes |
-| 🔁 **Sync e importação** | Traga seu histórico do MovieLens e sincronize aparelhos pelo Google Drive |
-| 📤 **Compartilhar** | Envie um filme, uma série ou um anime como card pelo Android, com onde assistir |
+**Escolher o que ver**
+
+- **Início:** destaques do dia e listas prontas com filmes, séries e animes. Puxe a tela para ver outras sugestões.
+- **Explorar:** cerca de 91 mil filmes, 5,7 mil séries e 2,9 mil animes, com filtros e uma busca que perdoa erro de digitação.
+- **Populares ↔ Garimpo:** um controle que vai do que todo mundo viu às joias escondidas.
+- **Parecidos, mas…:** parta de um filme de que gostou e peça algo mais leve, mais curto ou mais recente.
+- **Onde assistir:** assinatura, aluguel ou compra no Brasil, e um filtro para os seus streamings.
+
+**Ensinar seu gosto**
+
+- **Rodada rápida:** dê notas em sequência e ensine o app em minutos.
+- **Notas do seu jeito:** uma Reação de um toque ou estrelas. Em animes, vale a obra inteira ou uma temporada.
+- **Sem spoiler de nota:** a previsão fica escondida até você dar a sua, para não influenciar.
+- **Marcas:** Quero assistir, Assistindo, Já vi e Não me interessa.
+
+**Acompanhar**
+
+- **Próxima temporada:** uma fileira com a continuação dos animes de que você gostou ou está assistindo.
+- **Aviso semanal:** no máximo um por semana, quando sai algo com cara de Aposta forte para você.
+- **Estatísticas:** o que suas notas dizem sobre você.
+- **Compartilhar:** envie uma obra como card, com onde assistir.
+- **Sync e importação:** traga seu histórico do MovieLens e sincronize aparelhos pelo Google Drive.
 
 ## Instalar
 
@@ -53,20 +61,33 @@ Recomendações de filmes e séries feitas para o seu gosto, que rodam no seu An
 2. Toque em **Adicionar app** e cole `https://github.com/LucasJLBraz/cinelens`.
 3. Pronto: ele avisa e instala cada versão nova.
 
-Prefere sem Obtainium? Baixe o APK em [Releases](https://github.com/LucasJLBraz/cinelens/releases/latest). O passo a passo está em [docs/guides/release.md](docs/guides/release.md#4-instalar-e-atualizar-pelo-obtainium).
+Prefere sem Obtainium? Baixe o APK em [Releases](https://github.com/LucasJLBraz/cinelens/releases/latest).
 
-Na primeira abertura o app baixa o catálogo, uma vez só. Depois, é só dar notas. Conta Google é opcional.
+Na primeira abertura o app baixa o catálogo, uma vez só. A conta Google é opcional.
 
 ## Como funciona
 
-- **Local-first** ([ADR 0001](docs/adr/0001-local-first-split-model.md)): catálogo, notas e modelo ficam no aparelho; o sync passa só pelo Google Drive do dono.
-- **Catálogo:** filmes, séries e animes, montado todo dia no GitHub Actions a partir do TMDB (e do OMDb, só para filmes) e publicado como release (`catalog-v*`). O app baixa sozinho.
-- **Modelo:** fatores de filmes treinados no GitHub Actions com o MovieLens `ml-latest` e publicados como release (`model-v*`). O perfil do dono é recalculado no aparelho a cada nota, e as notas nunca saem do aparelho e do Drive dele. Séries não entram no modelo: a nota prevista delas vem do conteúdo, e as notas em séries nunca mudam a nota prevista de um filme. Animes têm fatores próprios, treinados sob demanda com notas do MyAnimeList e publicados como release (`anime-model-v*`), e as notas em animes não mudam a nota prevista de filmes nem de séries.
-- **Precisão:** a nota prevista precisa errar no máximo tanto quanto o MovieLens erra sobre o dono. As medições estão em [docs/guides/accuracy.md](docs/guides/accuracy.md).
+Tudo o que recomenda roda no aparelho ([ADR 0001](docs/adr/0001-local-first-split-model.md)). O GitHub Actions só prepara os dados que o app baixa, publicados como releases:
 
-O design completo está em [docs/superpowers/specs/2026-10-24-cinelens-design.md](docs/superpowers/specs/2026-10-24-cinelens-design.md), e os termos em [GLOSSARY.md](GLOSSARY.md).
+| Dado | De onde vem | Quando atualiza |
+|---|---|---|
+| Catálogo | TMDB, e OMDb para a crítica dos filmes | Todo dia |
+| Fatores de filmes | Notas do MovieLens `ml-latest` | Todo mês |
+| Fatores de animes | Notas do MyAnimeList | Só sob demanda |
 
-## Código
+A nota prevista depende do tipo de obra, e cada tipo guarda suas evidências:
+
+| Tipo | Previsão vem de | Suas notas nesse tipo mudam |
+|---|---|---|
+| Filmes | Fatores do MovieLens | Filmes, e também séries e animes |
+| Séries | Conteúdo e suas notas em filmes | Só séries |
+| Animes | Fatores do MyAnimeList e suas notas em filmes | Só animes |
+
+Os dados de um filme no catálogo têm no máximo 7 dias, incluindo onde assistir.
+
+Para ir além: [glossário](GLOSSARY.md), [decisões](docs/adr/), [medição de precisão](docs/guides/accuracy.md) e [design completo](docs/superpowers/specs/2026-10-24-cinelens-design.md).
+
+## Desenvolver
 
 | Pasta | O quê |
 |---|---|
@@ -74,7 +95,7 @@ O design completo está em [docs/superpowers/specs/2026-10-24-cinelens-design.md
 | `src-tauri/` | App Tauri 2: downloads, arquivos, sync com o Drive, login Google |
 | `ui/` | A interface, uma página HTML |
 | `catalog/` | Job que monta o catálogo |
-| `train/` | Job que treina o modelo, e `cinelens-accuracy` para medir a nota prevista |
+| `train/` | Jobs que treinam os fatores, e `cinelens-accuracy` para medir a nota prevista |
 
 ```bash
 cargo test -p cinelens-core -p cinelens-train -p cinelens-catalog
@@ -84,16 +105,7 @@ cargo test -p cinelens-core -p cinelens-train -p cinelens-catalog
 npm ci && npm run tauri -- android dev
 ```
 
-Guias de configuração (chaves, secrets, publicar versão) em [docs/guides/](docs/guides/).
-
-- [Checklist final da v1](docs/guides/v1-release-check.md)
-- [Checklist final da v2](docs/guides/v2-release-check.md)
-- [TMDB](docs/guides/tmdb.md)
-- [OMDb](docs/guides/omdb.md)
-- [Google Drive sync](docs/guides/google.md)
-- [Kaggle / Letterboxd](docs/guides/kaggle.md)
-- [Publicar versão + Obtainium](docs/guides/release.md)
-- [Medição de precisão](docs/guides/accuracy.md)
+Guias de configuração: [TMDB](docs/guides/tmdb.md), [OMDb](docs/guides/omdb.md), [Google Drive](docs/guides/google.md), [Kaggle](docs/guides/kaggle.md) e [publicar versão](docs/guides/release.md). Checklists de versão: [v1](docs/guides/v1-release-check.md), [v2](docs/guides/v2-release-check.md) e [v3](docs/guides/v3-release-check.md).
 
 ## Dados e licenças
 
