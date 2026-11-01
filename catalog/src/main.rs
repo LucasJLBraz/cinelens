@@ -1,5 +1,7 @@
 //! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE]`
+//! `cinelens-catalog --series-up-to BYTES --out series.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
 //!
+//! `--series-up-to` builds the séries' asset instead, raising the vote cut until it fits in BYTES.
 //! Reads the TMDB API Read Access Token from `TMDB_TOKEN` and the OMDb key from `OMDB_KEY`
 //! (without it, no critics' scores are fetched). `--extra-ids` is a file with one TMDB id per
 //! line (the training data); blank and non-numeric lines are ignored. `--omdb-cache` is a JSON
@@ -9,7 +11,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;
 
-use cinelens_catalog::{build, Config};
+use cinelens_catalog::{build, build_series, Config};
 use serde_json::Value;
 
 const API: &str = "https://api.themoviedb.org/3";
@@ -43,8 +45,9 @@ fn run() -> Result<(), String> {
             .collect(),
         None => Vec::new(),
     };
+    let series_up_to = arg("--series-up-to").map(|b| b.parse::<usize>().map_err(|e| format!("--series-up-to: {e}"))).transpose()?;
     let omdb_key = std::env::var("OMDB_KEY").ok().filter(|k| !k.is_empty());
-    if omdb_key.is_none() {
+    if omdb_key.is_none() && series_up_to.is_none() {
         eprintln!("::warning::OMDB_KEY is not set: no new critics' scores, see docs/guides/omdb.md");
     }
     let config = Config {
@@ -75,19 +78,25 @@ fn run() -> Result<(), String> {
         get(imdb_id, true, || agent.get(OMDB_API).query("apikey", key).query("i", imdb_id).call())
     };
 
+    if let Some(max) = series_up_to {
+        let mut artifact = build_series(&fetch, &config)?;
+        let size = |a: &cinelens_catalog::Artifact| gz(&serde_json::to_vec(a).expect("artifact serializes")).map_or(usize::MAX, |g| g.len());
+        let cut = artifact.raise_votes_to_fit(max, size);
+        let bytes = gz(&serde_json::to_vec(&artifact).map_err(|e| e.to_string())?)?;
+        println!("::notice::Séries: {} no catálogo, corte de {cut} votos, {} bytes (limite {max})", artifact.obras(), bytes.len());
+        return std::fs::write(out, bytes).map_err(|e| format!("{out}: {e}"));
+    }
     let artifact = build(&fetch, &omdb, &mut critica, &config)?;
     if let Some(path) = cache_path {
         std::fs::write(path, serde_json::to_vec(&critica).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
     }
     let json = serde_json::to_vec(&artifact).map_err(|e| e.to_string())?;
-    write_gz(out, &json)?;
-    Ok(())
+    std::fs::write(out, gz(&json)?).map_err(|e| format!("{out}: {e}"))
 }
 
-fn write_gz(path: &str, bytes: &[u8]) -> Result<(), String> {
-    let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
-    let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
-    gz.write_all(bytes).and_then(|_| gz.finish()).and_then(|mut f| f.flush()).map_err(|e| format!("{path}: {e}"))
+fn gz(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    gz.write_all(bytes).and_then(|_| gz.finish()).map_err(|e| e.to_string())
 }
 
 /// GET (`call`, named `request` in errors) with retries on rate limiting, server errors and

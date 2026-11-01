@@ -1,4 +1,5 @@
-//! The daily catalog job: builds the catálogo artifact from TMDB, with critics' scores from OMDb.
+//! The daily catalog job: builds the catálogo artifact from TMDB, with critics' scores from OMDb,
+//! and the séries' artifact, published apart so installed apps without séries never see it.
 //!
 //! `build` only sees TMDB and OMDb through `fetch` and `omdb`, so the same code runs against the
 //! real APIs (see `main.rs`) and against fixtures in tests.
@@ -9,6 +10,8 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use cinelens_core::ObraId;
 
 /// Feature films: TMDB's discover keeps movies at least this long (minutes).
 const MIN_RUNTIME: u32 = 40;
@@ -21,6 +24,12 @@ const FIRST_YEAR: u32 = 1900;
 const MAX_PAGES: u32 = 500;
 const CAST_SIZE: usize = 8;
 const DETAIL_WORKERS: usize = 8;
+/// TMDB's kinds of série that enter the catálogo, and its `with_type` codes for them.
+const SERIE_TYPES: [&str; 3] = ["Scripted", "Miniseries", "Documentary"];
+const SERIE_TYPE_CODES: &str = "0|2|4";
+/// News, Reality, Soap (daily telenovelas) and Talk, whatever TMDB's type says.
+const SERIE_GENEROS_FORA: [u32; 4] = [10763, 10764, 10766, 10767];
+const ANIMACAO: u32 = 16;
 
 /// One TMDB GET, given as path plus query. `Ok(None)` is a 404.
 pub trait Fetch: Fn(&str) -> Result<Option<Value>, String> + Sync {}
@@ -53,11 +62,28 @@ pub struct Artifact {
     data_version: String,
     genres: Vec<Genre>,
     /// TMDB trending this week, in TMDB's order.
-    trending: Vec<u32>,
+    trending: Vec<ObraId>,
     /// Streaming, rental and purchase services some movie is on in Brazil, by name.
     providers: Vec<Provider>,
     /// Most voted first.
     movies: Vec<Movie>,
+}
+
+impl Artifact {
+    pub fn obras(&self) -> usize {
+        self.movies.len()
+    }
+
+    /// Raises the vote cut until `size` is at most `max`, dropping the obras below it, and
+    /// returns the cut; `MIN_VOTES` when it already fits.
+    pub fn raise_votes_to_fit(&mut self, max: usize, size: impl Fn(&Artifact) -> usize) -> u32 {
+        let mut cut = MIN_VOTES;
+        while size(self) > max && !self.movies.is_empty() {
+            cut += cut / 10 + 1;
+            self.movies.retain(|m| m.vote_count >= cut);
+        }
+        cut
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -91,7 +117,7 @@ struct Watch {
 
 #[derive(Serialize)]
 struct Movie {
-    tmdb_id: u32,
+    tmdb_id: ObraId,
     work_type: &'static str,
     title: String,
     original_title: String,
@@ -117,6 +143,12 @@ struct Movie {
     certification: Option<String>,
     /// Critics' score (`Critica::score`).
     critic_score: Option<u8>,
+    /// Séries only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    number_of_seasons: Option<u32>,
+    /// Séries only: `em_andamento` or `terminada`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    situacao: Option<&'static str>,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +187,62 @@ struct Details {
     watch_providers: WatchProviders,
     #[serde(default)]
     release_dates: ReleaseDates,
+}
+
+/// A série on TMDB.
+#[derive(Deserialize)]
+struct SerieDetails {
+    id: u32,
+    name: String,
+    original_name: String,
+    #[serde(default)]
+    first_air_date: String,
+    #[serde(default)]
+    episode_run_time: Vec<u32>,
+    last_episode_to_air: Option<Episode>,
+    genres: Vec<Genre>,
+    original_language: String,
+    #[serde(default)]
+    origin_country: Vec<String>,
+    #[serde(default)]
+    production_countries: Vec<Country>,
+    #[serde(default)]
+    overview: String,
+    poster_path: Option<String>,
+    backdrop_path: Option<String>,
+    vote_count: u32,
+    vote_average: f32,
+    popularity: f32,
+    #[serde(default)]
+    created_by: Vec<Person>,
+    number_of_seasons: Option<u32>,
+    #[serde(default)]
+    status: String,
+    #[serde(rename = "type", default)]
+    kind: String,
+    credits: Credits,
+    videos: Videos,
+    #[serde(rename = "watch/providers", default)]
+    watch_providers: WatchProviders,
+    #[serde(default)]
+    content_ratings: ContentRatings,
+}
+
+#[derive(Deserialize)]
+struct Episode {
+    runtime: Option<u32>,
+}
+
+#[derive(Deserialize, Default)]
+struct ContentRatings {
+    results: Vec<ContentRating>,
+}
+
+#[derive(Deserialize)]
+struct ContentRating {
+    iso_3166_1: String,
+    #[serde(default)]
+    rating: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -255,24 +343,60 @@ pub fn build(
     ids.extend(discover(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
     let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
-        details(fetch, &ids.into_iter().collect::<Vec<_>>())?.into_iter().unzip();
+        details(fetch, &ids.into_iter().collect::<Vec<_>>(), movie_request, |body| {
+            serde_json::from_value::<Details>(body).map(|d| Some(movie(d)))
+        })?
+        .into_iter()
+        .unzip();
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
     critic_scores(omdb, critica, &movies, config);
     for m in &mut movies {
         m.critic_score = m.imdb_id.as_ref().and_then(|i| critica.get(i)?.score);
     }
-    let providers: BTreeMap<u32, Provider> = providers.into_iter().flatten().map(|p| (p.id, p)).collect();
-    let mut providers: Vec<Provider> = providers.into_values().collect();
-    providers.sort_by(|a, b| a.name.cmp(&b.name));
-
     Ok(Artifact {
         format_version: cinelens_core::CATALOG_FORMAT_VERSION,
         data_version: config.today.to_string(),
         genres: genres.genres,
-        trending,
-        providers,
+        trending: trending.into_iter().map(ObraId::filme).collect(),
+        providers: by_name(providers),
         movies,
     })
+}
+
+/// The séries' artifact: same shape as the filmes', `tmdb_id` carrying each série's `ObraId`,
+/// genres already as filme genres, and no critics' scores (OMDb is not asked).
+pub fn build_series(fetch: &impl Fetch, config: &Config) -> Result<Artifact, String> {
+    let trending: Vec<u32> =
+        get::<Page>(fetch, "/trending/tv/week?language=pt-BR")?.results.into_iter().map(|m| m.id).collect();
+    let mut ids: BTreeSet<u32> = trending.iter().copied().collect();
+    let this_year: u32 = config.today.get(..4).and_then(|y| y.parse().ok()).ok_or("bad today date")?;
+    for year in FIRST_YEAR..=this_year {
+        ids.extend(discover_series(fetch, MIN_VOTES, &format!("{year}-01-01"), &format!("{year}-12-31"))?);
+    }
+    ids.extend(discover_series(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
+
+    let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
+        details(fetch, &ids.into_iter().collect::<Vec<_>>(), serie_request, |body| {
+            serde_json::from_value::<SerieDetails>(body).map(serie)
+        })?
+        .into_iter()
+        .unzip();
+    movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
+    Ok(Artifact {
+        format_version: cinelens_core::CATALOG_FORMAT_VERSION,
+        data_version: config.today.to_string(),
+        genres: Vec::new(),
+        trending: trending.into_iter().map(ObraId::serie).collect(),
+        providers: by_name(providers),
+        movies,
+    })
+}
+
+fn by_name(providers: Vec<Vec<Provider>>) -> Vec<Provider> {
+    let providers: BTreeMap<u32, Provider> = providers.into_iter().flatten().map(|p| (p.id, p)).collect();
+    let mut providers: Vec<Provider> = providers.into_values().collect();
+    providers.sort_by(|a, b| a.name.cmp(&b.name));
+    providers
 }
 
 /// Spends the day's OMDb budget: movies never asked first, most voted first, then the stalest.
@@ -323,13 +447,28 @@ fn get<T: serde::de::DeserializeOwned>(fetch: &impl Fetch, request: &str) -> Res
 }
 
 fn discover(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<Vec<u32>, String> {
+    discover_pages(fetch, from, to, |page| {
+        format!(
+            "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte={MIN_RUNTIME}\
+             &vote_count.gte={min_votes}&primary_release_date.gte={from}&primary_release_date.lte={to}&page={page}"
+        )
+    })
+}
+
+fn discover_series(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<Vec<u32>, String> {
+    discover_pages(fetch, from, to, |page| {
+        format!(
+            "/discover/tv?language=pt-BR&include_adult=false&with_type={SERIE_TYPE_CODES}\
+             &vote_count.gte={min_votes}&first_air_date.gte={from}&first_air_date.lte={to}&page={page}"
+        )
+    })
+}
+
+fn discover_pages(fetch: &impl Fetch, from: &str, to: &str, request: impl Fn(u32) -> String) -> Result<Vec<u32>, String> {
     let mut ids = Vec::new();
     let mut page = 1;
     loop {
-        let request = format!(
-            "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte={MIN_RUNTIME}\
-             &vote_count.gte={min_votes}&primary_release_date.gte={from}&primary_release_date.lte={to}&page={page}"
-        );
+        let request = request(page);
         let result: Page = get(fetch, &request)?;
         if result.total_pages > MAX_PAGES {
             return Err(format!("{from}..{to} has {} pages, more than TMDB serves", result.total_pages));
@@ -342,10 +481,23 @@ fn discover(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<
     }
 }
 
-/// Fetches every movie's details in parallel. A movie TMDB no longer knows is skipped;
-/// any other failure fails the build, so a partial catálogo is never published. Each movie
-/// comes with the providers it is on in Brazil.
-fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<(Movie, Vec<Provider>)>, String> {
+fn movie_request(id: u32) -> String {
+    format!("/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en")
+}
+
+fn serie_request(id: u32) -> String {
+    format!("/tv/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,content_ratings&include_video_language=pt,en")
+}
+
+/// Fetches every obra's details in parallel. One TMDB no longer knows, or `parse` leaves out, is
+/// skipped; any other failure fails the build, so a partial catálogo is never published. Each
+/// obra comes with the providers it is on in Brazil.
+fn details<E: std::fmt::Display>(
+    fetch: &impl Fetch,
+    ids: &[u32],
+    request: impl Fn(u32) -> String + Sync,
+    parse: impl Fn(Value) -> Result<Option<(Movie, Vec<Provider>)>, E> + Sync,
+) -> Result<Vec<(Movie, Vec<Provider>)>, String> {
     let next = AtomicUsize::new(0);
     let movies = Mutex::new(Vec::with_capacity(ids.len()));
     let failure = Mutex::new(None);
@@ -353,14 +505,10 @@ fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<(Movie, Vec<Provider>)
         for _ in 0..DETAIL_WORKERS {
             s.spawn(|| {
                 while let Some(&id) = ids.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let request = format!(
-                        "/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en"
-                    );
+                    let request = request(id);
                     match fetch(&request).and_then(|body| match body {
                         None => Ok(None),
-                        Some(body) => serde_json::from_value::<Details>(body)
-                            .map(|d| Some(movie(d)))
-                            .map_err(|e| format!("{request}: {e}")),
+                        Some(body) => parse(body).map_err(|e| format!("{request}: {e}")),
                     }) {
                         Ok(Some(m)) => movies.lock().unwrap().push(m),
                         Ok(None) => {}
@@ -379,8 +527,9 @@ fn details(fetch: &impl Fetch, ids: &[u32]) -> Result<Vec<(Movie, Vec<Provider>)
     }
 }
 
-fn movie(mut d: Details) -> (Movie, Vec<Provider>) {
-    let region = d.watch_providers.results.remove("BR");
+/// Where an obra is in Brazil.
+fn watch(mut providers: WatchProviders) -> (Option<Watch>, Vec<Provider>) {
+    let region = providers.results.remove("BR");
     let providers: Vec<Provider> = region
         .iter()
         .flat_map(|r| r.flatrate.iter().chain(&r.rent).chain(&r.buy))
@@ -388,32 +537,92 @@ fn movie(mut d: Details) -> (Movie, Vec<Provider>) {
         .collect();
     let ids = |list: &[RegionProvider]| list.iter().map(|p| p.provider_id).collect();
     let watch = region.map(|r| Watch { flatrate: ids(&r.flatrate), rent: ids(&r.rent), buy: ids(&r.buy), link: r.link });
+    (watch, providers)
+}
+
+fn movie(mut d: Details) -> (Movie, Vec<Provider>) {
+    let (watch, providers) = watch(std::mem::take(&mut d.watch_providers));
     (movie_details(d, watch), providers)
 }
 
-fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
-    let crew = |job: &str| -> Vec<Person> {
-        d.credits
-            .crew
-            .iter()
-            .filter(|c| c.job == job)
-            .map(|c| Person { id: c.id, name: c.name.clone() })
-            .collect()
+/// A pt-BR trailer, else an English one.
+fn trailer(videos: &Videos) -> Option<String> {
+    let of = |lang: &str| {
+        videos.results.iter().find(|v| v.site == "YouTube" && v.kind == "Trailer" && v.iso_639_1 == lang).map(|v| v.key.clone())
     };
-    let trailer = |lang: &str| {
-        d.videos
-            .results
-            .iter()
-            .find(|v| v.site == "YouTube" && v.kind == "Trailer" && v.iso_639_1 == lang)
-            .map(|v| v.key.clone())
-    };
-    Movie {
-        tmdb_id: d.id,
-        work_type: "movie",
-        directors: crew("Director"),
-        composers: crew("Original Music Composer"),
+    of("pt").or_else(|| of("en"))
+}
+
+fn crew(credits: &Credits, job: &str) -> Vec<Person> {
+    credits.crew.iter().filter(|c| c.job == job).map(|c| Person { id: c.id, name: c.name.clone() }).collect()
+}
+
+/// TMDB's TV genres that filmes lack, as the filme genres they correspond to, so Explorar's
+/// genre filter and the content features read one vocabulary.
+fn filme_genres(tv_genre: u32) -> Vec<u32> {
+    match tv_genre {
+        10759 => vec![28, 12],
+        10765 => vec![878, 14],
+        10768 => vec![10752],
+        10762 => vec![10751],
+        same => vec![same],
+    }
+}
+
+/// The série as an obra; `None` for what the catálogo leaves out. Discover already asks for the
+/// right types, but trending does not, and TMDB labels some telenovelas and anime as scripted.
+fn serie(mut d: SerieDetails) -> Option<(Movie, Vec<Provider>)> {
+    let has = |id: u32| d.genres.iter().any(|g| g.id == id);
+    let japonesa = d.original_language == "ja" || d.origin_country.iter().any(|c| c == "JP");
+    if !SERIE_TYPES.contains(&d.kind.as_str()) || SERIE_GENEROS_FORA.iter().any(|&g| has(g)) || (has(ANIMACAO) && japonesa) {
+        return None;
+    }
+    let (watch, providers) = watch(std::mem::take(&mut d.watch_providers));
+    let mut genre_ids: Vec<u32> = Vec::new();
+    for g in d.genres.iter().flat_map(|g| filme_genres(g.id)) {
+        if !genre_ids.contains(&g) {
+            genre_ids.push(g);
+        }
+    }
+    let serie = Movie {
+        tmdb_id: ObraId::serie(d.id),
+        work_type: "tv",
+        directors: d.created_by,
+        composers: crew(&d.credits, "Original Music Composer"),
         cast: d.credits.cast.iter().take(CAST_SIZE).cloned().collect(),
-        trailer_youtube: trailer("pt").or_else(|| trailer("en")),
+        trailer_youtube: trailer(&d.videos),
+        certification: d.content_ratings.results.into_iter().find(|c| c.iso_3166_1 == "BR" && !c.rating.is_empty()).map(|c| c.rating),
+        year: d.first_air_date.get(..4).and_then(|y| y.parse().ok()),
+        release_date: Some(d.first_air_date).filter(|r| !r.is_empty()),
+        title: d.name,
+        original_title: d.original_name,
+        runtime: d.episode_run_time.first().copied().or(d.last_episode_to_air.and_then(|e| e.runtime)).filter(|&r| r > 0),
+        genre_ids,
+        original_language: d.original_language,
+        countries: d.production_countries.into_iter().map(|c| c.iso_3166_1).collect(),
+        overview: d.overview,
+        poster_path: d.poster_path,
+        backdrop_path: d.backdrop_path,
+        imdb_id: None,
+        vote_count: d.vote_count,
+        vote_average: d.vote_average,
+        popularity: d.popularity,
+        watch,
+        critic_score: None,
+        number_of_seasons: d.number_of_seasons,
+        situacao: Some(if matches!(d.status.as_str(), "Ended" | "Canceled") { "terminada" } else { "em_andamento" }),
+    };
+    Some((serie, providers))
+}
+
+fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
+    Movie {
+        tmdb_id: ObraId::filme(d.id),
+        work_type: "movie",
+        directors: crew(&d.credits, "Director"),
+        composers: crew(&d.credits, "Original Music Composer"),
+        cast: d.credits.cast.iter().take(CAST_SIZE).cloned().collect(),
+        trailer_youtube: trailer(&d.videos),
         certification: d
             .release_dates
             .results
@@ -439,5 +648,7 @@ fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
         popularity: d.popularity,
         watch,
         critic_score: None,
+        number_of_seasons: None,
+        situacao: None,
     }
 }

@@ -34,12 +34,20 @@ fn catalog_url() -> String {
     catalog_release("catalog.json.gz")
 }
 
+fn series_url() -> String {
+    catalog_release("series.json.gz")
+}
+
 fn model_url() -> String {
     model_release("model.json.gz")
 }
 
 fn catalog_file(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().expect("app data dir").join("catalog.json")
+}
+
+fn series_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("series.json")
 }
 
 fn model_file(app: &AppHandle) -> PathBuf {
@@ -386,8 +394,9 @@ fn status(core: tauri::State<RwLock<Core>>) -> (Option<String>, Option<String>) 
     (core.data_version().map(str::to_string), core.model_version().map(str::to_string))
 }
 
-/// Downloads the full catálogo, emitting `download-progress`. The local catálogo is only
-/// replaced once the core accepts the new one.
+/// Downloads the full catálogo and then the séries, emitting `download-progress`. The local
+/// catálogo is only replaced once the core accepts the new one. Séries that fail come with a
+/// later update: they never hold back the first run.
 #[tauri::command]
 async fn download_catalog(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -396,7 +405,11 @@ async fn download_catalog(app: AppHandle) -> Result<(), String> {
         // lock is never held during a download.
         Core::open(&json).map_err(|e| e.to_string())?;
         write_atomically(&catalog_file(&app), &json).map_err(|e| e.to_string())?;
-        app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())
+        app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())?;
+        if let Err(e) = update_series(&app) {
+            eprintln!("séries update: {e}");
+        }
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -427,6 +440,21 @@ fn update_catalog(app: &AppHandle) -> Result<(), String> {
     Core::open(&json).map_err(|e| e.to_string())?;
     write_atomically(&catalog_file(app), &json).map_err(|e| e.to_string())?;
     app.state::<RwLock<Core>>().write().unwrap().load_catalog(&json).map_err(|e| e.to_string())?;
+    let _ = app.emit("atualizado", ());
+    Ok(())
+}
+
+/// Brings the séries up to date with the published ones; nothing to do before they are published.
+fn update_series(app: &AppHandle) -> Result<(), String> {
+    let Some(latest) = fetch(&catalog_release("series-version.txt"))? else { return Ok(()) };
+    let version = app.state::<RwLock<Core>>().read().unwrap().series_version().map(str::to_string);
+    if version.as_deref() == Some(String::from_utf8_lossy(&latest).trim()) {
+        return Ok(());
+    }
+    let json = download(app, &series_url())?;
+    Core::default().load_series(&json).map_err(|e| e.to_string())?;
+    write_atomically(&series_file(app), &json).map_err(|e| e.to_string())?;
+    app.state::<RwLock<Core>>().write().unwrap().load_series(&json).map_err(|e| e.to_string())?;
     let _ = app.emit("atualizado", ());
     Ok(())
 }
@@ -595,11 +623,12 @@ pub fn run() {
                     let mut core = state.write().unwrap();
                     let _ = locked.send(());
                     let catalog = std::fs::read(catalog_file(&handle)).ok();
+                    let series = std::fs::read(series_file(&handle)).ok();
                     let model = std::fs::read(model_file(&handle)).ok();
-                    core.load_saved(catalog.as_deref(), model.as_deref());
+                    core.load_saved(catalog.as_deref(), series.as_deref(), model.as_deref());
                 }
                 loop {
-                    let updates = [("catálogo", update_catalog(&handle)), ("model", update_model(&handle))];
+                    let updates = [("catálogo", update_catalog(&handle)), ("séries", update_series(&handle)), ("model", update_model(&handle))];
                     for (what, result) in updates.into_iter().chain([("notification", notify(&handle))]) {
                         if let Err(e) = result {
                             eprintln!("{what} update: {e}");

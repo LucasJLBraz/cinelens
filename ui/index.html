@@ -210,7 +210,7 @@
 <body>
   <section id="setup" hidden>
     <h1>Preparando o catálogo</h1>
-    <p id="setup-text">Baixando os filmes, só desta vez.</p>
+    <p id="setup-text">Baixando o catálogo, só desta vez.</p>
     <progress id="progress"></progress>
     <button id="retry" hidden>Tentar de novo</button>
   </section>
@@ -269,6 +269,13 @@
     <div id="filtros">
       <input id="busca" type="search" placeholder="Título, direção ou elenco" data-campo="busca">
       <div class="linha">
+        <div id="tipos" class="chips">
+          <button class="chip" data-valor="">Tudo</button>
+          <button class="chip" data-valor="Filme">Filmes</button>
+          <button class="chip" data-valor="Serie">Séries</button>
+        </div>
+      </div>
+      <div class="linha">
         <div id="generos" class="chips"></div>
       </div>
       <div class="linha">
@@ -306,8 +313,8 @@
       </label>
     </div>
     <main id="grid"></main>
-    <p id="vazio" hidden>Nenhum filme com esses filtros.</p>
-    <button id="more" hidden>Mais filmes</button>
+    <p id="vazio" hidden>Nada com esses filtros.</p>
+    <button id="more" hidden>Mais</button>
   </div>
   <section id="filme" hidden>
     <div id="filme-fundo"></div>
@@ -513,6 +520,10 @@
 
     // Explorar's filters, as the core's Filtro; {} is no filter.
     let filtro = {};
+    // Tudo, Filmes or Séries as the owner last chose; a lista pronta's own tipo does not change it.
+    let tipoEscolhido = '';
+    try { tipoEscolhido = localStorage.getItem('tipo') || ''; } catch {}
+    if (tipoEscolhido) filtro.tipo = tipoEscolhido;
     // Bumped on every reload, so a page that arrives after a newer filter is dropped.
     let generation = 0;
 
@@ -525,7 +536,7 @@
       const vazio = document.getElementById('vazio');
       vazio.hidden = page > 0 || result.movies.length > 0;
       vazio.textContent = filtro.no_meu_streaming
-        ? 'Nenhum filme nos seus serviços com esses filtros.' : 'Nenhum filme com esses filtros.';
+        ? 'Nada nos seus serviços com esses filtros.' : 'Nada com esses filtros.';
       page += 1;
     }
 
@@ -535,11 +546,13 @@
 
     // A lista pronta's fields no control shows (faixa, classificação…), kept until filters are cleared.
     let extras = {};
-    const controlados = new Set([...campos.map(el => el.dataset.campo), 'incluir', 'excluir', 'duracao_min', 'duracao_max', 'no_meu_streaming']);
+    const tiposEl = document.getElementById('tipos');
+    const controlados = new Set([...campos.map(el => el.dataset.campo), 'tipo', 'incluir', 'excluir', 'duracao_min', 'duracao_max', 'no_meu_streaming']);
 
     // Controls → filtro.
     function readFiltro() {
       const f = { ...extras, incluir: filtro.incluir || [], excluir: filtro.excluir || [] };
+      if (filtro.tipo) f.tipo = filtro.tipo;
       for (const el of campos) {
         const v = el.type === 'checkbox' ? el.checked : el.value;
         if (el.dataset.tipo === 'bool') f[el.dataset.campo] = Boolean(v);
@@ -564,6 +577,7 @@
       duracaoEl.value = filtro.duracao_min || filtro.duracao_max ? `${filtro.duracao_min ?? ''}-${filtro.duracao_max ?? ''}` : '';
       if (duracaoEl.selectedIndex < 0) duracaoEl.value = '';
       document.getElementById('streaming').classList.toggle('on', Boolean(filtro.no_meu_streaming));
+      for (const chip of tiposEl.children) chip.classList.toggle('on', chip.dataset.valor === (filtro.tipo || ''));
       for (const chip of generosEl.children) {
         const id = Number(chip.dataset.id);
         chip.className = 'chip' + ((filtro.incluir || []).includes(id) ? ' incluir' : (filtro.excluir || []).includes(id) ? ' excluir' : '');
@@ -579,6 +593,7 @@
     // {} clears them.
     function abrirExplorar(preset, nome) {
       filtro = { ...preset };
+      if (!filtro.tipo && tipoEscolhido) filtro.tipo = tipoEscolhido;
       extras = Object.fromEntries(Object.entries(preset).filter(([k]) => !controlados.has(k)));
       document.getElementById('explorar-lista').textContent = nome || 'Para você';
       showFiltro();
@@ -588,6 +603,15 @@
     for (const el of campos) el.addEventListener(['search', 'range', 'number'].includes(el.type) ? 'input' : 'change', applyFiltro);
     duracaoEl.addEventListener('change', applyFiltro);
     document.getElementById('streaming').addEventListener('click', e => { e.target.classList.toggle('on'); applyFiltro(); });
+    tiposEl.addEventListener('click', e => {
+      if (e.target === tiposEl) return;
+      tipoEscolhido = e.target.dataset.valor;
+      try { localStorage.setItem('tipo', tipoEscolhido); } catch {}
+      filtro = { ...filtro };
+      if (tipoEscolhido) filtro.tipo = tipoEscolhido; else delete filtro.tipo;
+      showFiltro();
+      reloadGrid();
+    });
     document.getElementById('mais-filtros').addEventListener('click', e => {
       const painel = document.getElementById('painel');
       painel.hidden = !painel.hidden;
@@ -633,7 +657,7 @@
       const retry = document.getElementById('retry');
       setupEl.hidden = false;
       retry.hidden = true;
-      text.textContent = 'Baixando os filmes, só desta vez.';
+      text.textContent = 'Baixando o catálogo, só desta vez.';
       progress.removeAttribute('value');
       const stop = await listen('download-progress', ({ payload: [received, total] }) => {
         if (setupEl.hidden) return;
@@ -641,9 +665,9 @@
         if (total) {
           progress.max = total;
           progress.value = received;
-          text.textContent = `Baixando os filmes, só desta vez: ${mb} de ${(total / 1e6).toFixed(1)} MB`;
+          text.textContent = `Baixando o catálogo, só desta vez: ${mb} de ${(total / 1e6).toFixed(1)} MB`;
         } else {
-          text.textContent = `Baixando os filmes, só desta vez: ${mb} MB`;
+          text.textContent = `Baixando o catálogo, só desta vez: ${mb} MB`;
         }
       });
       try {
@@ -1139,7 +1163,9 @@
     });
     document.getElementById('abrir-tmdb').addEventListener('click', () => {
       filmeEl.querySelector('.menu').open = false;
-      abrirUrl(`https://www.themoviedb.org/movie/${filmeEl.dataset.id}`);
+      // A série's id has the high bit set (ADR 0003).
+      const id = Number(filmeEl.dataset.id);
+      abrirUrl(id >= 2 ** 31 ? `https://www.themoviedb.org/tv/${id - 2 ** 31}` : `https://www.themoviedb.org/movie/${id}`);
     });
 
     const decayEl = document.getElementById('decay');

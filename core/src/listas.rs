@@ -1,7 +1,7 @@
 //! The listas prontas (design doc §7.3): named filtros that Início shows as rows and chips, and
 //! that open Explorar with them set.
 
-use crate::{Faixa, Filtro, Mostrar};
+use crate::{Faixa, Filtro, Mostrar, Tipo};
 
 /// "Previsão alta": Boa chance or better.
 const PREVISAO_ALTA: Option<Faixa> = Some(Faixa::BoaChance);
@@ -17,7 +17,8 @@ const ACLAMADO: u8 = 75;
 /// Every lista pronta in Início's order; `at` (Unix seconds) is today. Without any critics'
 /// scores in the catálogo, Aclamados pela crítica is the public's alone and named so.
 pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> {
-    let nao_visto = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, ..Default::default() };
+    let filmes = Filtro { tipo: Some(Tipo::Filme), ..Default::default() };
+    let nao_visto = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, ..filmes.clone() };
     vec![
         ("Em alta, do seu jeito", Filtro { em_alta: true, ..nao_visto.clone() }),
         ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..nao_visto.clone() }),
@@ -46,7 +47,7 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
             if tem_critica { "Aclamados pela crítica" } else { "Aclamados pelo público" },
             Filtro { critica_min: Some(ACLAMADO), ..nao_visto },
         ),
-        ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, ..Default::default() }),
+        ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, ..filmes }),
     ]
 }
 

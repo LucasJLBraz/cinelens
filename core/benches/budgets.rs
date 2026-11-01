@@ -4,10 +4,12 @@
 use std::time::{Duration, Instant};
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Filtro};
+use cinelens_core::{Core, Filtro, Tipo};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
+/// A quarter of the download, the most the catalog job publishes.
+const SERIES_SIZE: usize = 15_000;
 /// ml-latest movies with enough ratings to be published.
 const MODEL_SIZE: usize = 40_000;
 const FACTORS: usize = 32;
@@ -16,15 +18,16 @@ const NOTAS: u32 = 300;
 
 fn main() {
     let catalog = synthetic_catalog(CATALOG_SIZE);
+    let series = synthetic_series(SERIES_SIZE);
     let model = synthetic_model(MODEL_SIZE);
     let mut failed = false;
 
-    failed |= !budget("startup: load catálogo and model", Duration::from_secs(1), || {
-        Core::open(&catalog).unwrap().load_model(&model).unwrap();
+    failed |= !budget("startup: load catálogo, séries and model", Duration::from_secs(1), || {
+        Core::default().load_saved(Some(&catalog), Some(&series), Some(&model));
     });
 
-    let mut core = Core::open(&catalog).unwrap();
-    core.load_model(&model).unwrap();
+    let mut core = Core::default();
+    core.load_saved(Some(&catalog), Some(&series), Some(&model));
     for id in 0..NOTAS {
         core.rate(ObraId::filme(id * 97), 0.5 + (id % 10) as f32 / 2.0, 0).unwrap();
     }
@@ -37,6 +40,7 @@ fn main() {
 
     // Every movie passes every filter, so all of them are checked and every recomendação re-sorted.
     let filtro = Filtro {
+        tipo: Some(Tipo::Filme),
         incluir: vec![18, 35],
         excluir: vec![99],
         ano_min: Some(1900),
@@ -114,6 +118,26 @@ fn synthetic_model(n: usize) -> Vec<u8> {
         movies.join(",")
     )
     .into_bytes()
+}
+
+/// Séries shaped like the catalog job's output, with the content features of the movies'
+/// people; ids on their own numbers.
+fn synthetic_series(n: usize) -> Vec<u8> {
+    let bytes = String::from_utf8(synthetic_catalog(n)).unwrap();
+    let series = bytes.replace(r#""work_type":"movie""#, r#""work_type":"tv","number_of_seasons":3,"situacao":"terminada""#);
+    // A série's id has the high bit set.
+    let mut out = String::new();
+    let mut rest = series.as_str();
+    while let Some(at) = rest.find(r#""tmdb_id":"#) {
+        let start = at + r#""tmdb_id":"#.len();
+        let end = start + rest[start..].find(',').unwrap();
+        let id: u32 = rest[start..end].parse().unwrap();
+        out.push_str(&rest[..start]);
+        out.push_str(&ObraId::serie(id).to_string());
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out.into_bytes()
 }
 
 /// Movies shaped like the catalog job's output, so startup also pays for the fields

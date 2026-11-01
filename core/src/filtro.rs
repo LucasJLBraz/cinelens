@@ -20,10 +20,19 @@ pub enum Mostrar {
     So,
 }
 
+/// Filmes or séries.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Tipo {
+    Filme,
+    Serie,
+}
+
 /// Explorar's filters; the default is no filter. Every set field must pass.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Filtro {
+    /// Only this type; `None` is Tudo.
+    pub tipo: Option<Tipo>,
     /// Genre ids the movie must have: all of them, or any with `qualquer`.
     pub incluir: Vec<u32>,
     pub qualquer: bool,
@@ -31,7 +40,7 @@ pub struct Filtro {
     pub excluir: Vec<u32>,
     pub ano_min: Option<u16>,
     pub ano_max: Option<u16>,
-    /// Minutes.
+    /// Minutes; of an episode, on a série.
     pub duracao_min: Option<u32>,
     pub duracao_max: Option<u32>,
     /// Original language, ISO 639-1.
@@ -109,7 +118,8 @@ impl<'a> Matcher<'a> {
             Mostrar::So => marked,
         };
         let watch = m.watch.as_ref();
-        if (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
+        if f.tipo.is_none_or(|t| (t == Tipo::Serie) == m.id.is_serie())
+            && (self.incluir.is_empty() || if f.qualquer { genres() > 0 } else { genres() == self.incluir.len() })
             && !m.genre_ids.iter().any(|g| self.excluir.contains(g))
             && in_range(m.year.map(u32::from), f.ano_min.map(u32::from), f.ano_max.map(u32::from))
             && in_range(m.runtime, f.duracao_min, f.duracao_max)

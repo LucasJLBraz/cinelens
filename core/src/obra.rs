@@ -21,6 +21,10 @@ impl ObraId {
         Self(tmdb_id | SERIE_BIT)
     }
 
+    pub const fn is_serie(self) -> bool {
+        self.0 & SERIE_BIT != 0
+    }
+
     /// The number TMDB knows this obra by.
     pub const fn tmdb_id(self) -> u32 {
         self.0 & !SERIE_BIT

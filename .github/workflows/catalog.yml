@@ -3,6 +3,8 @@ name: Catalog
 # Builds the full catálogo from TMDB every day and publishes it as the asset
 # `catalog.json.gz` of the release `catalog-v<format version>`, with `catalog-version.txt`
 # (its data version): the app checks the version and downloads the catálogo when it changed.
+# Séries go out the same way as `series.json.gz` and `series-version.txt`, which an app without
+# séries never asks for.
 # See docs/guides/tmdb.md and docs/guides/omdb.md.
 on:
   schedule:
@@ -72,6 +74,19 @@ jobs:
           path: omdb-cache.json
           key: omdb-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # At most a quarter of the filmes' download: the job raises the vote cut until it fits and
+      # records the count. Trouble here never holds back the filmes.
+      - name: Build séries
+        continue-on-error: true
+        env:
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          cargo run --release -p cinelens-catalog -- \
+            --series-up-to "$(( $(stat -c%s catalog.json.gz) / 4 ))" \
+            --out series.json.gz \
+            --today "$TODAY" \
+            --recent-since "$(date -u -d '-180 days' +%F)"
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,6 +99,11 @@ jobs:
           # The version last, so an app never sees it before the files it names.
           gh release upload "$TAG" catalog.json.gz --clobber
           gh release upload "$TAG" catalog-version.txt --clobber
+          if [ -f series.json.gz ]; then
+            echo -n "$TODAY" > series-version.txt
+            gh release upload "$TAG" series.json.gz --clobber
+            gh release upload "$TAG" series-version.txt --clobber
+          fi
           # Deltas older than 60 days: an app that far behind downloads the full catálogo.
           CUTOFF=$(date -u -d '-60 days' +%F)
           gh release view "$TAG" --json assets --jq '.assets[].name' | { grep -oP '^catalog-delta-\K[0-9-]+(?=\.json\.gz$)' || true; } | while read -r FROM; do

@@ -15,7 +15,7 @@ mod sync;
 
 pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
-pub use filtro::{Filtro, Mostrar};
+pub use filtro::{Filtro, Mostrar, Tipo};
 pub use obra::ObraId;
 pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 pub use sync::SyncStorage;
@@ -101,6 +101,7 @@ fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> 
     })
 }
 
+/// The filmes' or the séries' asset; both have this shape, and a série's `tmdb_id` is its `ObraId`.
 #[derive(Deserialize)]
 struct CatalogArtifact {
     format_version: u32,
@@ -209,6 +210,18 @@ struct Person {
     id: u32,
     #[serde(default)]
     name: String,
+}
+
+fn parse_artifact(bytes: &[u8], series: bool) -> Result<CatalogArtifact, Error> {
+    let artifact: CatalogArtifact =
+        serde_json::from_slice(bytes).map_err(|e| Error::InvalidArtifact(e.to_string()))?;
+    if artifact.format_version != CATALOG_FORMAT_VERSION {
+        return Err(Error::InvalidArtifact(format!("unknown format version {}", artifact.format_version)));
+    }
+    if artifact.movies.iter().any(|m| m.id.is_serie() != series) {
+        return Err(Error::InvalidArtifact("an obra of the wrong type".into()));
+    }
+    Ok(artifact)
 }
 
 impl Movie {
@@ -558,6 +571,7 @@ pub(crate) fn is_valid_nota(nota: f32) -> bool {
 #[derive(Default)]
 pub struct Core {
     data_version: Option<String>,
+    series_version: Option<String>,
     movies: Vec<Movie>,
     /// id → index into `movies`.
     index: HashMap<ObraId, usize>,
@@ -597,55 +611,80 @@ impl Core {
         Ok(core)
     }
 
-    /// Replaces the catálogo. On error the current one stays in place.
+    /// Replaces the filmes of the catálogo. On error the current ones stay in place.
     pub fn load_catalog(&mut self, catalog_artifact: &[u8]) -> Result<(), Error> {
-        let artifact: CatalogArtifact = serde_json::from_slice(catalog_artifact)
-            .map_err(|e| Error::InvalidArtifact(e.to_string()))?;
-        if artifact.format_version != CATALOG_FORMAT_VERSION {
-            return Err(Error::InvalidArtifact(format!(
-                "unknown format version {}",
-                artifact.format_version
-            )));
-        }
-        self.data_version = Some(artifact.data_version);
-        self.busca = par_map(&artifact.movies, filtro::searchable);
-        let log_votes = |m: &Movie| (m.vote_count as f32).ln_1p();
-        let most = artifact.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
-        self.popularidade = artifact.movies.iter().map(|m| log_votes(m) / most).collect();
-        self.movies = artifact.movies;
-        self.index = self.movies.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
-        self.em_alta = artifact.trending.into_iter().collect();
-        self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
-        self.generos = artifact.genres;
-        let mut na_assinatura: HashMap<u32, usize> = HashMap::new();
-        for id in self.movies.iter().filter_map(|m| m.watch.as_ref()).flat_map(|w| &w.flatrate) {
-            *na_assinatura.entry(*id).or_default() += 1;
-        }
-        let mut provedores: Vec<Provedor> = artifact
-            .providers
-            .into_iter()
-            .map(|p| Provedor { id: p.id, name: p.name, logo_url: p.logo_path.map(|l| format!("{LOGO_BASE}{l}")) })
-            .collect();
-        provedores.sort_by_cached_key(|p| (std::cmp::Reverse(na_assinatura.get(&p.id).copied().unwrap_or(0)), p.name.clone()));
-        self.provedores = provedores;
+        self.merge(parse_artifact(catalog_artifact, false)?, false);
+        self.index_catalog();
         self.refresh_items();
         Ok(())
     }
 
-    /// Loads what a launch finds on disk, parsing the two at once to open faster. Whichever is
-    /// missing or invalid stays out: the UI downloads it again.
-    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
-        let model = std::thread::scope(|s| {
-            let model = s.spawn(|| model_artifact.and_then(|bytes| Model::parse(bytes).ok()));
-            if let Some(bytes) = catalog_artifact {
-                let _ = self.load_catalog(bytes);
+    /// Replaces the séries of the catálogo. On error the current ones stay in place.
+    pub fn load_series(&mut self, series_artifact: &[u8]) -> Result<(), Error> {
+        self.merge(parse_artifact(series_artifact, true)?, true);
+        self.index_catalog();
+        self.refresh_items();
+        Ok(())
+    }
+
+    /// Swaps in one type's obras, leaving the other's.
+    fn merge(&mut self, artifact: CatalogArtifact, series: bool) {
+        if series {
+            self.series_version = Some(artifact.data_version);
+        } else {
+            self.data_version = Some(artifact.data_version);
+            self.generos = artifact.genres;
+        }
+        self.movies.retain(|m| m.id.is_serie() != series);
+        self.movies.extend(artifact.movies);
+        // Stable, and each asset is most voted first: only needed once there are two.
+        if self.movies.iter().any(|m| m.id.is_serie()) {
+            self.movies.sort_by_key(|m| std::cmp::Reverse(m.vote_count));
+        }
+        self.em_alta.retain(|id| id.is_serie() != series);
+        self.em_alta.extend(artifact.trending);
+        for p in artifact.providers {
+            if !self.provedores.iter().any(|known| known.id == p.id) {
+                self.provedores.push(Provedor { id: p.id, name: p.name, logo_url: p.logo_path.map(|l| format!("{LOGO_BASE}{l}")) });
             }
-            model.join().expect("model parse does not panic")
+        }
+    }
+
+    /// Everything aligned with or derived from `movies`, after they change.
+    fn index_catalog(&mut self) {
+        self.busca = par_map(&self.movies, filtro::searchable);
+        let log_votes = |m: &Movie| (m.vote_count as f32).ln_1p();
+        let most = self.movies.iter().map(log_votes).fold(0f32, f32::max).max(f32::MIN_POSITIVE);
+        self.popularidade = self.movies.iter().map(|m| log_votes(m) / most).collect();
+        self.index = self.movies.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
+        self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
+        let mut na_assinatura: HashMap<u32, usize> = HashMap::new();
+        for id in self.movies.iter().filter_map(|m| m.watch.as_ref()).flat_map(|w| &w.flatrate) {
+            *na_assinatura.entry(*id).or_default() += 1;
+        }
+        self.provedores.sort_by_cached_key(|p| (std::cmp::Reverse(na_assinatura.get(&p.id).copied().unwrap_or(0)), p.name.clone()));
+    }
+
+    /// Loads what a launch finds on disk, parsing all of it at once to open faster. Whatever is
+    /// missing or invalid stays out: the UI downloads it again.
+    pub fn load_saved(&mut self, catalog_artifact: Option<&[u8]>, series_artifact: Option<&[u8]>, model_artifact: Option<&[u8]>) {
+        let (catalog, series, model) = std::thread::scope(|s| {
+            let model = s.spawn(|| model_artifact.and_then(|bytes| Model::parse(bytes).ok()));
+            let series = s.spawn(|| series_artifact.and_then(|bytes| parse_artifact(bytes, true).ok()));
+            let catalog = catalog_artifact.and_then(|bytes| parse_artifact(bytes, false).ok());
+            (catalog, series.join().expect("series parse does not panic"), model.join().expect("model parse does not panic"))
         });
+        if let Some(catalog) = catalog {
+            self.merge(catalog, false);
+        }
+        if let Some(series) = series {
+            self.merge(series, true);
+        }
         if model.is_some() {
             self.model = model;
-            self.refresh_items();
         }
+        self.index_catalog();
+        self.refresh_items();
     }
 
     /// Replaces the model. On error the current one stays in place.
@@ -692,7 +731,8 @@ impl Core {
     fn refresh_items(&mut self) {
         self.items = match &self.model {
             None => vec![None; self.movies.len()],
-            Some(model) => par_map(&self.movies, |m| model.item(m.id, &m.content_features())),
+            // Séries get no nota prevista yet.
+            Some(model) => par_map(&self.movies, |m| if m.id.is_serie() { None } else { model.item(m.id, &m.content_features()) }),
         };
         self.recompute();
     }
@@ -1011,6 +1051,10 @@ impl Core {
 
     pub fn data_version(&self) -> Option<&str> {
         self.data_version.as_deref()
+    }
+
+    pub fn series_version(&self) -> Option<&str> {
+        self.series_version.as_deref()
     }
 
     /// Imports the MovieLens export files (in any order). Safe to re-run: notas already
