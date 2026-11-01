@@ -1,6 +1,7 @@
 //! Thin Tauri adapters over the core facade: catálogo and model files, downloads and background
 //! updates, owner data file and its sync, poster cache.
 
+mod compartilhar;
 mod google;
 
 use std::io::Read;
@@ -192,6 +193,21 @@ fn rate(
     let revealed = core.rate(tmdb_id, nota, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
+}
+
+/// A poster's bytes, for the share card: drawn from these, a canvas can still be exported.
+#[tauri::command]
+async fn poster_bytes(app: AppHandle, name: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || poster(&app, &name).into_body());
+    Ok(tauri::ipc::Response::new(bytes.await.map_err(|e| e.to_string())?))
+}
+
+/// Opens the share sheet with the card (a JPEG in base64) and the text.
+#[tauri::command]
+async fn compartilhar(app: AppHandle, imagem: String, texto: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || compartilhar::enviar(&app, imagem, texto))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Forgets the movie's nota; returns its page after.
@@ -556,7 +572,7 @@ pub fn run() {
     let builder =
         tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_notification::init());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(google::init());
+    let builder = builder.plugin(google::init()).plugin(compartilhar::init());
     builder
         .setup(|app| {
             let mut core = Core::default();
@@ -638,6 +654,8 @@ pub fn run() {
             pesou_oculto,
             set_pesou_oculto,
             remover_nota,
+            poster_bytes,
+            compartilhar,
             rodada,
             nao_vi,
             estatisticas,
