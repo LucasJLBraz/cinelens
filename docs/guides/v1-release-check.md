@@ -47,7 +47,7 @@ Prints: [Início](../prints/inicio.png), [Explorar](../prints/explorar.png), [p�
 - [x] Workflow `Release` gera a release do app pelo tag `v*`.
 - [x] Notas da release incluem licença/atribuição (MovieLens, TMDB, OMDb, JustWatch).
 - [x] Repo público `https://github.com/LucasJLBraz/cinelens` usado no Obtainium.
-- [ ] Obtainium detecta a versão publicada (confirmação do dono no aparelho).
+- [x] Obtainium detecta a versão publicada: `v1.0.0`, confirmado pelo dono em 2026-11-01.
 - Fontes: `.github/workflows/release.yml`, `README.md`, `docs/guides/release.md`.
 
 ## 5) Guias de setup completos e linkados no README
