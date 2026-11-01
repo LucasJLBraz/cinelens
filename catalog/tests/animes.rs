@@ -141,6 +141,64 @@ fn high_anilist_popularity_brings_in_an_anime_discover_does_not_list() {
     assert_eq!(ids(&artifact), [1, 2]);
 }
 
+/// As `tmdb`, but discover lists only what has the votes the request asks for, as TMDB does.
+fn tmdb_by_votes(all: Vec<Value>) -> impl Fn(&str) -> Result<Option<Value>, String> + Sync {
+    let answer = tmdb(all.clone(), 0);
+    move |request: &str| {
+        if !request.starts_with("/discover/tv") {
+            return answer(request);
+        }
+        let min: u64 = request.split("vote_count.gte=").nth(1).and_then(|r| r.split('&').next()?.parse().ok()).expect(request);
+        let first = request.contains("first_air_date.gte=2019-01-01");
+        let ids: Vec<Value> = all.iter().filter(|o| first && o["vote_count"].as_u64() >= Some(min)).map(|o| json!({"id": o["id"]})).collect();
+        Ok(Some(json!({"total_pages": 1, "results": ids})))
+    }
+}
+
+#[test]
+fn a_recognized_anime_enters_with_one_vote_and_no_anilist_popularity() {
+    let one_vote = json!({"vote_count": 1});
+    let japanese = json!({"origin_country": ["JP"], "vote_count": 1});
+    let all = vec![
+        obra(1, japanese.clone()),
+        obra(LINK_CLICK, one_vote.clone()),
+        // No vote at all: a placeholder, though recognized and in AniList with few users.
+        obra(2, json!({"origin_country": ["JP"], "vote_count": 0})),
+        obra(3, json!({"vote_count": 0})),
+        obra(4, json!({"origin_country": ["JP"], "vote_count": 1, "adult": true})),
+        obra(5, json!({"origin_country": ["JP"], "vote_count": 1, "keywords": {"results": [{"id": 9, "name": "hentai"}]}})),
+        obra(SCOOBY, one_vote.clone()),
+        obra(ARCANE, one_vote),
+    ];
+    let known = anilist(&[(LINK_CLICK, 0), (3, 40)]);
+    let mut artifact = build_animes(&tmdb_by_votes(all), &config(&known)).unwrap();
+    assert_eq!(artifact.raise_votes_to_fit(usize::MAX, |a| a.obras()), 1);
+    assert_eq!(ids(&serde_json::to_value(&artifact).unwrap()), [1, LINK_CLICK]);
+}
+
+#[test]
+fn an_anime_with_no_vote_enters_on_anilist_popularity_alone() {
+    let all = vec![obra(2, json!({"origin_country": ["JP"], "vote_count": 0})), obra(3, json!({"origin_country": ["JP"], "vote_count": 0}))];
+    let known = anilist(&[(2, 100), (3, 99)]);
+    let artifact = build_animes(&tmdb_by_votes(all), &config(&known)).unwrap();
+    assert_eq!(ids(&serde_json::to_value(&artifact).unwrap()), [2]);
+}
+
+#[test]
+fn past_the_limit_the_cut_rises_from_one_vote_until_the_animes_fit() {
+    let all = vec![
+        obra(1, json!({"origin_country": ["JP"], "vote_count": 1})),
+        obra(2, json!({"origin_country": ["JP"], "vote_count": 4})),
+        obra(3, json!({"origin_country": ["JP"], "vote_count": 30})),
+    ];
+    let none = anilist(&[]);
+    let mut artifact = build_animes(&tmdb_by_votes(all), &config(&none)).unwrap();
+    assert_eq!(artifact.obras(), 3);
+    let cut = artifact.raise_votes_to_fit(2, |a| a.obras());
+    assert_eq!(ids(&serde_json::to_value(&artifact).unwrap()), [2, 3]);
+    assert!(cut > 1 && cut <= 4, "{cut}");
+}
+
 #[test]
 fn the_vote_cut_spares_high_anilist_popularity_until_it_passes_that_too() {
     let all = vec![

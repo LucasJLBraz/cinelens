@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::time::Duration;
 
-use cinelens_catalog::{build_animes, build_series, build_incremental, AniList, Anterior, Artifact, Config, ANILIST_POPULAR};
+use cinelens_catalog::{build_animes, build_series, build_incremental, AniList, Anterior, Artifact, Config, ANILIST_MIN};
 use serde_json::Value;
 
 const API: &str = "https://api.themoviedb.org/3";
@@ -138,8 +138,8 @@ fn read_anterior(path: &str) -> Result<Anterior, String> {
     Anterior::new(&json)
 }
 
-/// AniList id → popularity, of the most popular down to `ANILIST_POPULAR`: what is below it brings
-/// nothing in.
+/// AniList id → popularity, of the most popular down to `ANILIST_MIN`: what is below it
+/// brings nothing in.
 fn anilist_popularity(agent: &ureq::Agent) -> Result<BTreeMap<u32, u32>, String> {
     let mut popularidade = BTreeMap::new();
     for page in 1.. {
@@ -151,7 +151,7 @@ fn anilist_popularity(agent: &ureq::Agent) -> Result<BTreeMap<u32, u32>, String>
         let pares = media.iter().filter_map(|m| Some((m["id"].as_u64()? as u32, m["popularity"].as_u64()? as u32)));
         let pares: Vec<(u32, u32)> = pares.collect();
         popularidade.extend(pares.iter().copied());
-        if pares.last().is_none_or(|&(_, p)| p < ANILIST_POPULAR) {
+        if pares.last().is_none_or(|&(_, p)| p < ANILIST_MIN) {
             break;
         }
     }

@@ -6,10 +6,12 @@ use std::time::{Duration, Instant};
 use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro, Reacao, Tipo};
 
-/// As published on 2026-11-01, like the two sizes below.
+/// As published on 2026-11-01, like the size below.
 const CATALOG_SIZE: usize = 91_000;
 const SERIES_SIZE: usize = 5_800;
-const ANIMES_SIZE: usize = 2_900;
+/// The most that fits the download limit, at the 2,867 animes in 1.3 MB of that day out of 8.1 MB:
+/// the catálogo lets in nearly every anime, and this holds whatever number that gives.
+const ANIMES_SIZE: usize = 18_000;
 /// Well above the entries the dump joins to TMDB.
 const ANIME_MODEL_SIZE: usize = 12_000;
 /// No série has these numbers.

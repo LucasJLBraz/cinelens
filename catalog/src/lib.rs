@@ -39,11 +39,13 @@ const ANIMES_MANUAIS: [u32; 3] = [71024, 225180, 152483];
 /// Stands for AniList popularity on the manual list, which AniList lacks: past any vote cut the
 /// download limit should ever need.
 const ANILIST_MANUAL: u32 = 100_000_000;
-/// AniList popularity that brings an anime in whatever its TMDB votes; the vote cut rises from
-/// `MIN_VOTES`, and this one with it.
-pub const ANILIST_POPULAR: u32 = 5_000;
-/// How many AniList users weigh like one TMDB vote at the cut: `ANILIST_POPULAR / MIN_VOTES`.
-const ANILIST_POR_VOTO: u32 = ANILIST_POPULAR / MIN_VOTES;
+/// Every anime with this many TMDB votes enters; the download limit alone may raise the cut.
+const MIN_VOTES_ANIME: u32 = 1;
+/// How many AniList users weigh like one TMDB vote at the cut, so an anime TMDB users have not
+/// voted on enters with this many.
+const ANILIST_POR_VOTO: u32 = 100;
+/// AniList popularity that alone brings an anime in.
+pub const ANILIST_MIN: u32 = MIN_VOTES_ANIME * ANILIST_POR_VOTO;
 
 /// One TMDB GET, given as path plus query. `Ok(None)` is a 404.
 pub trait Fetch: Fn(&str) -> Result<Option<Value>, String> + Sync {}
@@ -122,6 +124,9 @@ pub struct Artifact {
     providers: Vec<Provider>,
     /// Most voted first.
     movies: Vec<Movie>,
+    /// Where the vote cut starts.
+    #[serde(skip)]
+    min_votes: u32,
 }
 
 impl Artifact {
@@ -134,12 +139,12 @@ impl Artifact {
     }
 
     /// Raises the vote cut until `size` is at most `max`, dropping the obras below it (and below
-    /// it in AniList users, for an anime), and returns the cut; `MIN_VOTES` when it already fits.
+    /// it in AniList users, for an anime), and returns the cut; `min_votes` when it already fits.
     pub fn raise_votes_to_fit(&mut self, max: usize, size: impl Fn(&Artifact) -> usize) -> u32 {
-        let mut cut = MIN_VOTES;
+        let mut cut = self.min_votes;
         while size(self) > max && !self.movies.is_empty() {
             cut += cut / 10 + 1;
-            self.movies.retain(|m| m.vote_count >= cut || m.anilist >= cut.saturating_mul(ANILIST_POR_VOTO));
+            self.movies.retain(|m| m.passa_o_corte(cut));
         }
         cut
     }
@@ -216,6 +221,12 @@ struct Movie {
     /// AniList popularity, which only the vote cut reads.
     #[serde(skip)]
     anilist: u32,
+}
+
+impl Movie {
+    fn passa_o_corte(&self, cut: u32) -> bool {
+        self.vote_count >= cut || self.anilist >= cut.saturating_mul(ANILIST_POR_VOTO)
+    }
 }
 
 fn tipo_filme() -> &'static str {
@@ -504,6 +515,7 @@ pub fn build_incremental(
         trending: trending.into_iter().map(ObraId::filme).collect(),
         providers: by_name(providers).into_iter().filter(|p| em_uso.contains(&p.id)).collect(),
         movies,
+        min_votes: MIN_VOTES,
     })
 }
 
@@ -575,6 +587,7 @@ pub fn build_series(fetch: &impl Fetch, config: &Config) -> Result<Artifact, Str
         trending: trending.into_iter().map(ObraId::serie).collect(),
         providers: by_name(providers),
         movies,
+        min_votes: MIN_VOTES,
     })
 }
 
@@ -585,12 +598,11 @@ pub fn build_animes(fetch: &impl Fetch, config: &Config) -> Result<Artifact, Str
         get::<Page>(fetch, "/trending/tv/week?language=pt-BR")?.results.into_iter().map(|m| m.id).collect();
     let mut ids: BTreeSet<u32> = trending.iter().copied().collect();
     ids.extend(ANIMES_MANUAIS);
-    ids.extend(config.anilist.obras.iter().filter(|(_, o)| o.popularidade >= ANILIST_POPULAR).map(|(&id, _)| id));
+    ids.extend(config.anilist.obras.iter().filter(|(_, o)| o.popularidade >= ANILIST_MIN).map(|(&id, _)| id));
     let this_year: u32 = config.today.get(..4).and_then(|y| y.parse().ok()).ok_or("bad today date")?;
     for year in FIRST_YEAR..=this_year {
-        ids.extend(discover_animacao(fetch, MIN_VOTES, &format!("{year}-01-01"), &format!("{year}-12-31"))?);
+        ids.extend(discover_animacao(fetch, MIN_VOTES_ANIME, &format!("{year}-01-01"), &format!("{year}-12-31"))?);
     }
-    ids.extend(discover_animacao(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
     let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
         details(fetch, &ids.into_iter().collect::<Vec<_>>(), serie_request, |body| {
@@ -598,6 +610,8 @@ pub fn build_animes(fetch: &impl Fetch, config: &Config) -> Result<Artifact, Str
         })?
         .into_iter()
         .unzip();
+    // Trending lists what has no votes yet.
+    movies.retain(|m| m.passa_o_corte(MIN_VOTES_ANIME));
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
     Ok(Artifact {
         format_version: cinelens_core::CATALOG_FORMAT_VERSION,
@@ -606,6 +620,7 @@ pub fn build_animes(fetch: &impl Fetch, config: &Config) -> Result<Artifact, Str
         trending: trending.into_iter().map(ObraId::anime).collect(),
         providers: by_name(providers),
         movies,
+        min_votes: MIN_VOTES_ANIME,
     })
 }
 
