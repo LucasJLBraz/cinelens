@@ -1,6 +1,6 @@
 # Guia: chave do TMDB e primeiro catálogo
 
-O catálogo de filmes (títulos em português, gêneros, elenco, trailers, pôsteres) vem do TMDB. Um job diário do GitHub Actions monta o catálogo com a chave do dono e publica como arquivo de release; o app só baixa esse arquivo. **A chave nunca vai para dentro do app.**
+O catálogo de filmes e séries (títulos em português, gêneros, elenco, trailers, pôsteres) vem do TMDB. Um job diário do GitHub Actions monta o catálogo com a chave do dono e publica como arquivo de release; o app só baixa esse arquivo. **A chave nunca vai para dentro do app.**
 
 Faça isto uma vez, antes de abrir o app pela primeira vez.
 
