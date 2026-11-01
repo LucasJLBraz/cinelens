@@ -991,7 +991,7 @@
     const pontuacoesEl = document.getElementById('pontuacoes');
     function showPontuacoes(m) {
       const pontuacoes = [
-        ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · ${Math.round(m.confianca * 100)}%`],
+        ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · Confiança ${Math.round(m.confianca * 100)}%`],
         ['sem-nota', 'Previsão sem sua nota', m.prevista_sem_a_nota != null && `★ ${decimal(m.prevista_sem_a_nota)} (${decimal(Math.round(m.prevista_sem_a_nota * 2) / 2)}) · ${m.faixa}`],
         ['publico', 'Público', m.publico != null && `★ ${decimal(m.publico)}`],
         ['critica', 'Crítica', m.critica != null && `${m.critica}/100`],

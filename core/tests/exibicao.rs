@@ -32,11 +32,12 @@ fn faixa_is_the_default_with_bands_from_the_owners_own_predictions() {
             _ => None,
         })
         .collect();
-    // Of eight predictions, highest first: the top 10% is one movie, then up to 35%, 70%, rest.
+    // Of eight predictions, highest first: the top 10% is one movie, then up to 35%, 70%, rest. The
+    // fourth, at 4.4, would be Arriscado by position, but from 4.0 the faixa is at worst Boa chance.
     use Faixa::*;
     assert_eq!(
         faixas,
-        [ApostaForte, BoaChance, BoaChance, Arriscado, Arriscado, Arriscado, ProvavelmenteNao, ProvavelmenteNao]
+        [ApostaForte, BoaChance, BoaChance, BoaChance, Arriscado, Arriscado, ProvavelmenteNao, ProvavelmenteNao]
     );
 }
 
