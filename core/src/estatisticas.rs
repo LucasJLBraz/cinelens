@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry};
+use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry, Reacao};
 
 /// Movies in each of Perfil's lists.
 const LISTA: usize = 10;
@@ -67,6 +67,8 @@ pub struct Mudanca {
 pub struct MinhaNota {
     pub card: MovieCard,
     pub nota: f32,
+    /// The Reação it was given as; `None` for stars.
+    pub reacao: Option<Reacao>,
     /// When the current nota was given, Unix seconds.
     pub at: i64,
 }
@@ -174,7 +176,7 @@ impl Core {
             .filter(|(_, e)| is_valid_nota(e.nota))
             .collect();
         notas.sort_by_key(|&(_, e)| std::cmp::Reverse(e.at));
-        notas.into_iter().map(|(i, e)| MinhaNota { card: self.card(i), nota: e.nota, at: e.at }).collect()
+        notas.into_iter().map(|(i, e)| MinhaNota { card: self.card(i), nota: e.nota, reacao: e.reacao, at: e.at }).collect()
     }
 
     /// The `LISTA` movies whose two notas are furthest apart, furthest first; ties keep the

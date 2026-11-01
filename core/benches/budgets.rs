@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use cinelens_core::ObraId;
-use cinelens_core::{Core, Filtro};
+use cinelens_core::{Core, Filtro, Reacao};
 
 /// Realistic catálogo size for v1 (feature films above a vote threshold).
 const CATALOG_SIZE: usize = 60_000;
@@ -35,6 +35,17 @@ fn main() {
     failed |= !budget("nota: fold-in and ranking", Duration::from_millis(200), || {
         at += 1;
         core.rate(ObraId::filme(12_345), 4.0, at).unwrap();
+        assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
+    });
+
+    for id in 0..30 {
+        core.rate(ObraId::serie(id * 97), 4.0, 1).unwrap();
+    }
+    failed |= !budget("nota on a série: fold-in and ranking", Duration::from_millis(200), || {
+        at += 1;
+        core.reagir(ObraId::serie(1_234), Reacao::Gostei, at).unwrap();
+        // The page the shell returns folds in again, without this nota.
+        assert!(core.movie(ObraId::serie(1_234)).unwrap().prevista_sem_a_nota.is_some());
         assert!(core.explorar(&Filtro::default(), 0).movies[0].nota_prevista.is_some());
     });
 

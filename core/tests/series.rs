@@ -105,7 +105,7 @@ fn invalid_saved_series_leave_the_filmes() {
 }
 
 mod previsoes {
-    use cinelens_core::{Core, Faixa, Filtro, Marca, ObraId, Tipo};
+    use cinelens_core::{Core, Faixa, Filtro, Marca, Mostrar, ObraId, Reacao, Tipo};
 
     /// Filmes 1 (sci-fi by 900) and 4 (drama by 901) are in the model. Séries: 1 is sci-fi by
     /// creator 900, 2 drama by creator 901, 3 shares nothing with the model, 4 sci-fi with an
@@ -247,6 +247,146 @@ mod previsoes {
         assert!(core.inicio(at, 0).fileiras.iter().flat_map(|f| &f.movies).all(|m| !m.id.is_serie()));
         assert!(core.notificacao_devida(at).is_none_or(|n| !n.id.is_serie()));
         assert!(core.rodada(10).iter().all(|m| !m.id.is_serie()));
+    }
+
+    fn fold_in_com(notas: &[(ObraId, f32)]) -> Core {
+        let mut core = with_series();
+        for (i, &(id, nota)) in notas.iter().enumerate() {
+            core.rate(id, nota, 200 + i as i64).unwrap();
+        }
+        core
+    }
+
+    #[test]
+    fn a_reacao_counts_as_its_fixed_nota() {
+        for (reacao, nota) in [(Reacao::NaoGostei, 2.5), (Reacao::Gostei, 4.0), (Reacao::Amei, 5.0)] {
+            let mut core = with_series();
+            core.reagir(ObraId::serie(1), reacao, 200).unwrap();
+            let page = core.movie(ObraId::serie(1)).unwrap();
+            assert_eq!(page.nota, Some(nota));
+            assert_eq!(page.reacao, Some(reacao));
+        }
+    }
+
+    #[test]
+    fn a_reacao_and_the_same_stars_weigh_the_same() {
+        let mut reagiu = with_series();
+        reagiu.reagir(ObraId::serie(1), Reacao::Gostei, 200).unwrap();
+        let estrelas = fold_in_com(&[(ObraId::serie(1), 4.0)]);
+        assert_eq!(prevista(&reagiu, ObraId::serie(2)), prevista(&estrelas, ObraId::serie(2)));
+    }
+
+    #[test]
+    fn a_nota_on_a_serie_improves_predictions_for_series() {
+        let before = prevista(&with_series(), ObraId::serie(4)).unwrap();
+        let after = prevista(&fold_in_com(&[(ObraId::serie(1), 5.0)]), ObraId::serie(4)).unwrap();
+        assert!(after > before, "{after} vs {before}");
+    }
+
+    #[test]
+    fn a_nota_on_a_serie_weighs_more_than_one_on_a_filme() {
+        // Filme 1 and série 1 look the same to the model, so at equal weight 1.0 and 5.0 would
+        // cancel out at 3.0 for a third obra that looks the same too.
+        let filmes = r#"{"format_version": 1, "data_version": "f", "movies": [
+            {"tmdb_id": 1, "title": "F", "original_title": "F", "year": 2000, "poster_path": null}
+        ]}"#;
+        let series = r#"{"format_version": 1, "data_version": "s", "movies": [
+            {"tmdb_id": 2147483649, "title": "S1", "original_title": "S1", "year": 2020, "poster_path": null, "genre_ids": [1]},
+            {"tmdb_id": 2147483650, "title": "S2", "original_title": "S2", "year": 2020, "poster_path": null, "genre_ids": [1]}
+        ]}"#;
+        let model = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+            "movies": [{"tmdb_id": 1, "bias": 0.0, "factors": [1.0], "ratings": 50000}],
+            "content": [{"feature": "g1", "bias": 0.0, "factors": [1.0]}]
+        }"#;
+        let mut core = Core::default();
+        core.load_saved(Some(filmes.as_bytes()), Some(series.as_bytes()), Some(model.as_bytes()));
+        core.rate(ObraId::filme(1), 1.0, 100).unwrap();
+        core.rate(ObraId::serie(1), 5.0, 100).unwrap();
+        let p = prevista(&core, ObraId::serie(2)).unwrap();
+        assert!(p > 3.5, "{p}");
+    }
+
+    #[test]
+    fn a_nota_on_a_serie_outside_the_catalogo_teaches_nothing() {
+        let before = prevista(&with_series(), ObraId::serie(1));
+        let core = fold_in_com(&[(ObraId::serie(999), 0.5)]);
+        assert_eq!(prevista(&core, ObraId::serie(1)), before);
+    }
+
+    #[test]
+    fn a_rated_serie_is_predicted_without_its_own_nota() {
+        let sem = prevista(&with_series(), ObraId::serie(1)).unwrap();
+        let core = fold_in_com(&[(ObraId::serie(1), 0.5)]);
+        assert_eq!(core.movie(ObraId::serie(1)).unwrap().prevista_sem_a_nota, Some(sem));
+    }
+
+    #[test]
+    fn changing_a_reacao_keeps_the_previous_in_history() {
+        let mut core = with_series();
+        core.reagir(ObraId::serie(1), Reacao::Amei, 200).unwrap();
+        core.reagir(ObraId::serie(1), Reacao::NaoGostei, 300).unwrap();
+        let page = core.movie(ObraId::serie(1)).unwrap();
+        let history: Vec<_> = page.history.iter().map(|e| (e.nota, e.reacao, e.at)).collect();
+        assert_eq!(history, [(5.0, Some(Reacao::Amei), 200), (2.5, Some(Reacao::NaoGostei), 300)]);
+        assert_eq!(page.reacao, Some(Reacao::NaoGostei));
+    }
+
+    #[test]
+    fn minhas_notas_shows_the_answer_as_given() {
+        let mut core = with_series();
+        core.reagir(ObraId::serie(1), Reacao::Gostei, 200).unwrap();
+        core.rate(ObraId::serie(2), 3.5, 300).unwrap();
+        let notas = core.minhas_notas();
+        let dada = |id| notas.iter().find(|n| n.card.id == id).map(|n| (n.nota, n.reacao)).unwrap();
+        assert_eq!(dada(ObraId::serie(1)), (4.0, Some(Reacao::Gostei)));
+        assert_eq!(dada(ObraId::serie(2)), (3.5, None));
+    }
+
+    #[test]
+    fn stars_after_a_reacao_are_shown_as_stars() {
+        let mut core = with_series();
+        core.reagir(ObraId::serie(1), Reacao::Gostei, 200).unwrap();
+        core.rate(ObraId::serie(1), 4.0, 300).unwrap();
+        assert_eq!(core.movie(ObraId::serie(1)).unwrap().reacao, None);
+    }
+
+    #[test]
+    fn a_reacao_reveals_the_prediction_it_was_hidden_behind() {
+        let mut core = with_series();
+        let antes = core.movie(ObraId::serie(1)).unwrap().card;
+        let revealed = core.reagir(ObraId::serie(1), Reacao::Gostei, 200).unwrap();
+        assert_eq!(revealed, antes.exibicao);
+        let page = core.movie(ObraId::serie(1)).unwrap();
+        assert_eq!(page.card.nota_prevista, None);
+        assert_eq!(page.history[0].prevista, antes.nota_prevista);
+    }
+
+    #[test]
+    fn a_filme_has_half_star_notas_only() {
+        let mut core = with_series();
+        assert!(core.reagir(ObraId::filme(7), Reacao::Gostei, 200).is_err());
+        assert_eq!(core.movie(ObraId::filme(7)).unwrap().nota, None);
+    }
+
+    #[test]
+    fn ja_vi_takes_a_serie_out_of_recomendacoes_and_teaches_nothing() {
+        let mut core = with_series();
+        let filtro = Filtro { tipo: Some(Tipo::Serie), ja_vi: Mostrar::Esconder, ..Default::default() };
+        let before = prevista(&core, ObraId::serie(2));
+        assert!(core.explorar(&filtro, 0).movies.iter().any(|m| m.id == ObraId::serie(1)));
+        core.marcar(ObraId::serie(1), Marca::JaVi, true, 200);
+        assert!(core.movie(ObraId::serie(1)).unwrap().ja_vi);
+        assert!(!core.explorar(&filtro, 0).movies.iter().any(|m| m.id == ObraId::serie(1)));
+        assert_eq!(prevista(&core, ObraId::serie(2)), before);
+    }
+
+    #[test]
+    fn a_reacao_survives_saving_and_sync_data() {
+        let mut core = with_series();
+        core.reagir(ObraId::serie(1), Reacao::Amei, 200).unwrap();
+        let mut outro = with_series();
+        outro.load_owner_data(&core.owner_data()).unwrap();
+        assert_eq!(outro.movie(ObraId::serie(1)).unwrap().reacao, Some(Reacao::Amei));
     }
 
     #[test]

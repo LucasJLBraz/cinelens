@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
+use cinelens_core::{Aspecto, Core, Decay, Direcao, DecayStatus, DisplayMode, Estatisticas, Exibicao, ExplorarPage, Filmografia, Filtro, ImportSummary, Inicio, Opcoes, Marca, MinhaNota, MovieCard, MoviePage, ObraId, Provedor, Reacao, Rejeicao, SyncStorage, CATALOG_FORMAT_VERSION, MODEL_FORMAT_VERSION};
 use tauri::http::Response;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -199,6 +199,20 @@ fn rate(
 ) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
     let mut core = core.write().unwrap();
     let revealed = core.rate(tmdb_id, nota, now()).map_err(|e| e.to_string())?;
+    save_owner(&app, &core)?;
+    Ok((core.movie(tmdb_id), revealed))
+}
+
+/// `rate`, with a Reação on a série.
+#[tauri::command]
+fn reagir(
+    app: AppHandle,
+    core: tauri::State<RwLock<Core>>,
+    tmdb_id: ObraId,
+    reacao: Reacao,
+) -> Result<(Option<MoviePage>, Option<Exibicao>), String> {
+    let mut core = core.write().unwrap();
+    let revealed = core.reagir(tmdb_id, reacao, now()).map_err(|e| e.to_string())?;
     save_owner(&app, &core)?;
     Ok((core.movie(tmdb_id), revealed))
 }
@@ -665,6 +679,7 @@ pub fn run() {
             import_movielens,
             movie,
             rate,
+            reagir,
             marcar,
             pessoa,
             set_fa,

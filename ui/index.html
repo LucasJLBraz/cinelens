@@ -350,6 +350,12 @@
       </details>
     </div>
     <div id="painel-nota" hidden>
+      <div id="reacoes" class="chips">
+        <button class="chip" data-reacao="NaoGostei">Não gostei</button>
+        <button class="chip" data-reacao="Gostei">Gostei</button>
+        <button class="chip" data-reacao="Amei">Amei</button>
+      </div>
+      <button id="usar-estrelas" class="link">Dar estrelas</button>
       <div id="notas"></div>
       <p id="revelacao" hidden></p>
       <div id="pesou" hidden>
@@ -693,7 +699,14 @@
     const explorarEl = document.getElementById('explorar');
     const filmeEl = document.getElementById('filme');
     const notasEl = document.getElementById('notas');
+    const reacoesEl = document.getElementById('reacoes');
+    const usarEstrelasEl = document.getElementById('usar-estrelas');
     const fmt = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1 });
+    // A série's id has the high bit set (ADR 0003).
+    const ehSerie = id => id >= 2 ** 31;
+    const REACOES = { NaoGostei: 'Não gostei', Gostei: 'Gostei', Amei: 'Amei' };
+    // A nota as the owner gave it.
+    const notaDada = e => e.reacao ? REACOES[e.reacao] : `${fmt(e.nota)}★`;
     function botoesNota(el) {
       for (let n = 0.5; n <= 5; n += 0.5) {
         const b = document.createElement('button');
@@ -836,7 +849,7 @@
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
       document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
-      document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : '';
+      document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${notaDada(m)}` : '';
       const remover = document.getElementById('remover-nota');
       remover.hidden = m.nota == null;
       remover.textContent = 'Remover nota';
@@ -859,11 +872,17 @@
       }
       const marcas = { QueroAssistir: m.quero_assistir, JaVi: m.ja_vi, NaoMeInteressa: m.nao_me_interessa };
       for (const b of filmeEl.querySelectorAll('[data-marca]')) b.classList.toggle('on', marcas[b.dataset.marca]);
-      for (const b of notasEl.children) b.classList.toggle('on', Number(b.dataset.nota) === m.nota);
+      for (const b of notasEl.children) b.classList.toggle('on', !m.reacao && Number(b.dataset.nota) === m.nota);
+      // On a série the reactions come first, the stars on request or when its nota is in stars.
+      const serie = ehSerie(m.tmdb_id);
+      reacoesEl.hidden = !serie;
+      for (const b of reacoesEl.children) b.classList.toggle('on', b.dataset.reacao === m.reacao);
+      notasEl.hidden = serie && (m.nota == null || m.reacao != null);
+      usarEstrelasEl.hidden = !notasEl.hidden;
       // MovieLens's prediction stays hidden so it never anchors the nota.
       document.getElementById('nota-history').replaceChildren(...[...m.history].reverse().map((e, i) => {
         const li = document.createElement('li');
-        li.textContent = `${i ? 'Antes' : 'Atual'}: ${fmt(e.nota)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
+        li.textContent = `${i ? 'Antes' : 'Atual'}: ${notaDada(e)} em ${new Date(e.at * 1000).toLocaleDateString('pt-BR')}`;
         return li;
       }));
       document.getElementById('sinopse-secao').hidden = !m.sinopse;
@@ -1032,7 +1051,7 @@
         info.append(
           Object.assign(document.createElement('div'), { className: 'title', textContent: n.card.title }),
           Object.assign(document.createElement('div'), { className: 'original', textContent: new Date(n.at * 1000).toLocaleDateString('pt-BR') }));
-        b.append(posterOf(n.card), info, Object.assign(document.createElement('span'), { className: 'nota', textContent: `${fmt(n.nota)} ★` }));
+        b.append(posterOf(n.card), info, Object.assign(document.createElement('span'), { className: 'nota', textContent: notaDada(n) }));
         li.append(b);
         return li;
       }));
@@ -1331,10 +1350,21 @@
       if (m) showMovie(m);
     }));
 
-    notasEl.addEventListener('click', async e => {
+    usarEstrelasEl.addEventListener('click', () => {
+      notasEl.hidden = false;
+      usarEstrelasEl.hidden = true;
+    });
+    notasEl.addEventListener('click', e => {
       const nota = Number(e.target.dataset.nota);
-      if (!nota) return;
-      const [m, revealed] = await invoke('rate', { tmdbId: Number(filmeEl.dataset.id), nota });
+      if (nota) darNota('rate', { nota });
+    });
+    reacoesEl.addEventListener('click', e => {
+      const reacao = e.target.dataset.reacao;
+      if (reacao) darNota('reagir', { reacao });
+    });
+    async function darNota(comando, resposta) {
+      const tmdbId = Number(filmeEl.dataset.id);
+      const [m, revealed] = await invoke(comando, { tmdbId, ...resposta });
       stale = true;
       if (m) showMovie(m);
       filmeEl.classList.remove('dando-nota');
@@ -1342,8 +1372,8 @@
       revelacao.hidden = !revealed;
       if (revealed) revelacao.textContent = `O app achava: ${revealed.faixa}`;
       // Asked only once the nota is given, so it never slows the rating down.
-      pesouEl.hidden = await invoke('pesou_oculto');
-    });
+      pesouEl.hidden = ehSerie(tmdbId) || await invoke('pesou_oculto');
+    }
 
     const importFiles = document.getElementById('import-files');
     // Where the import's outcome is shown: Perfil's line or the boas-vindas'.

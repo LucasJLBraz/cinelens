@@ -77,6 +77,7 @@ pub(crate) fn read(files: &[&str]) -> Result<Export, Error> {
                 at,
                 movielens_pred: log.pred,
                 prevista: None,
+                reacao: None,
             });
         }
     }
@@ -96,7 +97,7 @@ pub(crate) fn read(files: &[&str]) -> Result<Export, Error> {
         if entries.last().map(|e| e.nota) != Some(nota) {
             // The logs should always end on the current nota; if not, date it at the export's
             // last log line rather than dropping it.
-            entries.push(NotaEntry { nota, at: last_logged, movielens_pred: None, prevista: None });
+            entries.push(NotaEntry { nota, at: last_logged, movielens_pred: None, prevista: None, reacao: None });
         }
         notas.push(ImportedNota { tmdb_id: tmdb_id.parse().ok(), history: entries });
     }

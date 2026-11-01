@@ -72,6 +72,7 @@ pub enum Error {
     InvalidModel(String),
     InvalidImport(String),
     InvalidNota(f32),
+    ReacaoEmFilme,
     InvalidOwnerData(String),
     Sync(String),
 }
@@ -83,6 +84,7 @@ impl std::fmt::Display for Error {
             Error::InvalidModel(msg) => write!(f, "invalid model artifact: {msg}"),
             Error::InvalidImport(msg) => write!(f, "invalid MovieLens export: {msg}"),
             Error::InvalidNota(nota) => write!(f, "nota {nota} is not 0.5–5 in half stars"),
+            Error::ReacaoEmFilme => write!(f, "a reação is only for séries"),
             Error::InvalidOwnerData(msg) => write!(f, "invalid owner data: {msg}"),
             Error::Sync(msg) => write!(f, "sync: {msg}"),
         }
@@ -293,6 +295,28 @@ pub struct NotaEntry {
     /// The nota prevista when the nota was given in the app, revealed right after it.
     #[serde(default)]
     pub prevista: Option<f32>,
+    /// The Reação it was given as; `None` for stars.
+    #[serde(default)]
+    pub reacao: Option<Reacao>,
+}
+
+/// A quick verdict on a whole série; it counts as a fixed nota.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Reacao {
+    NaoGostei,
+    Gostei,
+    Amei,
+}
+
+impl Reacao {
+    /// The owner's average notas on filmes in the groups ≤3, 3.5–4 and 4.5–5, in half stars.
+    fn nota(self) -> f32 {
+        match self {
+            Reacao::NaoGostei => 2.5,
+            Reacao::Gostei => 4.0,
+            Reacao::Amei => 5.0,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -428,6 +452,8 @@ pub struct MoviePage {
     /// People who liked this movie also liked these, most alike first.
     pub parecidos: Vec<MovieCard>,
     pub nota: Option<f32>,
+    /// The Reação the current nota was given as; `None` for stars.
+    pub reacao: Option<Reacao>,
     pub history: Vec<NotaEntry>,
     pub quero_assistir: bool,
     pub ja_vi: bool,
@@ -748,8 +774,7 @@ impl Core {
         let notas = self.notas_de_filmes();
         self.half_life_days = self.half_life(self.model.as_ref(), &notas);
         self.profile = self.model.as_ref().map(|m| m.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days));
-        // Notas on séries do not teach yet, so with only filmes behind it the two are the same.
-        self.profile_series = self.profile.clone();
+        self.profile_series = self.model.as_ref().map(|m| self.fold_in_series(m, &self.owner.notas));
         self.previstas = match (&self.model, &self.profile, &self.profile_series) {
             (Some(model), Some(filmes), Some(series)) => {
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
@@ -787,6 +812,12 @@ impl Core {
     /// included: a nota on a série never changes a prediction for a filme.
     fn notas_de_filmes(&self) -> BTreeMap<ObraId, Vec<NotaEntry>> {
         self.owner.notas.iter().filter(|(id, _)| !id.is_serie()).map(|(&id, h)| (id, h.clone())).collect()
+    }
+
+    /// What predicts séries: notas on filmes and, through their content, notas on séries.
+    fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>) -> recommender::Profile {
+        let item = |id: ObraId| self.items.get(*self.index.get(&id)?)?.as_ref();
+        model.profile_series(notas, &self.owner.nao_me_interessa, self.half_life_days, item)
     }
 
     /// What the Faixa of obra `i` is relative to: its own type's predictions.
@@ -1122,13 +1153,25 @@ impl Core {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
+        Ok(self.dar_nota(id, nota, None, at))
+    }
+
+    /// Gives or changes the owner's nota on a série as a Reação; otherwise as `rate`.
+    pub fn reagir(&mut self, id: ObraId, reacao: Reacao, at: i64) -> Result<Option<Exibicao>, Error> {
+        if !id.is_serie() {
+            return Err(Error::ReacaoEmFilme);
+        }
+        Ok(self.dar_nota(id, reacao.nota(), Some(reacao), at))
+    }
+
+    fn dar_nota(&mut self, id: ObraId, nota: f32, reacao: Option<Reacao>, at: i64) -> Option<Exibicao> {
         // Given after a removal even if this device's clock runs behind.
         let at = self.owner.removida(id).map_or(at, |removida| at.max(removida + 1));
         let card = self.index.get(&id).map(|&i| self.card(i));
         let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
-        self.owner.add_nota(id, NotaEntry { nota, at, movielens_pred: None, prevista });
+        self.owner.add_nota(id, NotaEntry { nota, at, movielens_pred: None, prevista, reacao });
         self.recompute();
-        Ok(revealed)
+        revealed
     }
 
     /// Forgets the movie's nota and its whole history, on every device, as if never given.
@@ -1148,7 +1191,9 @@ impl Core {
             return None;
         }
         if id.is_serie() {
-            return Some(model.predict(self.profile_series.as_ref()?, item));
+            let mut notas = self.owner.notas.clone();
+            notas.remove(&id);
+            return Some(model.predict(&self.fold_in_series(model, &notas), item));
         }
         let mut notas = self.notas_de_filmes();
         notas.remove(&id);
@@ -1182,6 +1227,7 @@ impl Core {
             porque: self.porque(i),
             parecidos: self.parecidos(id, 0),
             nota: history.last().map(|e| e.nota),
+            reacao: history.last().and_then(|e| e.reacao),
             history,
             quero_assistir: self.owner.quero_assistir.contains(&id),
             ja_vi: self.owner.ja_vi.contains(&id),

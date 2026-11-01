@@ -93,6 +93,10 @@ const NEGATIVE_OFFSET: f32 = 1.0;
 // ponytail: fixed offset and weight; tune against held-out notas if dismissals skew the ranking.
 const NEGATIVE_WEIGHT: f32 = 0.25;
 
+/// A nota on a série weighs this many notas on filmes in the séries profile: direct evidence.
+// ponytail: a default; measure it with cinelens-accuracy once there are notas on séries to hold out.
+const SERIE_WEIGHT: f32 = 3.0;
+
 /// What the model knows of a movie: collaborative factors, or ones guessed from its content.
 #[derive(Clone)]
 pub(crate) struct Item {
@@ -215,21 +219,35 @@ impl Model {
     /// weighs half as much for every `half_life_days` it is older than the most recent one.
     /// `negatives` (não me interessa) are weak low notas that leave the owner's mean alone.
     pub fn profile(&self, notas: &Notas, negatives: &BTreeSet<ObraId>, half_life_days: Option<u32>) -> Profile {
-        let current: Vec<(ObraId, &NotaEntry)> = notas.iter().filter_map(|(&id, h)| Some((id, h.last()?))).collect();
+        self.profile_series(notas, negatives, half_life_days, |_| None)
+    }
+
+    /// `profile` for predicting séries: `notas` may also hold séries, each read through what
+    /// `serie` knows of it (its content) and weighing `SERIE_WEIGHT`, the owner's mean included.
+    pub fn profile_series<'a>(
+        &'a self,
+        notas: &Notas,
+        negatives: &BTreeSet<ObraId>,
+        half_life_days: Option<u32>,
+        serie: impl Fn(ObraId) -> Option<&'a Item>,
+    ) -> Profile {
+        // A série outside the catálogo has no content to read it through, so it teaches nothing.
+        let known = notas.iter().filter(|&(&id, _)| !id.is_serie() || serie(id).is_some());
+        let current: Vec<(ObraId, &NotaEntry)> = known.filter_map(|(&id, h)| Some((id, h.last()?))).collect();
         let latest = current.iter().map(|(_, e)| e.at).max().unwrap_or(0);
-        let weight = |e: &NotaEntry| match half_life_days {
-            None => 1.0,
-            Some(days) => 0.5f32.powf((latest - e.at) as f32 / (days as f32 * 86_400.0)),
+        let weight = |id: ObraId, e: &NotaEntry| {
+            let by_type = if id.is_serie() { SERIE_WEIGHT } else { 1.0 };
+            by_type * half_life_days.map_or(1.0, |days| 0.5f32.powf((latest - e.at) as f32 / (days as f32 * 86_400.0)))
         };
-        let total: f32 = current.iter().map(|(_, e)| weight(e)).sum();
+        let total: f32 = current.iter().map(|&(id, e)| weight(id, e)).sum();
         let mean = if current.is_empty() {
             self.global_mean
         } else {
-            current.iter().map(|(_, e)| weight(e) * e.nota).sum::<f32>() / total
+            current.iter().map(|&(id, e)| weight(id, e) * e.nota).sum::<f32>() / total
         };
         let rows = current.iter().filter_map(|(id, e)| {
-            let item = self.movies.get(id)?;
-            Some((item.factors.as_slice(), e.nota - mean - item.bias, weight(e)))
+            let item = if id.is_serie() { serie(*id)? } else { self.movies.get(id)? };
+            Some((item.factors.as_slice(), e.nota - mean - item.bias, weight(*id, e)))
         });
         let negatives = negatives.iter().filter(|id| !notas.contains_key(id)).filter_map(|id| {
             let item = self.movies.get(id)?;
