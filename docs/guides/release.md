@@ -44,7 +44,12 @@ Depois apague `chave.txt` (o `.jks` continua guardado no lugar seguro).
 
 ## 3. Publicar uma versão
 
-Na pasta do repositório, com tudo commitado:
+Nesta ordem. Cada passo depende do anterior:
+
+1. **Merge e push da `main`.** Antes, rode `cargo bench -p cinelens-core` e confira que ele saiu com código 0: um `grep` na saída esconde um panic.
+2. **Dados novos, se a versão trouxer algum.** Rode o workflow **Catalog** e espere terminar. Depois rode **Anime model** ou **Model**: o de animes baixa `animes.json.gz`, que só o Catalog publica.
+3. **CI verde na `main`.** Espere o workflow **CI** do último commit. A release roda o mesmo CI e para se ele falhar.
+4. **Tag:**
 
 ```bash
 git tag v0.1.0
@@ -55,6 +60,18 @@ git push origin v0.1.0
 ```
 
 O GitHub Actions (aba **Actions**, workflow **Release**) compila o APK, assina com a chave e cria a release `v0.1.0` com o arquivo `cinelens-0.1.0.apk`. Leva cerca de 15 minutos. Cada nova versão usa um número maior (`v0.1.1`, `v0.2.0`...).
+
+Se a release falhar, corrija e publique o próximo patch (`v0.1.1`). A tag que falhou fica sem release: tags publicadas não se movem.
+
+5. **Medir no celular:** instale por cima da versão anterior e rode o script abaixo, antes e depois de atualizar, para comparar o Perfil.
+
+```bash
+scripts/device-speed.py SERIAL "Frieren e a Jornada para o Além"
+```
+
+`SERIAL` vem de `adb devices`, e o título é o de um anime na primeira tela de Explorar. Depois de uma atualização, abra o app uma vez e espere os downloads: a ordem e as previsões de animes mudam quando o modelo deles chega. O script só toca em rótulos de navegação e para se não achar o rótulo na tela, então pode rodar na conta real. Dar nota, medir o tempo depois de uma nota e testar marcas exige uma conta de teste.
+
+O bench não prevê o celular: no S20 FE, na v3, a busca com erro de digitação levou 1,7 vez o tempo do bench, e voltar o filtro para Tudo, cerca de 1,9 vez. Passar no bench não basta: compare no aparelho.
 
 ## 4. Instalar e atualizar pelo Obtainium
 

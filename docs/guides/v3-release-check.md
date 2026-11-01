@@ -33,18 +33,7 @@ Use este roteiro para fechar a v3. A meta é a mesma das anteriores: com animes 
 
 ## 3) Publicar, nesta ordem
 
-1. Fazer o merge de `feat/series-catalogo` na `main` e o push da `main`.
-2. Rodar o workflow **Anime model** e conferir a release `anime-model-v1`.
-3. Rodar o workflow **Catalog** na `main` e conferir `animes.json.gz` na release **Catálogo (formato 1)**. Ele precisa ter até 25% do tamanho do catálogo, e as temporadas precisam ter `estreia`: sem ela, a fileira Próxima temporada fica vazia.
-4. Publicar a versão, conforme [release.md](release.md), passo 3:
-
-```bash
-git tag v3.0.1
-```
-
-```bash
-git push origin v3.0.1
-```
+A ordem está em [release.md](release.md), passo 3. Na v3, o Anime model foi rodado antes do Catalog e falhou, porque depende do `animes.json.gz`. O arquivo precisa ter até 25% do tamanho do catálogo, e as temporadas precisam ter `estreia`: sem ela, a fileira Próxima temporada fica vazia.
 
 - [x] Merge e push da `main`.
 - [x] `anime-model-v1` publicado: 986 KB.
