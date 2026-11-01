@@ -68,7 +68,7 @@ Medir no aparelho real, com a versão publicada e os animes já baixados. O rote
 
 Medido em 2026-11-01 na `v3.0.1`, no S20 FE, sem crash, com o método da v2: do fim do toque no log do sistema ao primeiro quadro do app no SurfaceFlinger, e vídeo para a abertura do zero. A v2 não mediu a busca. Nota não medida: o aparelho usa a conta real do dono.
 
-- [ ] Medidas fora da meta aceitas pelo dono.
+- [x] Medidas fora da meta aceitas pelo dono em 2026-11-01.
 
 ## 5) Atribuição
 
