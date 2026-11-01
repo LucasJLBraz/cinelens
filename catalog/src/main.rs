@@ -1,4 +1,4 @@
-//! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE]`
+//! `cinelens-catalog --out catalog.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD [--extra-ids FILE] [--omdb-cache FILE] [--previous FILE]`
 //! `cinelens-catalog --series-up-to BYTES [--data-version VERSION] --out series.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
 //!
 //! `cinelens-catalog --animes-up-to BYTES --out animes.json.gz --today YYYY-MM-DD --recent-since YYYY-MM-DD`
@@ -9,13 +9,15 @@
 //! Reads the TMDB API Read Access Token from `TMDB_TOKEN` and the OMDb key from `OMDB_KEY`
 //! (without it, no critics' scores are fetched). `--extra-ids` is a file with one TMDB id per
 //! line (the training data); blank and non-numeric lines are ignored. `--omdb-cache` is a JSON
-//! file of what OMDb said in earlier runs, read if it exists and written back.
+//! file of what OMDb said in earlier runs, read if it exists and written back. `--previous` is the
+//! `catalog.json.gz` last published, whose details the filmes reuse; without a usable one, every
+//! filme is fetched.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::time::Duration;
 
-use cinelens_catalog::{build, build_animes, build_series, AniList, Artifact, Config, ANILIST_POPULAR};
+use cinelens_catalog::{build_animes, build_series, build_sobre, AniList, Anterior, Artifact, Config, ANILIST_POPULAR};
 use serde_json::Value;
 
 const API: &str = "https://api.themoviedb.org/3";
@@ -114,12 +116,26 @@ fn run() -> Result<(), String> {
     if let Some(max) = animes_up_to {
         return up_to("Animes", build_animes(&fetch, &config)?, max);
     }
-    let artifact = build(&fetch, &omdb, &mut critica, &config)?;
+    let anterior = arg("--previous").and_then(|path| match read_anterior(path) {
+        Ok(anterior) => Some(anterior),
+        Err(e) => {
+            eprintln!("::warning::{path}: {e}; every filme is fetched");
+            None
+        }
+    });
+    let artifact = build_sobre(&fetch, &omdb, &mut critica, &config, anterior)?;
     if let Some(path) = cache_path {
         std::fs::write(path, serde_json::to_vec(&critica).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
     }
     let json = serde_json::to_vec(&artifact).map_err(|e| e.to_string())?;
     std::fs::write(out, gz(&json)?).map_err(|e| format!("{out}: {e}"))
+}
+
+fn read_anterior(path: &str) -> Result<Anterior, String> {
+    let gz = std::fs::read(path).map_err(|e| e.to_string())?;
+    let mut json = Vec::new();
+    flate2::read::GzDecoder::new(gz.as_slice()).read_to_end(&mut json).map_err(|e| e.to_string())?;
+    Anterior::new(&json)
 }
 
 /// AniList id → popularity, of the most popular down to `ANILIST_POPULAR`: what is below it brings

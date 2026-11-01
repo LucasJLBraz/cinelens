@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use cinelens_catalog::{build, Config, Critica};
+use cinelens_catalog::{build, build_sobre, Anterior, Config, Critica};
 use cinelens_core::ObraId;
 use cinelens_core::{Core, Filtro};
 use serde_json::{json, Value};
@@ -214,4 +214,88 @@ fn core_reads_the_critic_scores() {
     let filtro = Filtro { critica_min: Some(70), ..Default::default() };
     let ids: Vec<u32> = core.explorar(&filtro, 0).movies.iter().map(|m| m.id.tmdb_id()).collect();
     assert_eq!(ids, [13, 603]);
+}
+
+/// Builds on `anterior` with TMDB saying `mudaram` changed; returns the artifact and the filmes fetched.
+fn build_seguinte(anterior: &[u8], today: &'static str, mudaram: Value) -> (Value, Vec<u32>) {
+    let pedidos = Mutex::new(Vec::new());
+    let tmdb = |request: &str| {
+        if request.starts_with("/movie/changes") {
+            return Ok(Some(json!({"page": 1, "total_pages": 1, "results": mudaram})));
+        }
+        if let Some(id) = request.strip_prefix("/movie/").and_then(|r| r.split('?').next()).and_then(|id| id.parse::<u32>().ok()) {
+            pedidos.lock().unwrap().push(id);
+        }
+        fixture_tmdb(request)
+    };
+    let config = Config { today, ..config(0) };
+    let anterior = Anterior::new(anterior).unwrap();
+    let artifact = build_sobre(&tmdb, &no_omdb, &mut BTreeMap::new(), &config, Some(anterior)).unwrap();
+    let mut pedidos = pedidos.into_inner().unwrap();
+    pedidos.sort();
+    (serde_json::to_value(artifact).unwrap(), pedidos)
+}
+
+#[test]
+fn a_build_fetches_only_what_changed_is_new_or_is_due() {
+    // Fetched: 603 changed, 550 is due on this day, and 999999 is not in the last build.
+    let (artifact, pedidos) = build_seguinte(&fixture_artifact(), "2026-10-26", json!([{"id": 603, "adult": false}]));
+    assert_eq!(pedidos, [550, 603, 999999]);
+
+    // Nothing else tells it apart from a build that fetched everything.
+    let mut completo: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
+    completo["data_version"] = json!("2026-10-26");
+    assert_eq!(artifact, completo);
+}
+
+#[test]
+fn every_filme_is_fetched_at_least_once_in_seven_daily_builds() {
+    let mut anterior = fixture_artifact();
+    let mut pedidos = Vec::new();
+    for today in ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01"] {
+        let (artifact, dia) = build_seguinte(&anterior, today, json!([]));
+        anterior = serde_json::to_vec(&artifact).unwrap();
+        pedidos.extend(dia);
+    }
+    for id in [13, 550, 603, 1311] {
+        assert_eq!(pedidos.iter().filter(|&&p| p == id).count(), 1, "{id}");
+    }
+}
+
+#[test]
+fn a_skipped_day_fetches_what_was_due_on_it_too() {
+    // From a build on the 25th, the 27th owes what the 26th owed.
+    let (_, um_dia) = build_seguinte(&fixture_artifact(), "2026-10-26", json!([]));
+    let (_, dois_dias) = build_seguinte(&fixture_artifact(), "2026-10-27", json!([]));
+    assert!(um_dia.iter().all(|id| dois_dias.contains(id)));
+}
+
+#[test]
+fn a_last_build_a_week_old_or_more_fetches_every_filme() {
+    let (_, pedidos) = build_seguinte(&fixture_artifact(), "2026-11-01", json!([]));
+    assert_eq!(pedidos, [13, 550, 603, 1311, 999999]);
+}
+
+#[test]
+fn a_filme_gone_from_discover_leaves_with_its_provider() {
+    let config = Config { extra_ids: &[], ..config(0) };
+    let mut anterior: Value = serde_json::from_slice(&fixture_artifact()).unwrap();
+    anterior["movies"].as_array_mut().unwrap().push(json!({
+        "tmdb_id": 77, "title": "Saiu", "original_title": "Gone", "year": null, "release_date": null, "runtime": null,
+        "genre_ids": [], "original_language": "en", "countries": [], "overview": "", "poster_path": null, "backdrop_path": null,
+        "imdb_id": null, "vote_count": 1, "vote_average": 1.0, "popularity": 1.0, "directors": [], "composers": [], "cast": [],
+        "trailer_youtube": null, "watch": {"link": null, "flatrate": [5], "rent": [], "buy": []}, "certification": null, "critic_score": null
+    }));
+    anterior["providers"].as_array_mut().unwrap().push(json!({"id": 5, "name": "Velho", "logo_path": null}));
+    let tmdb = |request: &str| {
+        if request.starts_with("/movie/changes") {
+            return Ok(Some(json!({"page": 1, "total_pages": 1, "results": []})));
+        }
+        fixture_tmdb(request)
+    };
+    let anterior = Anterior::new(&serde_json::to_vec(&anterior).unwrap()).unwrap();
+    let artifact = build_sobre(&tmdb, &no_omdb, &mut BTreeMap::new(), &Config { today: "2026-10-26", ..config }, Some(anterior)).unwrap();
+    let artifact = serde_json::to_value(artifact).unwrap();
+    assert!(artifact["movies"].as_array().unwrap().iter().all(|m| m["tmdb_id"] != 77));
+    assert!(artifact["providers"].as_array().unwrap().iter().all(|p| p["id"] != 5));
 }

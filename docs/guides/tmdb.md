@@ -35,7 +35,7 @@ No GitHub, abra o repositório → **Settings** → **Secrets and variables** �
 O job roda sozinho todo dia de madrugada. Para não esperar:
 
 1. No GitHub, aba **Actions** → workflow **Catalog** → **Run workflow** → **Run workflow**.
-2. Espere terminar (a primeira vez leva perto de uma hora: são dezenas de milhares de filmes).
+2. Espere terminar (a primeira vez leva perto de uma hora: são dezenas de milhares de filmes; depois, o job reaproveita o catálogo anterior e busca só os filmes que mudaram e um sétimo dos outros, então os dados de um filme, como onde assistir, têm no máximo 7 dias).
 3. Confira em **Releases** que existe a release **Catálogo (formato 1)** com os arquivos `catalog.json.gz` e `series.json.gz` (as séries; o log do job anota quantas entraram e o corte de votos, que sobe sozinho até o download crescer no máximo 25%). Ela fica marcada como pré-lançamento de propósito, para o Obtainium não confundir com uma versão do app.
 
 Pronto. Na primeira abertura o app baixa esse arquivo mostrando o progresso; depois abre direto com os dados do aparelho.

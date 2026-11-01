@@ -1,6 +1,7 @@
 name: Catalog
 
-# Builds the full catálogo from TMDB every day and publishes it as the asset
+# Builds the full catálogo from TMDB every day, reusing the filmes that did not change and are not
+# due for renewal (at most 7 days old), and publishes it as the asset
 # `catalog.json.gz` of the release `catalog-v<format version>`, with `catalog-version.txt`
 # (its data version): the app checks the version and downloads the catálogo when it changed.
 # Séries go out the same way as `series.json.gz` and `series-version.txt`, which an app without
@@ -69,14 +70,18 @@ jobs:
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
           OMDB_KEY: ${{ secrets.OMDB_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # None published yet (a new format): every filme is fetched.
+          gh release download "$TAG" --pattern catalog.json.gz --output catalog-anterior.json.gz || true
           test -n "$TMDB_TOKEN" || { echo "::error::TMDB_TOKEN secret missing, see docs/guides/tmdb.md"; exit 1; }
           cargo run --release -p cinelens-catalog -- \
             --out catalog.json.gz \
             --today "$TODAY" \
             --recent-since "$(date -u -d '-180 days' +%F)" \
             --extra-ids training-ids.txt \
-            --omdb-cache omdb-cache.json
+            --omdb-cache omdb-cache.json \
+            --previous catalog-anterior.json.gz
 
       - uses: actions/cache/save@v4
         if: ${{ !inputs.so_series }}

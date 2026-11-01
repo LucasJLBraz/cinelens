@@ -24,6 +24,9 @@ const FIRST_YEAR: u32 = 1900;
 const MAX_PAGES: u32 = 500;
 const CAST_SIZE: usize = 8;
 const DETAIL_WORKERS: usize = 8;
+/// A filme's details are at most this many days old: each day refetches one share of them, as the
+/// TMDB changes API does not promise to report votes or where to watch.
+const DIAS_RENOVACAO: i64 = 7;
 /// TMDB's kinds of série that enter the catálogo, and its `with_type` codes for them.
 const SERIE_TYPES: [&str; 3] = ["Scripted", "Miniseries", "Documentary"];
 const SERIE_TYPE_CODES: &str = "0|2|4";
@@ -154,7 +157,7 @@ struct Person {
     name: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Provider {
     id: u32,
     name: String,
@@ -162,7 +165,7 @@ struct Provider {
 }
 
 /// Where a movie is in Brazil (TMDB's data from JustWatch), as provider ids.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Watch {
     /// TMDB's watch page, which links on to each service.
     link: Option<String>,
@@ -171,9 +174,11 @@ struct Watch {
     buy: Vec<u32>,
 }
 
-#[derive(Serialize)]
+/// Read back only from the filmes' `Anterior`, so what filmes lack is skipped.
+#[derive(Serialize, Deserialize)]
 struct Movie {
     tmdb_id: ObraId,
+    #[serde(skip_deserializing, default = "tipo_filme")]
     work_type: &'static str,
     title: String,
     original_title: String,
@@ -203,14 +208,37 @@ struct Movie {
     #[serde(skip_serializing_if = "Option::is_none")]
     number_of_seasons: Option<u32>,
     /// Séries only: `em_andamento` or `terminada`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
     situacao: Option<&'static str>,
     /// Animes only.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", skip_deserializing)]
     temporadas: Vec<Temporada>,
     /// AniList popularity, which only the vote cut reads.
     #[serde(skip)]
     anilist: u32,
+}
+
+fn tipo_filme() -> &'static str {
+    "movie"
+}
+
+/// The filmes' artifact last published, whose details a build reuses.
+#[derive(Deserialize)]
+pub struct Anterior {
+    format_version: u32,
+    data_version: String,
+    providers: Vec<Provider>,
+    movies: Vec<Movie>,
+}
+
+impl Anterior {
+    pub fn new(json: &[u8]) -> Result<Anterior, String> {
+        let anterior: Anterior = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+        if anterior.format_version != cinelens_core::CATALOG_FORMAT_VERSION {
+            return Err(format!("format {}", anterior.format_version));
+        }
+        Ok(anterior)
+    }
 }
 
 /// One of an anime's temporadas, as TMDB lists it.
@@ -425,6 +453,18 @@ pub fn build(
     critica: &mut BTreeMap<String, Critica>,
     config: &Config,
 ) -> Result<Artifact, String> {
+    build_sobre(fetch, omdb, critica, config, None)
+}
+
+/// `build`, fetching only the filmes `anterior` lacks, those TMDB says changed since it, and the
+/// share due for renewal.
+pub fn build_sobre(
+    fetch: &impl Fetch,
+    omdb: &impl Fetch,
+    critica: &mut BTreeMap<String, Critica>,
+    config: &Config,
+    anterior: Option<Anterior>,
+) -> Result<Artifact, String> {
     let genres: GenreList = get(fetch, "/genre/movie/list?language=pt-BR")?;
     let trending: Vec<u32> = get::<Page>(fetch, "/trending/movie/week?language=pt-BR")?
         .results
@@ -441,12 +481,16 @@ pub fn build(
     }
     ids.extend(discover(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
-    let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
-        details(fetch, &ids.into_iter().collect::<Vec<_>>(), movie_request, |body| {
+    let (pedir, reaproveitados, provedores_anteriores) = reaproveitar(fetch, anterior, ids, config.today)?;
+    let (mut movies, mut providers): (Vec<Movie>, Vec<Vec<Provider>>) =
+        details(fetch, &pedir, movie_request, |body| {
             serde_json::from_value::<Details>(body).map(|d| Some(movie(d)))
         })?
         .into_iter()
         .unzip();
+    movies.extend(reaproveitados);
+    providers.push(provedores_anteriores);
+    let em_uso: BTreeSet<u32> = movies.iter().flat_map(|m| &m.watch).flat_map(|w| w.flatrate.iter().chain(&w.rent).chain(&w.buy)).copied().collect();
     movies.sort_by_key(|m| (std::cmp::Reverse(m.vote_count), m.tmdb_id));
     critic_scores(omdb, critica, &movies, config);
     for m in &mut movies {
@@ -457,9 +501,47 @@ pub fn build(
         data_version: config.today.to_string(),
         genres: genres.genres,
         trending: trending.into_iter().map(ObraId::filme).collect(),
-        providers: by_name(providers),
+        providers: by_name(providers).into_iter().filter(|p| em_uso.contains(&p.id)).collect(),
         movies,
     })
+}
+
+/// Splits the filmes of this build into the ids to fetch and those `anterior` still answers for,
+/// with its providers. One due for renewal is fetched: each id on one day out of `DIAS_RENOVACAO`,
+/// and on every day a skipped run missed. After that many days without a build, all of them.
+fn reaproveitar(
+    fetch: &impl Fetch,
+    anterior: Option<Anterior>,
+    ids: BTreeSet<u32>,
+    today: &str,
+) -> Result<(Vec<u32>, Vec<Movie>, Vec<Provider>), String> {
+    let dia = dia_civil(today).ok_or("bad today date")?;
+    let intervalo = anterior.as_ref().and_then(|a| dia_civil(&a.data_version)).map(|d| dia - d);
+    let (Some(anterior), Some(intervalo @ 0..DIAS_RENOVACAO)) = (anterior, intervalo) else {
+        return Ok((ids.into_iter().collect(), Vec::new(), Vec::new()));
+    };
+    let from = &anterior.data_version;
+    let mudaram: BTreeSet<u32> =
+        discover_pages(fetch, from, today, |page| format!("/movie/changes?start_date={from}&end_date={today}&page={page}"))?
+            .into_iter()
+            .collect();
+    let vence = |id: u32| (0..intervalo).any(|atras| (dia - atras).rem_euclid(DIAS_RENOVACAO) == i64::from(id) % DIAS_RENOVACAO);
+    let (reaproveitados, _): (Vec<Movie>, Vec<Movie>) = anterior.movies.into_iter().partition(|m| {
+        let id = m.tmdb_id.tmdb_id();
+        ids.contains(&id) && !mudaram.contains(&id) && !vence(id)
+    });
+    let guardados: BTreeSet<u32> = reaproveitados.iter().map(|m| m.tmdb_id.tmdb_id()).collect();
+    Ok((ids.difference(&guardados).copied().collect(), reaproveitados, anterior.providers))
+}
+
+/// Days since 1970-01-01 of a `YYYY-MM-DD` date (Howard Hinnant's `days_from_civil`).
+fn dia_civil(data: &str) -> Option<i64> {
+    let (y, m, d) = (data.get(..4)?.parse::<i64>().ok()?, data.get(5..7)?.parse::<i64>().ok()?, data.get(8..10)?.parse::<i64>().ok()?);
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let ano_da_era = y - era * 400;
+    let dia_do_ano = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    Some(era * 146_097 + ano_da_era * 365 + ano_da_era / 4 - ano_da_era / 100 + dia_do_ano - 719_468)
 }
 
 /// The séries' artifact: same shape as the filmes', `tmdb_id` carrying each série's `ObraId`,
