@@ -882,3 +882,74 @@ mod pagina {
         assert_eq!(ids("em_andamento"), [ObraId::serie(2), ObraId::serie(3)]);
     }
 }
+
+mod listas_prontas {
+    use cinelens_core::{Core, Marca, ObraId, Tipo};
+
+    /// 2026-10-26 00:00 UTC.
+    const HOJE: i64 = 1_792_972_800;
+
+    /// Filme 1 and séries 1 and 2 are good bets, new, little seen and on Netflix; série 2 is below
+    /// the floor. Everything else is a filler that predicts low.
+    fn core() -> Core {
+        let boa = r#""genre_ids": [1], "release_date": "2026-10-01", "watch": {"link": null, "flatrate": [8]}"#;
+        let obra = |id: ObraId, resto: &str| format!(r#"{{"tmdb_id": {id}, "title": "O{id}", "original_title": "O{id}", "poster_path": null, {resto}}}"#);
+        let mut filmes = vec![obra(ObraId::filme(1), &format!(r#"{boa}, "vote_count": 60"#))];
+        filmes.extend((100..120).map(|id| obra(ObraId::filme(id), r#""genre_ids": [2], "vote_count": 60"#)));
+        let mut series = vec![
+            obra(ObraId::serie(1), &format!(r#"{boa}, "vote_count": 60, "vote_average": 8.0"#)),
+            obra(ObraId::serie(2), &format!(r#"{boa}, "vote_count": 60, "vote_average": 2.0"#)),
+        ];
+        series.extend((100..120).map(|id| obra(ObraId::serie(id), r#""genre_ids": [2], "vote_count": 60, "vote_average": 7.0"#)));
+        let artifact = |obras: Vec<String>| format!(r#"{{"format_version": 1, "data_version": "t", "movies": [{}]}}"#, obras.join(","));
+        let model = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05, "movies": [{"tmdb_id": 999, "bias": 0.0, "factors": [0.0], "ratings": 1}],
+            "content": [{"feature": "g1", "bias": 1.0, "factors": [0.0]}, {"feature": "g2", "bias": -1.0, "factors": [0.0]}]}"#;
+        let mut core = Core::default();
+        core.load_saved(Some(artifact(filmes).as_bytes()), Some(artifact(series).as_bytes()), Some(model.as_bytes()));
+        core.set_servicos(&[8], 0);
+        core
+    }
+
+    fn fileira(core: &Core, nome: &str) -> Vec<ObraId> {
+        let inicio = core.inicio(HOJE, 0);
+        inicio.fileiras.iter().find(|f| f.nome == nome).unwrap().movies.iter().map(|m| m.id).collect()
+    }
+
+    fn accepts_a_serie_above_the_floor(core: &Core, nome: &str) {
+        let obras = fileira(core, nome);
+        assert!(obras.contains(&ObraId::serie(1)), "{nome}: {obras:?}");
+        assert!(obras.contains(&ObraId::filme(1)), "{nome}: {obras:?}");
+        assert!(!obras.contains(&ObraId::serie(2)), "{nome}: below the floor");
+    }
+
+    #[test]
+    fn no_seu_streaming_hoje_accepts_series() {
+        accepts_a_serie_above_the_floor(&core(), "No seu streaming hoje");
+    }
+
+    #[test]
+    fn joias_escondidas_accept_series() {
+        accepts_a_serie_above_the_floor(&core(), "Joias escondidas");
+    }
+
+    #[test]
+    fn lancamentos_para_voce_count_a_series_first_episode_as_its_release() {
+        accepts_a_serie_above_the_floor(&core(), "Lançamentos para você");
+    }
+
+    #[test]
+    fn para_rever_accepts_series_marked_ja_vi() {
+        let mut core = core();
+        for id in [ObraId::filme(1), ObraId::serie(1), ObraId::serie(2)] {
+            core.marcar(id, Marca::JaVi, true, 0);
+        }
+        accepts_a_serie_above_the_floor(&core, "Para rever");
+    }
+
+    #[test]
+    fn the_other_listas_prontas_stay_filmes_only() {
+        let inicio = core().inicio(HOJE, 0);
+        let filmes: Vec<&str> = inicio.fileiras.iter().filter(|f| f.filtro.tipo == Some(Tipo::Filme)).map(|f| f.nome.as_str()).collect();
+        assert_eq!(filmes, ["Em alta, do seu jeito", "Sessão da Tarde", "Cabe numa noite", "Clássicos que você não viu", "Aclamados pelo público"]);
+    }
+}

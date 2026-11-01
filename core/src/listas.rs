@@ -17,19 +17,19 @@ const ACLAMADO: u8 = 75;
 /// Every lista pronta in Início's order; `at` (Unix seconds) is today. Without any critics'
 /// scores in the catálogo, Aclamados pela crítica is the public's alone and named so.
 pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> {
-    let filmes = Filtro { tipo: Some(Tipo::Filme), ..Default::default() };
-    let nao_visto = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, assistindo: Mostrar::Esconder, acima_do_piso: true, ..filmes.clone() };
-    let series = Filtro { tipo: Some(Tipo::Serie), ..nao_visto.clone() };
+    let obras = Filtro { com_nota: Mostrar::Esconder, ja_vi: Mostrar::Esconder, assistindo: Mostrar::Esconder, acima_do_piso: true, ..Default::default() };
+    let nao_visto = Filtro { tipo: Some(Tipo::Filme), ..obras.clone() };
+    let series = Filtro { tipo: Some(Tipo::Serie), ..obras.clone() };
     vec![
         ("Em alta, do seu jeito", Filtro { em_alta: true, ..nao_visto.clone() }),
         ("Séries para você", series.clone()),
         ("Séries em alta", Filtro { em_alta: true, ..series.clone() }),
-        ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..nao_visto.clone() }),
+        ("No seu streaming hoje", Filtro { no_meu_streaming: true, ..obras.clone() }),
         (
             "Lançamentos para você",
-            Filtro { lancado_desde: Some(date(at - LANCAMENTO_DIAS * 86_400)), faixa_min: PREVISAO_ALTA, ..nao_visto.clone() },
+            Filtro { lancado_desde: Some(date(at - LANCAMENTO_DIAS * 86_400)), faixa_min: PREVISAO_ALTA, ..obras.clone() },
         ),
-        ("Joias escondidas", Filtro { votos_max: Some(POUCO_VISTO), faixa_min: PREVISAO_ALTA, ..nao_visto.clone() }),
+        ("Joias escondidas", Filtro { votos_max: Some(POUCO_VISTO), faixa_min: PREVISAO_ALTA, ..obras }),
         (
             "Sessão da Tarde",
             Filtro {
@@ -50,7 +50,7 @@ pub(crate) fn listas(at: i64, tem_critica: bool) -> Vec<(&'static str, Filtro)> 
             if tem_critica { "Aclamados pela crítica" } else { "Aclamados pelo público" },
             Filtro { critica_min: Some(ACLAMADO), ..nao_visto },
         ),
-        ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, ..filmes }),
+        ("Para rever", Filtro { ja_vi: Mostrar::So, faixa_min: PREVISAO_ALTA, acima_do_piso: true, ..Default::default() }),
         // Below the main rows; the owner's own, so nothing about it is left out.
         ("Assistindo", Filtro { tipo: Some(Tipo::Serie), assistindo: Mostrar::So, ..Default::default() }),
     ]
