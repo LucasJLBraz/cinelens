@@ -7,22 +7,22 @@ Use este roteiro para fechar a v2. A meta é a mesma da v1: com séries no catá
 ## 1) Testes e benchmarks
 
 - [x] `cargo test -p cinelens-core -p cinelens-catalog -p cinelens-train` passa na branch `feat/series-catalogo`, rodado no computador do dono em 2026-11-01.
-- [x] `cargo bench -p cinelens-core` fica dentro de todos os limites, na mesma execução, com séries sintéticas (`SERIES_SIZE` em `core/benches/budgets.rs`), porque o catálogo real de séries ainda não foi publicado:
+- [x] `cargo bench -p cinelens-core` fica dentro de todos os limites, na mesma execução, com 60.000 filmes e 15.000 séries sintéticos (`core/benches/budgets.rs`). O catálogo publicado em 2026-11-01 tem cerca de 91.000 filmes e 5.786 séries; nesse tamanho, todas as medidas também ficam dentro do limite, e o Início leva 69 ms:
 
 | Medida | Limite | Mediana |
 |---|---|---|
-| Abrir: carregar catálogo, séries e modelo | 1 s | 318 ms |
-| Nota em filme: recalcular e ordenar | 200 ms | 34 ms |
-| Nota em série: recalcular e ordenar | 200 ms | 36 ms |
-| Trocar filtro | 100 ms | 58 ms |
-| Busca com erro de digitação no catálogo todo | 100 ms | 77 ms |
+| Abrir: carregar catálogo, séries e modelo | 1 s | 331 ms |
+| Nota em filme: recalcular e ordenar | 200 ms | 35 ms |
+| Nota em série: recalcular e ordenar | 200 ms | 38 ms |
+| Trocar filtro | 100 ms | 48 ms |
+| Busca com erro de digitação no catálogo todo | 100 ms | 83 ms |
 | Abrir página de filme | 100 ms | 2 ms |
 | Abrir página de série | 100 ms | 0,9 ms |
-| Início: destaques e todas as listas | 100 ms | 68 ms |
-| Rodada rápida: próximas obras depois de uma nota | 100 ms | 23 ms |
+| Início: destaques e todas as listas | 100 ms | 49 ms |
+| Rodada rápida: próximas obras depois de uma nota | 100 ms | 24 ms |
 | Perfil: todas as estatísticas | 100 ms | 0,3 ms |
 
-- [ ] Workflow CI verde no GitHub. Ele só roda em pull request, em push na `main` e no workflow **Release**.
+- [ ] Workflow CI verde no GitHub. Ele só roda em pull request, em push na `main` e no workflow **Release**. A execução de `dcc0e3e` falhou no Início, com 107 ms e 134 ms contra o limite de 100 ms; o runner é mais lento que o computador do dono. A busca chegou a 99 ms na mesma execução.
 
 ## 2) Precisão em filmes
 
@@ -44,8 +44,8 @@ git tag v2.0.0
 git push origin v2.0.0
 ```
 
-- [ ] Merge e push da `main`.
-- [ ] `series.json.gz` publicado (em 2026-11-01 ainda não existe na release), sem passar de 25% do tamanho do catálogo.
+- [x] Merge e push da `main` (`dcc0e3e`).
+- [x] `series.json.gz` publicado em 2026-11-01: 5.786 séries, 2,1 MB, 7% do tamanho do catálogo (limite de 25%).
 - [ ] Release `v2.0.0` publicada, com as notas de licença e atribuição.
 - [ ] Obtainium detecta `v2.0.0` e atualiza o app no celular do dono.
 

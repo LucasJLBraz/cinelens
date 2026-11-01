@@ -117,7 +117,6 @@ impl<'a> Matcher<'a> {
             (min.is_none() && max.is_none()) || v.is_some_and(|v| min.is_none_or(|min| v >= min) && max.is_none_or(|max| v <= max))
         };
         let previsto = core.previstas[i];
-        let rated = core.rated(m.id);
         let shown = |mostrar: Mostrar, marked: bool| match mostrar {
             Mostrar::Todos => true,
             Mostrar::Esconder => !marked,
@@ -145,7 +144,7 @@ impl<'a> Matcher<'a> {
             })
             && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
             && !(f.acima_do_piso && self.words.is_empty() && core.abaixo_do_piso(i))
-            && shown(f.com_nota, rated)
+            && shown(f.com_nota, core.rated(m.id))
             && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
             && shown(f.assistindo, owner.assistindo.contains(&m.id))
