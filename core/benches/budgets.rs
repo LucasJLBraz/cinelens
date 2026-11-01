@@ -93,7 +93,7 @@ fn main() {
     });
 
     failed |= !budget("perfil: every statistic", Duration::from_millis(100), || {
-        assert!(core.estatisticas().acerto.is_some());
+        assert!(core.estatisticas(None).acerto.is_some());
     });
 
     if failed {

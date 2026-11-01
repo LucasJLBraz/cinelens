@@ -386,8 +386,8 @@ fn inicio(core: tauri::State<RwLock<Core>>, sorteio: u64) -> Inicio {
 }
 
 #[tauri::command]
-fn estatisticas(core: tauri::State<RwLock<Core>>) -> Estatisticas {
-    core.read().unwrap().estatisticas()
+fn estatisticas(core: tauri::State<RwLock<Core>>, tipo: Option<Tipo>) -> Estatisticas {
+    core.read().unwrap().estatisticas(tipo)
 }
 
 #[tauri::command]

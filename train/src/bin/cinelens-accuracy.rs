@@ -1,13 +1,17 @@
 //! `cinelens-accuracy --model model.json.gz [--catalog catalog.json.gz] [--held-out 0.2] movielens-*.csv`
+//! `cinelens-accuracy --model model.json.gz --catalog catalog.json.gz --series series.json.gz --owner owner.json [--held-out 0.2]`
 //!
 //! The accuracy harness on the owner's real MovieLens export, run locally only (the export never
 //! reaches CI): imports it into a core, hides the most recent notas from the fold-in and prints
 //! the MAE of the nota prevista on them, next to MovieLens's own on the same notas. With the
 //! catálogo, held-out movies outside the model are also predicted from their content, measured
-//! apart.
+//! apart. With the séries and the app's owner data, it instead measures the notas on séries:
+//! the error for each weight of a nota on a série, and above and below the floor.
 
 /// MovieLens's MAE on all the owner's notas, from the predictions in the logs (design §6.6).
 const MOVIELENS_BASELINE: f32 = 0.654;
+/// Weights of a nota on a série to compare.
+const SERIE_WEIGHTS: [f32; 6] = [1.0, 2.0, 3.0, 5.0, 8.0, 13.0];
 
 fn main() {
     if let Err(e) = run() {
@@ -33,6 +37,14 @@ fn run() -> Result<(), String> {
         None => cinelens_core::Core::default(),
     };
     core.load_model(&cinelens_train::read_maybe_gzipped(model)?).map_err(|e| e.to_string())?;
+    if let Some(series) = flag("--series") {
+        core.load_series(&cinelens_train::read_maybe_gzipped(series)?).map_err(|e| e.to_string())?;
+    }
+    if let Some(owner) = flag("--owner") {
+        let owner = std::fs::read(owner).map_err(|e| format!("{owner}: {e}"))?;
+        core.load_owner_data(&owner).map_err(|e| e.to_string())?;
+        return series(&core, fraction);
+    }
     let files: Vec<&str> = files.iter().map(String::as_str).collect();
     core.import_movielens(&files).map_err(|e| e.to_string())?;
     let accuracy = core.accuracy(fraction).ok_or("no held-out nota is in the model")?;
@@ -47,6 +59,22 @@ fn run() -> Result<(), String> {
     println!("MovieLens baseline on all notas: {MOVIELENS_BASELINE}");
     if let Some(mae) = accuracy.content_mae {
         println!("MAE cinelens on {} held-out notas outside the model, from their content: {mae:.3}", accuracy.content_notas);
+    }
+    Ok(())
+}
+
+fn series(core: &cinelens_core::Core, fraction: f32) -> Result<(), String> {
+    println!("model {}", core.model_version().unwrap_or("?"));
+    for peso in SERIE_WEIGHTS {
+        let a = core.accuracy_series(fraction, peso).ok_or("no held-out nota on a série can be predicted")?;
+        println!("weight {peso}: MAE {:.3} on {} notas", a.geral.mae, a.geral.notas);
+    }
+    let a = core.accuracy_series(fraction, cinelens_core::SERIE_WEIGHT).ok_or("no held-out nota on a série can be predicted")?;
+    for (nome, grupo) in [("above the floor", a.acima), ("below the floor", a.abaixo)] {
+        match grupo {
+            Some(g) => println!("{nome}: MAE {:.3}, mean nota {:.2} on {} notas", g.mae, g.media, g.notas),
+            None => println!("{nome}: no notas"),
+        }
     }
     Ok(())
 }

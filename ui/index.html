@@ -450,6 +450,11 @@
     </div>
     <div id="modelo-hint" class="hint aviso" hidden></div>
     <h2 id="stats-titulo">Estatísticas</h2>
+    <div id="stats-tipos" class="chips" hidden>
+      <button class="chip" data-valor="">Tudo</button>
+      <button class="chip" data-valor="Filme">Filmes</button>
+      <button class="chip" data-valor="Serie">Séries</button>
+    </div>
     <div id="stats"></div>
     <h2>Ajustes</h2>
     <label for="display-mode">Mostrar previsão como</label>
@@ -544,6 +549,8 @@
     // Explorar's filters, as the core's Filtro; {} is no filter.
     let filtro = {};
     // Tudo, Filmes or Séries as the owner last chose; a lista pronta's own tipo does not change it.
+    let statsTipo = '';
+    try { statsTipo = localStorage.getItem('stats-tipo') || ''; } catch {}
     let tipoEscolhido = '';
     try { tipoEscolhido = localStorage.getItem('tipo') || ''; } catch {}
     if (tipoEscolhido) filtro.tipo = tipoEscolhido;
@@ -1269,23 +1276,33 @@
         el('span', { textContent: nome(g) }), el('div', { className: 'barra', style: `width: ${g.media / 5 * 40}%` }),
         el('span', { textContent: `${estrelas(g.media)} ★ · ${g.notas}` }))));
       const filme = (card, texto) => push(el('button', { className: 'link', textContent: `${card.title}: ${texto}`, onclick: () => openMovie(card.tmdb_id) }));
-      const total = e.distribuicao.reduce((a, b) => a + b, 0);
+      const soma = valores => valores.reduce((a, b) => a + b, 0);
+      const total = soma(e.distribuicao) + soma(e.reacoes);
+      // Always the type's own accuracy: the two are never mixed.
+      const acertoResumo = statsTipo === 'Serie' ? e.acerto_series : e.acerto;
       document.getElementById('resumo-notas').textContent = total;
-      document.getElementById('resumo-acerto-box').hidden = !e.acerto;
-      if (e.acerto) document.getElementById('resumo-acerto').textContent = `${estrelas(e.acerto.mae)} ★`;
-      document.getElementById('stats-titulo').hidden = !total;
+      document.getElementById('resumo-acerto-box').hidden = !acertoResumo;
+      if (acertoResumo) document.getElementById('resumo-acerto').textContent = `${estrelas(acertoResumo.mae)} ★`;
+      document.getElementById('stats-titulo').hidden = !total && !statsTipo;
+      statsTiposEl.hidden = !total && !statsTipo;
+      for (const chip of statsTiposEl.children) chip.classList.toggle('on', chip.dataset.valor === statsTipo);
       if (!total) return statsEl.replaceChildren();
       titulo('Suas notas');
-      colunas(e.distribuicao, '½', '5 ★');
+      if (soma(e.distribuicao)) colunas(e.distribuicao, '½', '5 ★');
+      if (soma(e.reacoes)) ['Não gostei', 'Gostei', 'Amei'].forEach((nome, i) => push(el('div', { className: 'linha' },
+        el('span', { textContent: nome }), el('div', { className: 'barra', style: `width: ${e.reacoes[i] / Math.max(...e.reacoes) * 40}%` }),
+        el('span', { textContent: String(e.reacoes[i]) }))));
       if (e.vs_publico !== null) {
         const d = e.vs_publico;
         hint(Math.abs(d) < 0.05 ? 'Como o público, em média.'
           : `${estrelas(Math.abs(d))} ★ ${d < 0 ? 'abaixo' : 'acima'} do público, em média.`);
       }
-      if (e.acerto) hint(`O app erra ${estrelas(e.acerto.mae)} ★ em média em ${e.acerto.notas} notas.`);
+      if (e.acerto && statsTipo !== 'Serie') hint(`Em filmes, o app erra ${estrelas(e.acerto.mae)} ★ em média em ${e.acerto.notas} notas.`);
+      if (e.acerto_series && statsTipo !== 'Filme') hint(`Em séries, o app erra ${estrelas(e.acerto_series.mae)} ★ em média em ${e.acerto_series.notas} notas.`);
+      if (e.mae_series && statsTipo !== 'Filme') hint(`Escondendo suas ${e.mae_series.notas} notas mais recentes em séries, o app erra ${estrelas(e.mae_series.mae)} ★ em média.`);
       if (e.por_mes.length) {
         const meses = e.por_mes.slice(-24);
-        titulo(meses.length < e.por_mes.length ? 'Filmes avaliados por mês (últimos 24)' : 'Filmes avaliados por mês');
+        titulo(meses.length < e.por_mes.length ? 'Avaliados por mês (últimos 24)' : 'Avaliados por mês');
         colunas(meses.map(m => m[1]), meses[0][0], meses[meses.length - 1][0]);
       }
       titulo(e.por_genero.length > 8 ? 'Por gênero (os 8 com mais notas)' : 'Por gênero');
@@ -1307,6 +1324,16 @@
       statsEl.replaceChildren(...out);
     }
     const statsEl = document.getElementById('stats');
+    const statsTiposEl = document.getElementById('stats-tipos');
+    function loadStats() {
+      invoke('estatisticas', { tipo: statsTipo || null }).then(showStats, () => statsEl.replaceChildren());
+    }
+    statsTiposEl.addEventListener('click', e => {
+      if (e.target === statsTiposEl) return;
+      statsTipo = e.target.dataset.valor;
+      try { localStorage.setItem('stats-tipo', statsTipo); } catch {}
+      loadStats();
+    });
     const googleEl = document.getElementById('google');
     async function showGoogle() {
       const conectado = await invoke('google_conectado');
@@ -1334,7 +1361,7 @@
       if (await entrarGoogle(googleEl, document.getElementById('google-hint'))) showGoogle();
     });
     async function loadPerfil() {
-      invoke('estatisticas').then(showStats, () => statsEl.replaceChildren());
+      loadStats();
       showGoogle();
       invoke('modelo_rejeitado').then(r => {
         const el = document.getElementById('modelo-hint');

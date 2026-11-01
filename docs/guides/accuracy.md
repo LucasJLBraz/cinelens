@@ -55,6 +55,23 @@ Cada uma imprime o MAE do Cinelens nas notas escondidas, o MAE do MovieLens nas 
 
 Com `--catalog data/catalog.json.gz`, a medição também prevê as notas escondidas de filmes fora do modelo a partir do conteúdo deles (gêneros, direção, elenco, idioma) e imprime esse MAE à parte. As linhas de cima não mudam: o MAE principal continua só com os filmes do modelo, para comparar com as medições antigas.
 
+## 5. Medir as previsões de séries
+
+As notas em séries ficam nos dados do app, não no export do MovieLens: copie o `owner.json` do aparelho (ou do Drive, depois do sync) para `data/`. A partir de 30 notas em séries:
+
+```bash
+cargo run --release -p cinelens-train --bin cinelens-accuracy -- --model data/model.json.gz --catalog data/catalog.json.gz --series data/series.json.gz --owner data/owner.json
+```
+
+A medição esconde as notas mais recentes em séries e imprime:
+
+- O MAE para cada peso de uma nota em série. Para calibrar, escolha o peso que não piora nenhum dos três cortes (`--held-out` 0,1, 0,2 e 0,3) e mude `SERIE_WEIGHT` em `core/src/recommender.rs`.
+- O MAE e a média das suas notas nas séries acima e abaixo do piso da nota do público.
+
+Séries não têm limite de MAE: esse número aparece no Perfil só como informação e nunca rejeita um modelo.
+
+**O piso é removido se esconde séries de que você gosta.** Se a média das suas notas abaixo do piso for 3,5 ou mais, ou não for menor que a média acima dele, tire o piso (`abaixo_do_piso` em `core/src/lib.rs`). As séries abaixo do piso aparecem na busca, no Explorar e na Rodada rápida, então podem ganhar nota.
+
 ## Como decidir
 
 - A base Letterboxd fica só se o modelo com ela não tiver MAE maior que o modelo só MovieLens.

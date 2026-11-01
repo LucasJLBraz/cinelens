@@ -94,8 +94,8 @@ const NEGATIVE_OFFSET: f32 = 1.0;
 const NEGATIVE_WEIGHT: f32 = 0.25;
 
 /// A nota on a série weighs this many notas on filmes in the séries profile: direct evidence.
-// ponytail: a default; measure it with cinelens-accuracy once there are notas on séries to hold out.
-const SERIE_WEIGHT: f32 = 3.0;
+// ponytail: a default; calibrate it with cinelens-accuracy (`docs/guides/accuracy.md`) from 30 notas on séries.
+pub const SERIE_WEIGHT: f32 = 3.0;
 
 /// What the model knows of a movie: collaborative factors, or ones guessed from its content.
 #[derive(Clone)]
@@ -219,16 +219,17 @@ impl Model {
     /// weighs half as much for every `half_life_days` it is older than the most recent one.
     /// `negatives` (não me interessa) are weak low notas that leave the owner's mean alone.
     pub fn profile(&self, notas: &Notas, negatives: &BTreeSet<ObraId>, half_life_days: Option<u32>) -> Profile {
-        self.profile_series(notas, negatives, half_life_days, |_| None)
+        self.profile_series(notas, negatives, half_life_days, SERIE_WEIGHT, |_| None)
     }
 
     /// `profile` for predicting séries: `notas` may also hold séries, each read through what
-    /// `serie` knows of it (its content) and weighing `SERIE_WEIGHT`, the owner's mean included.
+    /// `serie` knows of it (its content) and weighing `serie_weight`, the owner's mean included.
     pub fn profile_series<'a>(
         &'a self,
         notas: &Notas,
         negatives: &BTreeSet<ObraId>,
         half_life_days: Option<u32>,
+        serie_weight: f32,
         serie: impl Fn(ObraId) -> Option<&'a Item>,
     ) -> Profile {
         // A série outside the catálogo has no content to read it through, so it teaches nothing.
@@ -236,7 +237,7 @@ impl Model {
         let current: Vec<(ObraId, &NotaEntry)> = known.filter_map(|(&id, h)| Some((id, h.last()?))).collect();
         let latest = current.iter().map(|(_, e)| e.at).max().unwrap_or(0);
         let weight = |id: ObraId, e: &NotaEntry| {
-            let by_type = if id.is_serie() { SERIE_WEIGHT } else { 1.0 };
+            let by_type = if id.is_serie() { serie_weight } else { 1.0 };
             by_type * half_life_days.map_or(1.0, |days| 0.5f32.powf((latest - e.at) as f32 / (days as f32 * 86_400.0)))
         };
         let total: f32 = current.iter().map(|&(id, e)| weight(id, e)).sum();

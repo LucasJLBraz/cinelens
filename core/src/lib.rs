@@ -17,7 +17,7 @@ pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar, Tipo};
 pub use obra::ObraId;
-pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
+pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION, SERIE_WEIGHT};
 pub use sync::SyncStorage;
 use recommender::Model;
 
@@ -355,6 +355,27 @@ pub struct Accuracy {
     pub content_notas: usize,
     /// Mean absolute error over those, kept apart so content changes are measured on their own.
     pub content_mae: Option<f32>,
+}
+
+/// The error on some held-out notas on séries, and the notas themselves.
+#[derive(Debug, Serialize)]
+pub struct ErroSeries {
+    pub notas: usize,
+    /// Mean absolute error.
+    pub mae: f32,
+    /// Mean nota the owner gave them: whether the owner enjoys what is below the floor.
+    pub media: f32,
+}
+
+/// How well the owner's most recent notas on séries are predicted. Informational: séries have no
+/// accuracy gate.
+#[derive(Debug, Serialize)]
+pub struct AccuracySeries {
+    pub geral: ErroSeries,
+    /// Séries not below the floor.
+    pub acima: Option<ErroSeries>,
+    /// Séries below the floor.
+    pub abaixo: Option<ErroSeries>,
 }
 
 /// A new model kept out because it predicts the owner worse; shown in Perfil.
@@ -800,7 +821,7 @@ impl Core {
         let notas = self.notas_de_filmes();
         self.half_life_days = self.half_life(self.model.as_ref(), &notas);
         self.profile = self.model.as_ref().map(|m| m.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days));
-        self.profile_series = self.model.as_ref().map(|m| self.fold_in_series(m, &self.owner.notas));
+        self.profile_series = self.model.as_ref().map(|m| self.fold_in_series(m, &self.owner.notas, SERIE_WEIGHT));
         self.previstas = match (&self.model, &self.profile, &self.profile_series) {
             (Some(model), Some(filmes), Some(series)) => {
                 let previstas = self.movies.iter().zip(&self.items).map(|(m, item)| {
@@ -862,9 +883,9 @@ impl Core {
     }
 
     /// What predicts séries: notas on filmes and, through their content, notas on séries.
-    fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>) -> recommender::Profile {
+    fn fold_in_series(&self, model: &Model, notas: &BTreeMap<ObraId, Vec<NotaEntry>>, peso: f32) -> recommender::Profile {
         let item = |id: ObraId| self.items.get(*self.index.get(&id)?)?.as_ref();
-        model.profile_series(notas, &self.owner.nao_me_interessa, self.half_life_days, item)
+        model.profile_series(notas, &self.owner.nao_me_interessa, self.half_life_days, peso, item)
     }
 
     /// What the Faixa of obra `i` is relative to: its own type's predictions.
@@ -1262,7 +1283,7 @@ impl Core {
         if id.is_serie() {
             let mut notas = self.owner.notas.clone();
             notas.remove(&id);
-            return Some(model.predict(&self.fold_in_series(model, &notas), item));
+            return Some(model.predict(&self.fold_in_series(model, &notas, SERIE_WEIGHT), item));
         }
         let mut notas = self.notas_de_filmes();
         notas.remove(&id);
@@ -1430,6 +1451,36 @@ impl Core {
             content_notas: content.len(),
             content_mae: mean(&content),
         })
+    }
+
+    /// Hides the `fraction` (0–1) of the owner's notas on séries given most recently, folds in the
+    /// rest (those on filmes too), with notas on séries weighing `peso`, and predicts the hidden
+    /// ones. `None` without a model or when none of them can be predicted.
+    pub fn accuracy_series(&self, fraction: f32, peso: f32) -> Option<AccuracySeries> {
+        let model = self.model.as_ref()?;
+        let series: BTreeMap<ObraId, Vec<NotaEntry>> = self.owner.notas.iter().filter(|(id, _)| id.is_serie()).map(|(&id, h)| (id, h.clone())).collect();
+        let (mut known, hidden) = recommender::hold_out(&series, fraction);
+        known.extend(self.notas_de_filmes());
+        let profile = self.fold_in_series(model, &known, peso);
+        // (below the floor, error, nota) of each hidden nota the model can read.
+        let medidos: Vec<(bool, f32, f32)> = hidden
+            .iter()
+            .filter_map(|(id, e)| {
+                let i = *self.index.get(id)?;
+                let erro = (model.predict(&profile, self.items[i].as_ref()?) - e.nota).abs();
+                Some((self.abaixo_do_piso(i), erro, e.nota))
+            })
+            .collect();
+        let erro = |grupo: Option<bool>| {
+            let de: Vec<_> = medidos.iter().filter(|m| grupo.is_none_or(|g| m.0 == g)).collect();
+            let n = de.len() as f32;
+            (!de.is_empty()).then(|| ErroSeries {
+                notas: de.len(),
+                mae: de.iter().map(|m| m.1).sum::<f32>() / n,
+                media: de.iter().map(|m| m.2).sum::<f32>() / n,
+            })
+        };
+        Some(AccuracySeries { geral: erro(None)?, acima: erro(Some(false)), abaixo: erro(Some(true)) })
     }
 
     /// The catálogo obras passing `filtro`, recomendações first ("Para você": best percentile

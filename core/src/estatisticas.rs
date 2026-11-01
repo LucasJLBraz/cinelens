@@ -4,10 +4,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry, Reacao};
+use crate::{ObraId, filtro::PUBLICO_MIN_VOTOS, is_valid_nota, listas::civil, Core, MovieCard, NotaEntry, Reacao, Tipo, MAE_FRACAO, SERIE_WEIGHT};
 
 /// Movies in each of Perfil's lists.
 const LISTA: usize = 10;
+/// Notas on séries from which Perfil shows how well the app predicts them.
+const MAE_SERIES_MIN_NOTAS: usize = 30;
 
 /// Notas grouped by something the movies share.
 #[derive(Debug, Serialize)]
@@ -21,8 +23,10 @@ pub struct Grupo {
 /// Everything Perfil shows about the owner's notas.
 #[derive(Debug, Serialize)]
 pub struct Estatisticas {
-    /// Movies per current nota, 0.5 to 5 in half stars; a nota out of range is left out.
+    /// Movies per current nota given in stars, 0.5 to 5 in half stars; a nota out of range is left out.
     pub distribuicao: [usize; 10],
+    /// Séries per current Reação: Não gostei, Gostei, Amei.
+    pub reacoes: [usize; 3],
     /// Most notas first, then the higher mean; only movies in the catálogo.
     pub por_genero: Vec<Grupo>,
     /// Decades oldest first, named by their first year.
@@ -39,9 +43,14 @@ pub struct Estatisticas {
     pub por_ano: Vec<Ano>,
     /// Movies whose current nota is not their first, furthest from it first.
     pub mudancas: Vec<Mudanca>,
-    /// Each nota given in the app against the nota prevista stored when it was given (revealed
-    /// then, unless the display mode was Oculto); `None` before any.
+    /// Each nota on a filme given in the app against the nota prevista stored when it was given
+    /// (revealed then, unless the display mode was Oculto); `None` before any. Whatever the tipo.
     pub acerto: Option<Acerto>,
+    /// The same on séries.
+    pub acerto_series: Option<Acerto>,
+    /// The most recent notas on séries, hidden and predicted, from `MAE_SERIES_MIN_NOTAS` of them.
+    /// Informational: it never rejects a model. Whatever the tipo.
+    pub mae_series: Option<Acerto>,
 }
 
 /// Notas given in one year.
@@ -117,11 +126,18 @@ fn grupos(pares: impl Iterator<Item = (String, f32)>) -> Vec<Grupo> {
 }
 
 impl Core {
-    pub fn estatisticas(&self) -> Estatisticas {
+    /// Of `tipo`'s notas; `None` is Tudo.
+    pub fn estatisticas(&self, tipo: Option<Tipo>) -> Estatisticas {
+        let notas = || self.owner.notas.iter().filter(move |(id, _)| tipo.is_none_or(|t| (t == Tipo::Serie) == id.is_serie()));
         let atuais: Vec<(ObraId, f32)> =
-            self.owner.notas.iter().filter_map(|(&id, h)| Some((id, h.last()?.nota))).filter(|&(_, nota)| is_valid_nota(nota)).collect();
-        let mut distribuicao = [0; 10];
-        atuais.iter().for_each(|&(_, nota)| distribuicao[(nota * 2.0) as usize - 1] += 1);
+            notas().filter_map(|(&id, h)| Some((id, h.last()?.nota))).filter(|&(_, nota)| is_valid_nota(nota)).collect();
+        let (mut distribuicao, mut reacoes) = ([0; 10], [0; 3]);
+        for e in notas().filter_map(|(_, h)| h.last()).filter(|e| is_valid_nota(e.nota)) {
+            match e.reacao {
+                Some(reacao) => reacoes[reacao as usize] += 1,
+                None => distribuicao[(e.nota * 2.0) as usize - 1] += 1,
+            }
+        }
         let no_catalogo: Vec<(&crate::Movie, f32)> =
             atuais.iter().filter_map(|&(id, nota)| Some((&self.movies[*self.index.get(&id)?], nota))).collect();
         let genero = |id: &u32| self.generos.iter().find(|g| g.id == *id).map(|g| g.name.clone());
@@ -130,7 +146,7 @@ impl Core {
         let decadas = no_catalogo.iter().filter_map(|&(m, nota)| Some((m.year? / 10 * 10, nota)));
         let por_decada = agrupar(decadas).into_iter().map(|(d, notas, media)| Grupo { nome: d.to_string(), notas, media }).collect();
         let mut meses: BTreeMap<i64, BTreeSet<ObraId>> = BTreeMap::new();
-        for (&id, h) in &self.owner.notas {
+        for (&id, h) in notas() {
             h.iter().for_each(|e| _ = meses.entry(mes(e.at)).or_default().insert(id));
         }
         let por_mes = match (meses.first_key_value(), meses.last_key_value()) {
@@ -148,15 +164,24 @@ impl Core {
             })
             .collect();
         let vs_publico = media(&discordancias.iter().map(|&(_, nota, publico)| nota - publico).collect::<Vec<_>>());
-        let mudancas = self.owner.notas.iter().filter_map(|(id, h)| {
+        let mudancas = notas().filter_map(|(id, h)| {
             let (de, para) = (h.first()?.nota, h.last()?.nota);
             (de != para).then_some((*self.index.get(id)?, de, para))
         });
-        let entradas = || self.owner.notas.values().flatten();
-        let por_ano = agrupar(entradas().map(|e| (civil(e.at).0, e.nota)));
-        let erros: Vec<f32> = entradas().filter_map(|e| Some((e.prevista? - e.nota).abs())).collect();
+        let por_ano = agrupar(notas().flat_map(|(_, h)| h).map(|e| (civil(e.at).0, e.nota)));
+        let acerto = |series: bool| {
+            let de_tipo = self.owner.notas.iter().filter(|(id, _)| id.is_serie() == series).flat_map(|(_, h)| h);
+            let erros: Vec<f32> = de_tipo.filter_map(|e| Some((e.prevista? - e.nota).abs())).collect();
+            media(&erros).map(|mae| Acerto { notas: erros.len(), mae })
+        };
+        let com_nota = self.owner.notas.iter().filter(|(id, h)| id.is_serie() && !h.is_empty()).count();
+        let mae_series = (com_nota >= MAE_SERIES_MIN_NOTAS)
+            .then(|| self.accuracy_series(MAE_FRACAO, SERIE_WEIGHT))
+            .flatten()
+            .map(|a| Acerto { notas: a.geral.notas, mae: a.geral.mae });
         Estatisticas {
             distribuicao,
+            reacoes,
             por_genero,
             por_decada,
             por_direcao,
@@ -165,7 +190,9 @@ impl Core {
             discordancias: self.mais_distantes(discordancias).map(|(card, nota, publico)| Discordancia { card, nota, publico }).collect(),
             por_ano: por_ano.into_iter().map(|(ano, notas, media)| Ano { ano, notas, media }).collect(),
             mudancas: self.mais_distantes(mudancas.collect()).map(|(card, de, para)| Mudanca { card, de, para }).collect(),
-            acerto: media(&erros).map(|mae| Acerto { notas: erros.len(), mae }),
+            acerto: acerto(false),
+            acerto_series: acerto(true),
+            mae_series,
         }
     }
 
