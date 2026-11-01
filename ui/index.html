@@ -876,6 +876,8 @@
     });
     // TMDB pages, the trailer and where to watch open in the system browser.
     const abrirUrl = url => invoke('plugin:opener|open_url', { url });
+    const duracaoObra = m => m.runtime && (ehSerie(m.tmdb_id) ? `${duracao(m.runtime)} por episódio` : duracao(m.runtime));
+    const ofertas = onde => [['Assinatura', onde.assinatura], ['Aluguel', onde.aluguel], ['Compra', onde.compra]].filter(([, p]) => p.length);
     const duracao = min => min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`;
     const idiomaNome = code => { try { return new Intl.DisplayNames(['pt-BR'], { type: 'language' }).of(code); } catch { return code; } };
 
@@ -911,7 +913,7 @@
       document.getElementById('filme-original').textContent = [m.original_title !== m.title && m.original_title, m.year].filter(Boolean).join(' · ');
       const temporadas = m.temporadas && `${m.temporadas} ${m.temporadas === 1 ? 'temporada' : 'temporadas'}`;
       const situacao = { em_andamento: 'Em andamento', terminada: 'Terminada' }[m.situacao];
-      const episodio = m.runtime && (ehSerie(m.tmdb_id) ? `${duracao(m.runtime)} por episódio` : duracao(m.runtime));
+      const episodio = duracaoObra(m);
       const meta = [temporadas, situacao, episodio, m.generos.join(', '), m.idioma && idiomaNome(m.idioma)];
       document.getElementById('filme-meta').textContent = meta.filter(Boolean).join(' · ');
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
@@ -926,8 +928,7 @@
       const onde = m.onde_assistir;
       document.getElementById('onde').hidden = !onde;
       if (onde) {
-        const rows = [['Assinatura', onde.assinatura], ['Aluguel', onde.aluguel], ['Compra', onde.compra]];
-        document.getElementById('onde-lista').replaceChildren(...rows.filter(([, p]) => p.length).map(([kind, p]) => {
+        document.getElementById('onde-lista').replaceChildren(...ofertas(onde).map(([kind, p]) => {
           const row = document.createElement('div');
           const label = document.createElement('span');
           label.textContent = `${kind}: `;
@@ -1167,6 +1168,11 @@
       historico.hidden = false;
       filmeEl.querySelector('.menu').open = false;
     });
+    // A share names one kind of oferta, the first with any: Assinatura, Aluguel, then Compra.
+    function ondeCompartilhar(m) {
+      const [[tipo, servicos] = []] = m.onde_assistir ? ofertas(m.onde_assistir) : [];
+      return tipo ? `Onde assistir no Brasil · ${tipo}: ${servicos.map(x => x.name).join(', ')}` : '';
+    }
     // The share card: story-sized, the poster over a blurred copy of itself.
     function linhas(ctx, texto, largura, max) {
       const saida = [];
@@ -1225,14 +1231,22 @@
         y += gap;
       };
       escrever(m.title, '700 72px', 86, cor('--text'), 3, 16);
-      const meta = [m.year, m.runtime && duracao(m.runtime), m.generos.slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+      const meta = [m.year, duracaoObra(m), m.generos.slice(0, 2).join(', ')].filter(Boolean).join(' · ');
       if (meta) escrever(meta, '36px', 46, cor('--accent'), 2, 32);
+      const ondeTexto = ondeCompartilhar(m);
+      if (ondeTexto) escrever(ondeTexto, '700 36px', 46, cor('--text'), 2, 32);
       // What is left down to the mark, in whole lines.
       const sobra = Math.floor((H - 170 - y) / 54);
       if (m.sinopse && sobra > 0) escrever(m.sinopse, '38px', 54, cor('--text'), sobra, 0);
       ctx.font = `700 40px ${familia}`;
       ctx.fillStyle = cor('--accent');
       ctx.fillText('Cinelens', M, H - 110);
+      if (ondeTexto) {
+        ctx.font = `30px ${familia}`;
+        ctx.fillStyle = cor('--text');
+        ctx.textAlign = 'right';
+        ctx.fillText('Dados de onde assistir: JustWatch', W - M, H - 104);
+      }
       return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
     }
     const compartilharEl = document.getElementById('compartilhar');
@@ -1243,7 +1257,9 @@
       try {
         const titulo = m.year ? `${m.title} (${m.year})` : m.title;
         const sinopse = m.sinopse && m.sinopse.length > 280 ? `${m.sinopse.slice(0, 280).trimEnd()}…` : m.sinopse;
-        await invoke('compartilhar', { imagem: await cardCompartilhar(m), texto: [titulo, sinopse].filter(Boolean).join('\n\n') });
+        const ondeTexto = ondeCompartilhar(m);
+        const texto = [titulo, ondeTexto && `${ondeTexto} (dados: JustWatch)`, sinopse].filter(Boolean).join('\n\n');
+        await invoke('compartilhar', { imagem: await cardCompartilhar(m), texto });
         filmeEl.querySelector('.menu').open = false;
       } catch (e) {
         compartilharEl.textContent = 'Não deu para compartilhar';
