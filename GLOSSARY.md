@@ -25,7 +25,7 @@ A mark that the owner is partway through a série; it takes the série out of re
 _Avoid_: em andamento (that is the série's own situação), progresso
 
 **Nota prevista** (Predicted rating):
-The score the recommender expects the owner would give an obra not yet rated; a continuous number, not restricted to half stars.
+The score the recommender expects the owner would give an obra not yet rated; a continuous number, not restricted to half stars. For an obra already rated, the same score with its own nota left out.
 _Avoid_: previsão, match, recomendação
 
 **Nota do público** (Public score):
@@ -73,7 +73,7 @@ The owner's setting for how much popularity weighs in ranking recomendações, f
 _Avoid_: algoritmo, modo
 
 **Rodada rápida** (Quick rating session):
-A sequence of movies chosen to teach the recommender the most about the owner, each one rated or skipped as "não vi".
+A sequence of movies the owner has likely seen, chosen to teach the recommender the most, each one rated or skipped as "não vi".
 _Avoid_: avaliação rápida, onboarding, calibração
 
 **Já vi** (Seen):

@@ -122,3 +122,32 @@ fn settings_chosen_before_sync_existed_survive_a_new_device() {
         assert_eq!(core.display_mode(), cinelens_core::DisplayMode::Oculto);
     }
 }
+
+#[test]
+fn a_removed_nota_does_not_come_back_from_the_other_device() {
+    let (mut a, mut b, mut nuvem) = (device(), device(), Nuvem::default());
+    a.rate(ObraId::filme(603), 5.0, 100).unwrap();
+    sync_all(&mut a, &mut b, &mut nuvem);
+
+    b.remover_nota(ObraId::filme(603), 200);
+    sync_all(&mut a, &mut b, &mut nuvem);
+
+    assert_eq!(a.movie(ObraId::filme(603)).unwrap().nota, None);
+    assert_eq!(b.movie(ObraId::filme(603)).unwrap().nota, None);
+    assert_eq!(a.owner_data(), b.owner_data());
+}
+
+#[test]
+fn a_nota_given_after_the_removal_stays() {
+    let (mut a, mut b, mut nuvem) = (device(), device(), Nuvem::default());
+    a.rate(ObraId::filme(603), 5.0, 100).unwrap();
+    sync_all(&mut a, &mut b, &mut nuvem);
+
+    b.remover_nota(ObraId::filme(603), 200);
+    // The same second, or on a device whose clock runs behind.
+    b.rate(ObraId::filme(603), 3.0, 200).unwrap();
+    sync_all(&mut a, &mut b, &mut nuvem);
+
+    assert_eq!(a.movie(ObraId::filme(603)).unwrap().nota, Some(3.0));
+    assert_eq!(a.movie(ObraId::filme(603)).unwrap().history.len(), 1);
+}

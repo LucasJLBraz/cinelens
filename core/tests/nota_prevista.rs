@@ -125,3 +125,38 @@ fn a_low_confianca_five_ranks_below_a_high_confianca_four_point_six() {
     assert_eq!(top[1].nota_prevista, Some(5.0), "the shown nota prevista stays raw");
     assert!(core.inicio(0, 0).destaques.first().is_some_and(|d| d.card.id.tmdb_id() == 27205));
 }
+
+#[test]
+fn a_rated_movie_shows_what_the_app_would_predict_without_its_nota() {
+    let mut core = with_model();
+    core.rate(ObraId::filme(603), 5.0, 100).unwrap();
+    core.rate(ObraId::filme(278), 2.0, 100).unwrap();
+    let before = prevista(&core, 157336);
+    assert_eq!(core.movie(ObraId::filme(157336)).unwrap().prevista_sem_a_nota, None);
+
+    // Whatever the nota, the answer stays: the nota does not echo in it.
+    for nota in [0.5, 5.0] {
+        core.rate(ObraId::filme(157336), nota, 200).unwrap();
+        let page = core.movie(ObraId::filme(157336)).unwrap();
+        assert_eq!(page.prevista_sem_a_nota, Some(before));
+        assert!(page.faixa.is_some());
+        assert_eq!(page.card.nota_prevista, None);
+    }
+}
+
+#[test]
+fn removing_a_nota_undoes_it() {
+    let mut core = with_model();
+    core.rate(ObraId::filme(278), 2.0, 100).unwrap();
+    let before = prevista(&core, 27205);
+
+    core.rate(ObraId::filme(603), 5.0, 200).unwrap();
+    core.rate(ObraId::filme(603), 4.0, 300).unwrap();
+    core.remover_nota(ObraId::filme(603), 400);
+
+    let page = core.movie(ObraId::filme(603)).unwrap();
+    assert_eq!(page.nota, None);
+    assert!(page.history.is_empty());
+    assert!(page.card.nota_prevista.is_some(), "a recomendação again");
+    assert_eq!(prevista(&core, 27205), before);
+}

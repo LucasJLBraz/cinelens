@@ -1,4 +1,5 @@
-//! Rodada rápida: one movie at a time to rate or skip as "não vi", the most informative first.
+//! Rodada rápida: one movie at a time to rate or skip as "não vi": those the owner likely saw
+//! and that teach the most first.
 
 use cinelens_core::ObraId;
 use cinelens_core::{Core, Marca};
@@ -40,8 +41,9 @@ fn rodada(core: &Core) -> Vec<u32> {
 
 #[test]
 fn divisive_well_known_movies_come_first() {
-    // 5 is as divisive as 1 but few have seen it; 4 says little; 6 teaches the fold-in nothing.
-    assert_eq!(rodada(&core()), [1, 3, 2, 5, 4]);
+    // 4 says little, but 5, as divisive as 1, is one few have seen: it comes last. 6 teaches the
+    // fold-in nothing.
+    assert_eq!(rodada(&core()), [1, 3, 2, 4, 5]);
 }
 
 #[test]
@@ -72,7 +74,7 @@ fn movies_already_seen_or_dismissed_are_left_out() {
     let mut core = core();
     core.marcar(ObraId::filme(1), Marca::JaVi, true, NOW);
     core.marcar(ObraId::filme(3), Marca::NaoMeInteressa, true, NOW);
-    assert_eq!(rodada(&core), [2, 5, 4]);
+    assert_eq!(rodada(&core), [2, 4, 5]);
 }
 
 #[test]

@@ -380,6 +380,9 @@ pub struct MoviePage {
     pub card: MovieCard,
     /// The nota prevista's faixa, shown on the page whatever the display mode.
     pub faixa: Option<Faixa>,
+    /// A rated movie's nota prevista with its own nota left out; `None` if unrated or unknown to
+    /// the model.
+    pub prevista_sem_a_nota: Option<f32>,
     /// TMDB's public score, in stars; `None` with too few votes to tell.
     pub publico: Option<f32>,
     /// Critics' score (Metacritic, else Rotten Tomatoes, from OMDb), 0–100.
@@ -515,7 +518,15 @@ struct OwnerData {
 }
 
 impl OwnerData {
+    /// When the owner last removed the movie's nota; notas given by then stay gone.
+    fn removida(&self, id: ObraId) -> Option<i64> {
+        self.changed.get(&sync::key("notas", id)).copied()
+    }
+
     fn add_nota(&mut self, id: ObraId, entry: NotaEntry) {
+        if self.removida(id).is_some_and(|at| entry.at <= at) {
+            return;
+        }
         let history = self.notas.entry(id).or_default();
         if !history.contains(&entry) {
             history.push(entry);
@@ -868,12 +879,12 @@ impl Core {
         Inicio { destaques: destaques.collect(), fileiras: fileiras.collect() }
     }
 
-    /// The rodada rápida's next `n` movies, the most informative first: those whose nota would
-    /// move the owner's profile most, weighed by how likely the owner is to have seen them. Only
+    /// The rodada rápida's next `n` movies: those the owner most likely saw and whose nota would
+    /// move the owner's profile most. Only
     /// movies with collaborative factors (a nota on any other teaches the fold-in nothing), and
     /// none rated, já vi, não me interessa or skipped as não vi.
-    // ponytail: TMDB votes stand in for the chance the owner has seen it; learn it from the não vi
-    // answers if the rodada asks about too many unseen movies.
+    // ponytail: TMDB votes, linear, stand in for the chance the owner has seen it; learn it from
+    // the não vi answers if the rodada still asks about too many unseen movies.
     pub fn rodada(&self, n: usize) -> Vec<MovieCard> {
         let Some(profile) = &self.profile else { return Vec::new() };
         let mut scored: Vec<(f32, usize)> = (0..self.movies.len())
@@ -881,7 +892,7 @@ impl Core {
                 let item = self.items[i].as_ref().filter(|item| item.collaborative)?;
                 let id = self.movies[i].id;
                 let asked = self.rated(id) || self.owner.ja_vi.contains(&id) || self.owner.nao_vi.contains(&id);
-                (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.popularidade[i], i))
+                (!asked && !self.dispensado(i)).then(|| (profile.uncertainty(item) * self.movies[i].vote_count as f32, i))
             })
             .collect();
         // Stable: ties keep catálogo order.
@@ -1013,11 +1024,34 @@ impl Core {
         if !is_valid_nota(nota) {
             return Err(Error::InvalidNota(nota));
         }
+        // Given after a removal even if this device's clock runs behind.
+        let at = self.owner.removida(id).map_or(at, |removida| at.max(removida + 1));
         let card = self.index.get(&id).map(|&i| self.card(i));
         let (prevista, revealed) = card.map_or((None, None), |c| (c.nota_prevista, c.exibicao));
         self.owner.add_nota(id, NotaEntry { nota, at, movielens_pred: None, prevista });
         self.recompute();
         Ok(revealed)
+    }
+
+    /// Forgets the movie's nota and its whole history, on every device, as if never given.
+    pub fn remover_nota(&mut self, id: ObraId, at: i64) {
+        let Some(history) = self.owner.notas.remove(&id) else { return };
+        let last = history.last().map_or(at, |e| e.at);
+        self.owner.stamp(sync::key("notas", id), at.max(last));
+        self.set_pesou(id, &[], at);
+    }
+
+    /// The nota prevista of a rated movie, its own nota left out of the fold-in, so the answer
+    /// is what the app would expect and not an echo of the nota.
+    fn prevista_sem_a_nota(&self, i: usize) -> Option<f32> {
+        let id = self.movies[i].id;
+        let (model, item) = (self.model.as_ref()?, self.items[i].as_ref()?);
+        if !self.rated(id) {
+            return None;
+        }
+        let mut notas = self.owner.notas.clone();
+        notas.remove(&id);
+        Some(model.predict(&model.profile(&notas, &self.owner.nao_me_interessa, self.half_life_days), item))
     }
 
     /// The movie page, or `None` if the movie is not in the catálogo.
@@ -1027,9 +1061,11 @@ impl Core {
         let history = self.owner.notas.get(&id).cloned().unwrap_or_default();
         let people = |list: &[Person]| list.iter().map(|p| self.pessoa_card(p.id, p.name.clone())).collect();
         let genre = |id: &u32| self.generos.iter().find(|g| g.id == *id).map(|g| g.name.clone());
+        let sem_a_nota = self.prevista_sem_a_nota(i);
         Some(MoviePage {
             card: self.card(i),
-            faixa: self.previstas[i].map(|(p, _)| display::faixa(p, &self.ranked)),
+            faixa: self.previstas[i].map(|(p, _)| p).or(sem_a_nota).map(|p| display::faixa(p, &self.ranked)),
+            prevista_sem_a_nota: sem_a_nota,
             publico: (m.vote_count >= filtro::PUBLICO_MIN_VOTOS).then_some(m.vote_average / 2.0),
             critica: m.critic_score,
             backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),

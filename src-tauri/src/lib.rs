@@ -194,6 +194,15 @@ fn rate(
     Ok((core.movie(tmdb_id), revealed))
 }
 
+/// Forgets the movie's nota; returns its page after.
+#[tauri::command]
+fn remover_nota(app: AppHandle, core: tauri::State<RwLock<Core>>, tmdb_id: ObraId) -> Result<Option<MoviePage>, String> {
+    let mut core = core.write().unwrap();
+    core.remover_nota(tmdb_id, now());
+    save_owner(&app, &core)?;
+    Ok(core.movie(tmdb_id))
+}
+
 /// The rodada rápida's next `n` movies.
 #[tauri::command]
 fn rodada(core: tauri::State<RwLock<Core>>, n: usize) -> Vec<MovieCard> {
@@ -628,6 +637,7 @@ pub fn run() {
             set_pesou,
             pesou_oculto,
             set_pesou_oculto,
+            remover_nota,
             rodada,
             nao_vi,
             estatisticas,

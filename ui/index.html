@@ -335,6 +335,7 @@
         <div class="menu-items">
           <button data-marca="NaoMeInteressa">Não me interessa</button>
           <button id="ver-historico">Histórico de notas</button>
+          <button id="remover-nota">Remover nota</button>
           <button id="trailer">▶ Trailer</button>
           <button id="abrir-tmdb">Abrir no TMDB</button>
         </div>
@@ -810,6 +811,10 @@
       // The faixa, in the display mode (none in Oculto); the owner's own nota stays visible.
       document.getElementById('filme-faixa').replaceChildren(...m.exibicao ? [faixaEl(m.exibicao)] : []);
       document.getElementById('sua-nota').textContent = m.nota != null ? `Sua nota: ${fmt(m.nota)}` : '';
+      const remover = document.getElementById('remover-nota');
+      remover.hidden = m.nota == null;
+      remover.textContent = 'Remover nota';
+      delete remover.dataset.confirmar;
       showPontuacoes(m);
       document.getElementById('porque').textContent = m.porque.length ? `Porque você amou ${m.porque.join(' e ')}` : '';
       const onde = m.onde_assistir;
@@ -859,6 +864,7 @@
     function showPontuacoes(m) {
       const pontuacoes = [
         ['prevista', 'Nota prevista', m.nota_prevista != null && `★ ${decimal(m.nota_prevista)} (${decimal(Math.round(m.nota_prevista * 2) / 2)}) · ${m.faixa} · ${Math.round(m.confianca * 100)}%`],
+        ['sem-nota', 'Previsão sem sua nota', m.prevista_sem_a_nota != null && `★ ${decimal(m.prevista_sem_a_nota)} (${decimal(Math.round(m.prevista_sem_a_nota * 2) / 2)}) · ${m.faixa}`],
         ['publico', 'Público', m.publico != null && `★ ${decimal(m.publico)}`],
         ['critica', 'Crítica', m.critica != null && `${m.critica}/100`],
       ].filter(([, , valor]) => valor);
@@ -1022,6 +1028,20 @@
       const painelNota = document.getElementById('painel-nota');
       painelNota.hidden = !painelNota.hidden;
       filmeEl.classList.toggle('dando-nota', !painelNota.hidden);
+    });
+    // Takes the whole history with it, so a stray tap only asks.
+    document.getElementById('remover-nota').addEventListener('click', async e => {
+      const b = e.target;
+      if (!b.dataset.confirmar) {
+        b.dataset.confirmar = 'sim';
+        b.textContent = 'Toque de novo para remover';
+        return;
+      }
+      const m = await invoke('remover_nota', { tmdbId: Number(filmeEl.dataset.id) });
+      stale = true;
+      filmeEl.querySelector('.menu').open = false;
+      closeRating();
+      if (m) showMovie(m);
     });
     document.getElementById('ver-historico').addEventListener('click', () => {
       const historico = document.getElementById('nota-history');

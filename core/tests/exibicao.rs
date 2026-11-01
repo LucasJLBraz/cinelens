@@ -143,6 +143,8 @@ fn the_movie_page_shows_the_nota_prevista_and_its_faixa_whatever_the_mode() {
     let page = core.movie(ObraId::filme(top)).unwrap();
     assert!(page.card.nota_prevista.is_some());
     assert_eq!(page.faixa, Some(Faixa::ApostaForte));
-    // A movie with a nota has no nota prevista, so no faixa either.
-    assert_eq!(core.movie(ObraId::filme(603)).unwrap().faixa, None);
+    // A movie with a nota has no nota prevista; its faixa is that of the one without the nota.
+    let rated = core.movie(ObraId::filme(603)).unwrap();
+    assert_eq!(rated.card.nota_prevista, None);
+    assert!(rated.prevista_sem_a_nota.is_some() && rated.faixa.is_some());
 }

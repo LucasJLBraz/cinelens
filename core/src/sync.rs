@@ -66,6 +66,13 @@ impl OwnerData {
             let stamp = self.changed.entry(key).or_insert(at);
             *stamp = (*stamp).max(at);
         }
+        // A removal on either device takes every nota given by then.
+        let changed = &self.changed;
+        self.notas.retain(|&id, history| {
+            let removida = changed.get(&key("notas", id));
+            history.retain(|e| Some(&e.at) > removida);
+            !history.is_empty()
+        });
     }
 }
 
