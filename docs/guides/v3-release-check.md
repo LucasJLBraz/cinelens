@@ -29,7 +29,7 @@ Use este roteiro para fechar a v3. A meta é a mesma das anteriores: com animes 
 ## 2) Dados do dono
 
 - [x] Teste automático: com os animes e o modelo deles carregados, os dados do dono ficam idênticos, e uma série que vira anime mantém nota, Reação e marca (`core/tests/animes.rs`, módulo `atualizar`).
-- [ ] No aparelho: as notas e marcas continuam iguais depois de atualizar da v2.
+- [x] No aparelho, ao atualizar da v2 para a `v3.0.1`: Perfil igual antes e depois (342 notas, mesmas Reações e estatísticas). As marcas não foram contadas uma a uma; ficam cobertas pelo teste automático.
 
 ## 3) Publicar, nesta ordem
 
@@ -39,29 +39,36 @@ Use este roteiro para fechar a v3. A meta é a mesma das anteriores: com animes 
 4. Publicar a versão, conforme [release.md](release.md), passo 3:
 
 ```bash
-git tag v3.0.0
+git tag v3.0.1
 ```
 
 ```bash
-git push origin v3.0.0
+git push origin v3.0.1
 ```
 
 - [x] Merge e push da `main`.
 - [x] `anime-model-v1` publicado: 986 KB.
 - [x] `animes.json.gz` publicado: 2.867 animes, 1,3 MB, 4% do catálogo (limite de 25%); 2.852 têm `estreia` em alguma temporada.
-- [ ] Release `v3.0.0` publicada e detectada pelo Obtainium.
+- [x] Release `v3.0.1` publicada e instalada por cima da v2 por `adb`. A tag `v3.0.0` não tem release: o bench falhou nela.
+- [ ] Obtainium detecta `v3.0.1`, a confirmar pelo dono.
 
 ## 4) Velocidade manual no celular do dono
 
-Medir no aparelho real, com a `v3.0.0` e os animes já baixados. O roteiro é o da [v2](v2-release-check.md), mais a página de anime.
+Medir no aparelho real, com a versão publicada e os animes já baixados. O roteiro é o da [v2](v2-release-check.md), mais a página de anime.
 
 | Medida | Meta | Resultado |
 |---|---|---|
-| Abrir do zero até o Início com pôster | < 1 s | |
-| Voltar ao app já aberto | < 1 s | |
-| Trocar aba | < 100 ms | |
-| Abrir página de anime | < 100 ms | |
-| Busca com erro de digitação | < 100 ms | |
+| Abrir do zero até o Início com pôster | < 1 s | 629–751 ms (3 aberturas) |
+| Voltar ao app já aberto | < 1 s | 68–81 ms (3 aberturas, tempo do `am start`) |
+| Trocar aba | < 100 ms | 34–71 ms (9 trocas) |
+| Abrir página de anime | < 100 ms | 25–32 ms até o primeiro quadro, 42–91 ms até o último (5 aberturas) |
+| Trocar filtro para Animes | < 100 ms | 30–33 ms (3 trocas) |
+| Voltar o filtro para Tudo | < 100 ms | **113–116 ms, acima da meta** (3 trocas) |
+| Busca com erro de digitação | < 100 ms | **133–140 ms, acima da meta** (4 buscas) |
+
+Medido em 2026-11-01 na `v3.0.1`, no S20 FE, sem crash, com o método da v2: do fim do toque no log do sistema ao primeiro quadro do app no SurfaceFlinger, e vídeo para a abertura do zero. A v2 não mediu a busca. Nota não medida: o aparelho usa a conta real do dono.
+
+- [ ] Medidas fora da meta aceitas pelo dono.
 
 ## 5) Atribuição
 

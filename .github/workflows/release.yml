@@ -71,6 +71,7 @@ jobs:
           - Metadados e imagens do TMDB (não endossado/certificado pelo TMDB).
           - Onde assistir via JustWatch (dados fornecidos pelo TMDB).
           - Pontuação da crítica via OMDb.
+          - Fatores de animes treinados com notas do MyAnimeList (amostra de Andrew Gatchalian, novembro de 2023).
           NOTES
           gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Cinelens $VERSION" --notes-file notes.md
           gh release upload "$GITHUB_REF_NAME" "cinelens-$VERSION.apk" --clobber
