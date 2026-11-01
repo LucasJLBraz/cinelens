@@ -528,3 +528,107 @@ mod ranking_misto {
         assert_eq!(explorar, ids);
     }
 }
+
+mod piso {
+    use cinelens_core::{Core, Filtro, ObraId, Tipo};
+
+    /// Five séries with votes, averaging 5 to 9: the lowest quarter is the one at 5. Série 6 has
+    /// the lowest average of all but few votes.
+    fn series(medias: [f32; 5]) -> String {
+        let serie = |n: u32, votos: u32, media: f32| {
+            format!(
+                r#"{{"tmdb_id": {}, "title": "S{n}", "original_title": "S{n}", "year": 2020, "poster_path": null, "genre_ids": [18], "vote_count": {votos}, "vote_average": {media}}}"#,
+                ObraId::serie(n)
+            )
+        };
+        let mut todas: Vec<String> = medias.iter().zip(1..).map(|(&m, n)| serie(n, 600 - n * 100, m)).collect();
+        todas.push(serie(6, 49, 1.0));
+        format!(r#"{{"format_version": 1, "data_version": "s", "movies": [{}]}}"#, todas.join(","))
+    }
+
+    const FILMES: &str = r#"{"format_version": 1, "data_version": "f", "movies": [
+        {"tmdb_id": 1, "title": "F", "original_title": "F", "year": 2000, "poster_path": null, "genre_ids": [18], "vote_count": 60, "vote_average": 8.0}
+    ]}"#;
+
+    const MODEL: &str = r#"{"format_version": 2, "data_version": "t", "global_mean": 3.5, "lambda": 0.05,
+        "movies": [{"tmdb_id": 1, "bias": 0.0, "factors": [1.0], "ratings": 50000}],
+        "content": [{"feature": "g18", "bias": 0.0, "factors": [1.0]}]}"#;
+
+    const RUIM: ObraId = ObraId::serie(1);
+
+    fn core_com(medias: [f32; 5]) -> Core {
+        let mut core = Core::default();
+        core.load_saved(Some(FILMES.as_bytes()), Some(series(medias).as_bytes()), Some(MODEL.as_bytes()));
+        core
+    }
+
+    fn core() -> Core {
+        core_com([5.0, 6.0, 7.0, 8.0, 9.0])
+    }
+
+    fn ids(core: &Core, filtro: &Filtro) -> Vec<ObraId> {
+        core.explorar(filtro, 0).movies.iter().map(|m| m.id).collect()
+    }
+
+    #[test]
+    fn a_serie_page_shows_the_nota_do_publico_from_50_votes() {
+        let core = core();
+        assert_eq!(core.movie(ObraId::serie(5)).unwrap().publico, Some(4.5));
+        assert_eq!(core.movie(ObraId::serie(6)).unwrap().publico, None);
+        // A filme still needs more votes to speak for the public.
+        assert_eq!(core.movie(ObraId::filme(1)).unwrap().publico, None);
+    }
+
+    #[test]
+    fn explorar_filters_by_nota_do_publico() {
+        let filtro = Filtro { tipo: Some(Tipo::Serie), media_tmdb_min: Some(8.0), ..Default::default() };
+        assert_eq!(ids(&core(), &filtro), [ObraId::serie(4), ObraId::serie(5)]);
+    }
+
+    #[test]
+    fn below_the_floor_a_serie_is_in_no_destaque_or_row() {
+        let core = core();
+        let inicio = core.inicio(0, 0);
+        assert!(inicio.destaques.iter().all(|d| d.card.id != RUIM));
+        assert!(inicio.fileiras.iter().flat_map(|f| &f.movies).all(|m| m.id != RUIM));
+        // Not even as a row's filler, nor in what its "ver tudo" opens.
+        let fileira = inicio.fileiras.iter().find(|f| f.nome == "Séries para você").unwrap();
+        assert!(!fileira.movies.is_empty());
+        assert!(!ids(&core, &fileira.filtro).contains(&RUIM));
+    }
+
+    #[test]
+    fn below_the_floor_a_serie_stays_in_search_and_after_the_recomendacoes() {
+        let core = core();
+        let busca = Filtro { busca: "S1".into(), ..Default::default() };
+        assert_eq!(ids(&core, &busca), [RUIM]);
+        let series = ids(&core, &Filtro { tipo: Some(Tipo::Serie), ..Default::default() });
+        assert_eq!(series.last(), Some(&RUIM));
+        assert_eq!(series.len(), 6);
+    }
+
+    #[test]
+    fn the_cut_comes_from_the_catalogo() {
+        // The same 5.0 is above the floor among worse séries; 3.0 is the one below it.
+        let core = core_com([5.0, 3.0, 5.5, 6.0, 6.5]);
+        let inicio = core.inicio(0, 0);
+        let na_fileira = |id| inicio.fileiras.iter().flat_map(|f| &f.movies).any(|m| m.id == id);
+        assert!(na_fileira(RUIM));
+        assert!(!na_fileira(ObraId::serie(2)));
+    }
+
+    #[test]
+    fn with_fewer_than_50_votes_a_serie_escapes_the_floor() {
+        let core = core();
+        let fileira = core.inicio(0, 0).fileiras.into_iter().find(|f| f.nome == "Séries para você").unwrap();
+        assert!(fileira.movies.iter().any(|m| m.id == ObraId::serie(6)));
+    }
+
+    #[test]
+    fn the_nota_do_publico_does_not_enter_the_nota_prevista() {
+        let (baixa, alta) = (core_com([5.0, 6.0, 7.0, 8.0, 9.0]), core_com([9.0, 9.0, 9.0, 9.0, 9.0]));
+        let prevista = |core: &Core| core.movie(RUIM).unwrap().card.nota_prevista;
+        assert!(prevista(&baixa).is_some());
+        assert_eq!(prevista(&baixa), prevista(&alta));
+    }
+}

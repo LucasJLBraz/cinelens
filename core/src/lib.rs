@@ -57,6 +57,8 @@ const FILEIRA: usize = 12;
 const SORTEIO: usize = PAGE_SIZE;
 /// How long agora não keeps a movie out of the destaque.
 const AGORA_NAO_SECS: i64 = 28 * 86_400;
+/// Votes a série needs for its nota do público to count: to be shown, and to face the floor.
+const PISO_MIN_VOTOS: u32 = 50;
 /// A new model must predict the owner's notas within this MAE to replace the current one.
 const MAE_LIMITE: f32 = 0.65;
 /// Share of the owner's most recent notas a new model is measured on (ADR 0002 uses 20%).
@@ -613,6 +615,8 @@ pub struct Core {
     em_alta: HashSet<ObraId>,
     /// Some movie has a critics' score.
     tem_critica: bool,
+    /// The floor: séries with enough votes and a nota do público below this are no recomendações.
+    piso_series: f32,
     owner: OwnerData,
     model: Option<Model>,
     /// The owner's side of the model for filmes, from the last fold-in: only notas on filmes.
@@ -690,6 +694,10 @@ impl Core {
         self.popularidade = self.movies.iter().map(|m| log_votes(m) / most).collect();
         self.index = self.movies.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
         self.tem_critica = self.movies.iter().any(|m| m.critic_score.is_some());
+        let com_votos = self.movies.iter().filter(|m| m.id.is_serie() && m.vote_count >= PISO_MIN_VOTOS);
+        let mut medias: Vec<f32> = com_votos.map(|m| m.vote_average).collect();
+        medias.sort_by(f32::total_cmp);
+        self.piso_series = medias.get(medias.len() / 4).copied().unwrap_or(0.0);
         let mut na_assinatura: HashMap<u32, usize> = HashMap::new();
         for id in self.movies.iter().filter_map(|m| m.watch.as_ref()).flat_map(|w| &w.flatrate) {
             *na_assinatura.entry(*id).or_default() += 1;
@@ -846,10 +854,16 @@ impl Core {
         if self.movies[i].id.is_serie() { &self.ranked_series } else { &self.ranked }
     }
 
-    /// A recomendação: predicted, neither já vi nor não me interessa.
+    /// A recomendação: predicted, neither já vi nor não me interessa, not below the floor.
     fn recomendavel(&self, i: usize) -> bool {
         let id = self.movies[i].id;
-        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.dispensado(i)
+        self.previstas[i].is_some() && !self.owner.ja_vi.contains(&id) && !self.dispensado(i) && !self.abaixo_do_piso(i)
+    }
+
+    /// A série in the lowest quarter of nota do público, among those with enough votes.
+    pub(crate) fn abaixo_do_piso(&self, i: usize) -> bool {
+        let m = &self.movies[i];
+        m.id.is_serie() && m.vote_count >= PISO_MIN_VOTOS && m.vote_average < self.piso_series
     }
 
     /// Marked não me interessa.
@@ -1230,7 +1244,7 @@ impl Core {
             card: self.card(i),
             faixa: self.previstas[i].map(|(p, _)| p).or(sem_a_nota).map(|p| display::faixa(p, self.ranked_de(i))),
             prevista_sem_a_nota: sem_a_nota,
-            publico: (m.vote_count >= filtro::PUBLICO_MIN_VOTOS).then_some(m.vote_average / 2.0),
+            publico: (m.vote_count >= if id.is_serie() { PISO_MIN_VOTOS } else { filtro::PUBLICO_MIN_VOTOS }).then_some(m.vote_average / 2.0),
             critica: m.critic_score,
             backdrop_url: m.backdrop_path.as_ref().map(|p| format!("{BACKDROP_BASE}{p}")),
             tmdb_url: format!("https://www.themoviedb.org/{}/{}", if id.is_serie() { "tv" } else { "movie" }, id.tmdb_id()),

@@ -70,6 +70,8 @@ pub struct Filtro {
     pub quero_assistir: Mostrar,
     /// Only the movies marked não me interessa (hidden otherwise), so they can be restored.
     pub nao_me_interessa: bool,
+    /// Leave out séries below the nota do público floor, as the listas prontas do.
+    pub acima_do_piso: bool,
     /// Only movies on a subscription service the owner has.
     pub no_meu_streaming: bool,
     /// Words that must all appear in the pt-BR or original title, a director or an actor,
@@ -137,6 +139,7 @@ impl<'a> Matcher<'a> {
                 None => m.vote_count >= PUBLICO_MIN_VOTOS && m.vote_average >= f32::from(min) / 10.0,
             })
             && (f.classificacao.is_empty() || m.certification.as_ref().is_some_and(|c| f.classificacao.contains(c)))
+            && !(f.acima_do_piso && core.abaixo_do_piso(i))
             && shown(f.com_nota, rated)
             && shown(f.ja_vi, owner.ja_vi.contains(&m.id))
             && shown(f.quero_assistir, owner.quero_assistir.contains(&m.id))
