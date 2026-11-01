@@ -7,7 +7,7 @@ Use este roteiro para fechar a v3. A meta é a mesma das anteriores: com animes 
 ## 1) Testes e benchmarks
 
 - [x] `cargo test -p cinelens-core -p cinelens-catalog -p cinelens-train` passa na branch `feat/series-catalogo`, rodado no computador do dono em 2026-11-01.
-- [ ] `cargo bench -p cinelens-core` fica dentro dos limites, com 60.000 filmes, 15.000 séries e 19.000 animes sintéticos (`core/benches/budgets.rs`). A busca está no limite: 98 a 100 ms em 4 execuções, e 1 delas passou de 100 ms por 0,08 ms. Por isso este item segue aberto.
+- [x] `cargo bench -p cinelens-core` fica dentro dos limites, com 91.000 filmes, 5.800 séries e 2.900 animes sintéticos, o tamanho publicado em 2026-11-01 (`core/benches/budgets.rs`). A tabela abaixo é anterior às otimizações e a tamanhos antigos; depois delas, a busca mede 79 ms e o Início 59 ms.
 
 | Medida | Limite | Mediana |
 |---|---|---|
@@ -24,7 +24,7 @@ Use este roteiro para fechar a v3. A meta é a mesma das anteriores: com animes 
 | Rodada rápida: próximas obras depois de uma nota | 100 ms | 28 ms |
 | Perfil: todas as estatísticas | 100 ms | 0,6 ms |
 
-- [ ] Workflow CI verde no GitHub. A busca e o Início podem falhar lá: o Início já passou do limite no CI da v2.
+- [x] Workflow CI verde no GitHub: busca 70 ms, Início 74 ms. Antes das otimizações, falhou nas duas medidas.
 
 ## 2) Dados do dono
 
@@ -46,9 +46,9 @@ git tag v3.0.0
 git push origin v3.0.0
 ```
 
-- [ ] Merge e push da `main`.
-- [ ] `anime-model-v1` publicado.
-- [ ] `animes.json.gz` publicado, com tamanho conferido.
+- [x] Merge e push da `main`.
+- [x] `anime-model-v1` publicado: 986 KB.
+- [x] `animes.json.gz` publicado: 2.867 animes, 1,3 MB, 4% do catálogo (limite de 25%); 2.852 têm `estreia` em alguma temporada.
 - [ ] Release `v3.0.0` publicada e detectada pelo Obtainium.
 
 ## 4) Velocidade manual no celular do dono
