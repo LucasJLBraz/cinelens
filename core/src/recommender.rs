@@ -20,6 +20,8 @@ type Notas = BTreeMap<ObraId, Vec<NotaEntry>>;
 
 /// The model artifact format this core reads; the training job writes the same.
 pub const MODEL_FORMAT_VERSION: u32 = 2;
+/// The same for the anime model (ADR 0004).
+pub const ANIME_MODEL_FORMAT_VERSION: u32 = 1;
 
 #[derive(Deserialize)]
 struct ModelArtifact {

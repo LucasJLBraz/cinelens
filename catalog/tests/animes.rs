@@ -220,7 +220,7 @@ fn temporadas_come_as_tmdb_lists_them_without_specials_and_say_which_have_an_ent
 
 #[test]
 fn a_movie_in_the_mapping_is_not_taken_for_the_tv_obra_with_its_number() {
-    let mapping = json!([{"anilist_id": 1, "mal_id": 1, "type": "MOVIE", "themoviedb_id": {"movie": ARCANE}}]);
+    let mapping = json!([{"anilist_id": 1, "mal_id": 1, "type": "MOVIE", "themoviedb_id": {"movie": [ARCANE]}}]);
     let known = AniList::new(&serde_json::to_vec(&mapping).unwrap(), &BTreeMap::new()).unwrap();
     assert!(ids(&built(vec![obra(ARCANE, json!({}))], &known)).is_empty());
 }

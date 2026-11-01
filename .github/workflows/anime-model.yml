@@ -1,0 +1,80 @@
+name: Anime model
+
+# Trains the animes' factors on the frozen MyAnimeList dump (ADR 0004) and publishes the asset
+# `anime-model.json.gz` of the release `anime-model-v<format version>`, which the app downloads
+# when `anime-model-version.txt` names a version it has not seen. Only on demand: the dump never
+# changes, and nothing here runs on a schedule. Only factors leave the job: the ratings and
+# usernames stay in the runner.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the model (off keeps it as a workflow artifact, to measure first)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download the dump
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          test -n "$KAGGLE_API_TOKEN" || { echo "::error::KAGGLE_API_TOKEN secret missing, see docs/guides/kaggle.md"; exit 1; }
+          pip install --quiet kaggle==2.2.5
+          kaggle datasets download andrewgatchalian/myanimelist-user-ratings -p "$RUNNER_TEMP/dump" --unzip
+          find "$RUNNER_TEMP/dump" -name 'anime_*.csv' -exec mv {} "$RUNNER_TEMP/" \;
+          test -s "$RUNNER_TEMP/anime_user_ratings.csv" && test -s "$RUNNER_TEMP/anime_titles.csv"
+
+      - name: Download the mapping and the animes' catálogo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/anime-list-full.json" https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json
+          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          gh release download "catalog-v$FORMAT" -p animes.json.gz -D "$RUNNER_TEMP"
+
+      - name: Train
+        run: |
+          TODAY=$(date -u +%F)
+          echo "TODAY=$TODAY" >> "$GITHUB_ENV"
+          cargo run --release -p cinelens-train --bin cinelens-train-animes -- \
+            --ratings "$RUNNER_TEMP/anime_user_ratings.csv" \
+            --titles "$RUNNER_TEMP/anime_titles.csv" \
+            --mapping "$RUNNER_TEMP/anime-list-full.json" \
+            --animes "$RUNNER_TEMP/animes.json.gz" \
+            --out anime-model.json.gz \
+            --data-version "$TODAY"
+
+      - name: Keep as artifact
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: anime-model
+          path: anime-model.json.gz
+          retention-days: 7
+
+      - name: Publish
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORMAT=$(grep -oP 'ANIME_MODEL_FORMAT_VERSION: u32 = \K[0-9]+' core/src/recommender.rs)
+          TAG="anime-model-v$FORMAT"
+          NOTES="Fatores dos animes, formato $FORMAT, treinados em $TODAY. Baixado pelo app; não é uma versão do app. Treinado na amostra de notas do MyAnimeList de Andrew Gatchalian (novembro de 2023, https://www.kaggle.com/datasets/andrewgatchalian/myanimelist-user-ratings). Contém só fatores: nenhuma nota, usuário ou texto do site (ADR 0004)."
+          # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --latest=false --title "Modelo de animes (formato $FORMAT)" --notes "$NOTES"
+          gh release upload "$TAG" anime-model.json.gz --clobber
+          # What the app checks for a new model; uploaded last, after the file it names.
+          echo -n "$TODAY" > anime-model-version.txt
+          gh release upload "$TAG" anime-model-version.txt --clobber
+          gh release edit "$TAG" --notes "$NOTES"

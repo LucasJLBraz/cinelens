@@ -17,7 +17,7 @@ pub use display::{DisplayMode, Faixa, Exibicao};
 pub use estatisticas::{Acerto, Ano, Discordancia, Estatisticas, Grupo, MinhaNota, Mudanca};
 pub use filtro::{Filtro, Mostrar, Tipo};
 pub use obra::{read_mapeamento, Mapeamento, ObraId};
-pub use recommender::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION, SERIE_WEIGHT};
+pub use recommender::{ridge, ANIME_MODEL_FORMAT_VERSION, GENOME_ASPECTS, MODEL_FORMAT_VERSION, SERIE_WEIGHT};
 pub use sync::SyncStorage;
 use recommender::Model;
 

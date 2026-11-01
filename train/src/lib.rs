@@ -11,13 +11,16 @@
 //! The content mapping (feature → bias and factors) is learned from the published movies'
 //! factors, for the movies the training data lacks.
 //!
+//! `train_animes` runs the same method on the MyAnimeList dump, by entry, and joins the entries
+//! to TMDB afterwards (ADR 0004); nothing of it touches the movie model.
+//!
 //! The tag genome subset (`add_genome`) keeps, per published movie, only the
 //! `cinelens_core::GENOME_ASPECTS` scores: "parecidos, mas…" and o que pesou read them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::BufRead;
 
-use cinelens_core::{ridge, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
+use cinelens_core::{ridge, Mapeamento, ANIME_MODEL_FORMAT_VERSION, GENOME_ASPECTS, MODEL_FORMAT_VERSION};
 use serde::{Deserialize, Serialize};
 
 const FACTORS: usize = 32;
@@ -62,6 +65,28 @@ struct GenomeScores {
 #[derive(Serialize)]
 struct MovieFactors {
     tmdb_id: u32,
+    bias: f32,
+    factors: Vec<f32>,
+    ratings: u32,
+}
+
+/// The anime model: entries joined to TMDB. `movies` are the animated features, under their filme
+/// ids: the bridge from the owner's notas on filmes.
+#[derive(Serialize)]
+pub struct AnimeModel {
+    format_version: u32,
+    data_version: String,
+    global_mean: f32,
+    lambda: f32,
+    movies: Vec<MovieFactors>,
+    animes: Vec<AnimeFactors>,
+    content: Vec<ContentFactors>,
+}
+
+#[derive(Serialize)]
+struct AnimeFactors {
+    tmdb_id: u32,
+    temporada: u32,
     bias: f32,
     factors: Vec<f32>,
     ratings: u32,
@@ -184,6 +209,37 @@ pub fn train(
     if let Some(letterboxd) = letterboxd {
         r.read_letterboxd(letterboxd)?;
     }
+    let (by_movie, movies) = als(&r);
+    let n_movies = r.movie_keys.len();
+    const W: usize = FACTORS + 1;
+    let mut published: Vec<MovieFactors> = (0..n_movies)
+        .filter(|&m| by_movie[m].len() >= MIN_RATINGS && r.movie_keys[m] < NO_TMDB)
+        .map(|m| {
+            let row = &movies[m * W..][..W];
+            MovieFactors {
+                tmdb_id: r.movie_keys[m] as u32,
+                bias: row[0],
+                factors: row[1..].to_vec(),
+                ratings: by_movie[m].len() as u32,
+            }
+        })
+        .collect();
+    published.sort_by_key(|m| m.tmdb_id);
+    let content = content_mapping(&published, content);
+
+    Ok(Model {
+        format_version: MODEL_FORMAT_VERSION,
+        data_version: data_version.to_string(),
+        global_mean: r.rating.iter().map(|&x| x as f64).sum::<f64>() as f32 / r.rating.len().max(1) as f32,
+        lambda: LAMBDA,
+        movies: published,
+        content,
+        genome: None,
+    })
+}
+
+/// Alternating least squares: each movie's rating indexes, and its row `[bias, factors…]`.
+fn als(r: &Ratings) -> (Vec<Vec<u32>>, Vec<f32>) {
     let (n_users, n_movies) = (r.user_source.len(), r.movie_keys.len());
     let by_user = group(&r.user, n_users);
     let by_movie = group(&r.movie, n_movies);
@@ -239,30 +295,7 @@ pub fn train(
         letterboxd_bias = if count == 0 { 0.0 } else { (sum / count as f64) as f32 };
     }
 
-    let mut published: Vec<MovieFactors> = (0..n_movies)
-        .filter(|&m| by_movie[m].len() >= MIN_RATINGS && r.movie_keys[m] < NO_TMDB)
-        .map(|m| {
-            let row = &movies[m * W..][..W];
-            MovieFactors {
-                tmdb_id: r.movie_keys[m] as u32,
-                bias: row[0],
-                factors: row[1..].to_vec(),
-                ratings: by_movie[m].len() as u32,
-            }
-        })
-        .collect();
-    published.sort_by_key(|m| m.tmdb_id);
-    let content = content_mapping(&published, content);
-
-    Ok(Model {
-        format_version: MODEL_FORMAT_VERSION,
-        data_version: data_version.to_string(),
-        global_mean: r.rating.iter().map(|&x| x as f64).sum::<f64>() as f32 / r.rating.len().max(1) as f32,
-        lambda: LAMBDA,
-        movies: published,
-        content,
-        genome: None,
-    })
+    (by_movie, movies)
 }
 
 /// Adds the tag genome subset from ml-latest's `genome-tags.csv` (`tagId,tag`) and
@@ -323,9 +356,12 @@ pub fn add_genome(model: &mut Model, tags: impl BufRead, scores: impl BufRead, l
 /// Each content feature's shrunk mean bias and factors over the published movies that have it.
 fn content_mapping(published: &[MovieFactors], content: &[(u32, Vec<String>)]) -> Vec<ContentFactors> {
     let by_id: HashMap<u32, &MovieFactors> = published.iter().map(|m| (m.tmdb_id, m)).collect();
+    mapping_from(content.iter().filter_map(|(id, features)| Some((*by_id.get(id)?, features))))
+}
+
+fn mapping_from<'a>(pairs: impl Iterator<Item = (&'a MovieFactors, &'a Vec<String>)>) -> Vec<ContentFactors> {
     let mut sums: HashMap<&str, (usize, f32, Vec<f32>)> = HashMap::new();
-    for (id, features) in content {
-        let Some(m) = by_id.get(id) else { continue };
+    for (m, features) in pairs {
         for f in features {
             let (n, bias, factors) = sums.entry(f).or_insert_with(|| (0, 0.0, vec![0.0; FACTORS]));
             *n += 1;
@@ -343,6 +379,123 @@ fn content_mapping(published: &[MovieFactors], content: &[(u32, Vec<String>)]) -
         .collect();
     mapping.sort_by(|a, b| a.feature.cmp(&b.feature));
     mapping
+}
+
+/// The dump's `anime_user_ratings.csv` and `anime_titles.csv`, joined to TMDB through `mapping`.
+/// `content` is each anime's features in the animes' catálogo, the mapping learned from them for
+/// the animes without factors. Coverage of the mapping is logged.
+pub fn train_animes(
+    ratings: impl BufRead,
+    titles: impl BufRead,
+    mapping: &[Mapeamento],
+    content: &[(u32, Vec<String>)],
+    data_version: &str,
+) -> Result<AnimeModel, String> {
+    let hentai = read_hentai(titles)?;
+    let mut r = Ratings::default();
+    r.read_mal(ratings, &hentai)?;
+    let (by_movie, movies) = als(&r);
+    const W: usize = FACTORS + 1;
+
+    let joined: HashMap<u32, &Mapeamento> = mapping.iter().filter_map(|m| Some((m.mal_id?, m))).collect();
+    // (TMDB id, temporada) → (ratings, Σ ratings·row).
+    let mut temporadas: BTreeMap<(u32, u32), (u32, Vec<f32>)> = BTreeMap::new();
+    let mut filmes: BTreeMap<u32, (u32, Vec<f32>)> = BTreeMap::new();
+    let (mut with_id, mut ratings_with_id, mut published) = (0usize, 0usize, 0usize);
+    for m in (0..r.movie_keys.len()).filter(|&m| by_movie[m].len() >= MIN_RATINGS) {
+        published += by_movie[m].len();
+        let Some(entry) = joined.get(&(r.movie_keys[m] as u32)) else { continue };
+        let n = by_movie[m].len() as u32;
+        let slot = match (entry.tmdb_tv().filter(|_| entry.serializado()), entry.tmdb_filme().filter(|_| entry.tipo.as_deref() == Some("MOVIE"))) {
+            // A run the mapping does not split counts as its first temporada.
+            (Some(tv), _) => match entry.temporada().unwrap_or(1) {
+                0 => continue,
+                temporada => temporadas.entry((tv, temporada)).or_insert((0, vec![0.0; W])),
+            },
+            (_, Some(filme)) => filmes.entry(filme).or_insert((0, vec![0.0; W])),
+            _ => continue,
+        };
+        with_id += 1;
+        ratings_with_id += by_movie[m].len();
+        slot.0 += n;
+        slot.1.iter_mut().zip(&movies[m * W..][..W]).for_each(|(a, b)| *a += n as f32 * b);
+    }
+    let entries = (0..r.movie_keys.len()).filter(|&m| by_movie[m].len() >= MIN_RATINGS).count();
+    eprintln!(
+        "anime-lists: {with_id} of {entries} entries joined to TMDB, {:.1}% of their ratings; {} temporadas, {} filmes",
+        ratings_with_id as f64 * 100.0 / published.max(1) as f64,
+        temporadas.len(),
+        filmes.len()
+    );
+    let mean_row = |(n, row): (u32, Vec<f32>)| (n, row[0] / n as f32, row[1..].iter().map(|x| x / n as f32).collect::<Vec<f32>>());
+    let animes: Vec<AnimeFactors> = temporadas
+        .into_iter()
+        .map(|((tmdb_id, temporada), sum)| {
+            let (ratings, bias, factors) = mean_row(sum);
+            AnimeFactors { tmdb_id, temporada, bias, factors, ratings }
+        })
+        .collect();
+    let movies: Vec<MovieFactors> = filmes
+        .into_iter()
+        .map(|(tmdb_id, sum)| {
+            let (ratings, bias, factors) = mean_row(sum);
+            MovieFactors { tmdb_id, bias, factors, ratings }
+        })
+        .collect();
+    // Each anime as it is recommended: from its first temporada.
+    let primeiras: HashMap<u32, MovieFactors> = animes.iter().rev().map(|a| (a.tmdb_id, MovieFactors { tmdb_id: a.tmdb_id, bias: a.bias, factors: a.factors.clone(), ratings: a.ratings })).collect();
+    let content = mapping_from(content.iter().filter_map(|(id, features)| Some((primeiras.get(id)?, features))));
+    Ok(AnimeModel {
+        format_version: ANIME_MODEL_FORMAT_VERSION,
+        data_version: data_version.to_string(),
+        global_mean: r.rating.iter().map(|&x| x as f64).sum::<f64>() as f32 / r.rating.len().max(1) as f32,
+        lambda: LAMBDA,
+        movies,
+        animes,
+        content,
+    })
+}
+
+/// A CSV's records; a quoted field may hold line breaks.
+fn records(input: impl BufRead) -> impl Iterator<Item = Result<String, String>> {
+    let mut lines = input.lines();
+    std::iter::from_fn(move || {
+        let mut record: Result<String, String> = lines.next()?.map_err(|e| e.to_string());
+        while let Ok(r) = &mut record {
+            if r.bytes().filter(|&b| b == b'"').count() % 2 == 0 {
+                break;
+            }
+            match lines.next() {
+                Some(Ok(more)) => {
+                    r.push('\n');
+                    r.push_str(&more);
+                }
+                Some(Err(e)) => record = Err(e.to_string()),
+                None => break,
+            }
+        }
+        Some(record.map(|r| r.trim_end_matches('\r').to_string()))
+    })
+}
+
+/// The index of `name` in a CSV's header.
+fn column(header: &[String], name: &str) -> Result<usize, String> {
+    header.iter().position(|h| h == name).ok_or_else(|| format!("no `{name}` column in {header:?}"))
+}
+
+/// The entries `anime_titles.csv` lists under the genre Hentai.
+fn read_hentai(titles: impl BufRead) -> Result<HashSet<u32>, String> {
+    let mut rows = records(titles);
+    let header = split_csv_line(&rows.next().ok_or_else(|| "anime titles: empty file".to_string())??);
+    let (id, genres) = (column(&header, "anime_id")?, column(&header, "genres")?);
+    let mut hentai = HashSet::new();
+    for row in rows {
+        let row = split_csv_line(&row?);
+        if row.get(genres).is_some_and(|g| g.split(',').any(|g| g.trim() == "Hentai")) {
+            hentai.extend(row.get(id).and_then(|i| i.parse::<u32>().ok()));
+        }
+    }
+    Ok(hentai)
 }
 
 #[derive(Default)]
@@ -388,6 +541,28 @@ impl Ratings {
             let rating = parse_rating(rating).ok_or_else(bad)?;
             let key = links.tmdb.get(&movie).map_or(NO_TMDB + movie as u64, |&t| t as u64);
             self.push(MOVIELENS, user, key, rating);
+        }
+        Ok(())
+    }
+
+    /// `anime_user_ratings.csv`, each entry a movie key. A score of 0 is no score; the rest, 1–10,
+    /// read on the app's 0.5–5 scale.
+    fn read_mal(&mut self, input: impl BufRead, hentai: &HashSet<u32>) -> Result<(), String> {
+        let mut rows = records(input);
+        let header = split_csv_line(&rows.next().ok_or_else(|| "anime ratings: empty file".to_string())??);
+        let (user_col, anime_col, score_col) = (column(&header, "user_id")?, column(&header, "anime_id")?, column(&header, "user_score")?);
+        let mut users: HashMap<String, u32> = HashMap::new();
+        for row in rows {
+            let row = row?;
+            let fields = split_csv_line(&row);
+            let bad = || format!("anime ratings: `{row}`");
+            let field = |i: usize| fields.get(i).map(String::as_str).ok_or_else(bad);
+            let score: f32 = field(score_col)?.parse().map_err(|_| bad())?;
+            let anime: u32 = field(anime_col)?.parse().map_err(|_| bad())?;
+            let Some(rating) = parse_rating(&(score / 2.0).to_string()).filter(|_| !hentai.contains(&anime)) else { continue };
+            let next_user = users.len() as u32;
+            let user = *users.entry(field(user_col)?.to_string()).or_insert(next_user);
+            self.push(MOVIELENS, user, anime as u64, rating);
         }
         Ok(())
     }

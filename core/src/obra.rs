@@ -62,7 +62,8 @@ pub struct Mapeamento {
 #[derive(Deserialize)]
 struct TmdbRef {
     tv: Option<u32>,
-    movie: Option<u32>,
+    #[serde(default)]
+    movie: Vec<u32>,
 }
 
 #[derive(Deserialize)]
@@ -81,7 +82,7 @@ impl Mapeamento {
     }
 
     pub fn tmdb_filme(&self) -> Option<u32> {
-        self.tmdb.as_ref()?.movie
+        self.tmdb.as_ref()?.movie.first().copied()
     }
 
     /// TMDB's season number; `None` for a run the mapping does not split.
