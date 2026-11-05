@@ -243,7 +243,9 @@ fn synthetic_catalog(n: usize) -> Vec<u8> {
         .map(|i| {
             let cast: Vec<String> = (0..8).map(|k| person(i * 8 + k)).collect();
             format!(
-                r#"{{"tmdb_id":{i},"work_type":"movie","title":"Filme número {i}","original_title":"Movie number {i}","year":{year},"release_date":"{year}-05-17","runtime":112,"genre_ids":[18,35,10749],"original_language":"en","countries":["US","GB"],"overview":"{overview}","poster_path":"/abcdefghijklmnopqrstuvwxyz{i}.jpg","backdrop_path":"/zyxwvutsrqponmlkjihgfedcba{i}.jpg","imdb_id":"tt{i:07}","vote_count":{i},"vote_average":6.9,"popularity":12.3,"directors":[{director}],"composers":[{composer}],"cast":[{cast}],"trailer_youtube":"dQw4w9WgXcQ"}}"#,
+                r#"{{"tmdb_id":{i},"work_type":"movie","title":"Filme número {i}","original_title":"Movie number {i}"{english},"year":{year},"release_date":"{year}-05-17","runtime":112,"genre_ids":[18,35,10749],"original_language":"en","countries":["US","GB"],"overview":"{overview}","poster_path":"/abcdefghijklmnopqrstuvwxyz{i}.jpg","backdrop_path":"/zyxwvutsrqponmlkjihgfedcba{i}.jpg","imdb_id":"tt{i:07}","vote_count":{i},"vote_average":6.9,"popularity":12.3,"directors":[{director}],"composers":[{composer}],"cast":[{cast}],"trailer_youtube":"dQw4w9WgXcQ"}}"#,
+                // A third have an English title apart from both, which search also reads.
+                english = if i % 3 == 0 { format!(r#","english_title":"English film {i}""#) } else { String::new() },
                 year = 1920 + i % 106,
                 overview = "Uma sinopse de tamanho típico, com algumas frases sobre a história. ".repeat(4),
                 director = person(1_000_000 + i),

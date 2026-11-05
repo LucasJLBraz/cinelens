@@ -331,8 +331,9 @@ fn trouble_with_the_changes_api_fetches_every_filme() {
 /// The fixture plus a filme first shown at a festival long before its Brazilian release, found
 /// only by the discover over Brazilian releases, with English and Portuguese translations.
 fn fixture_com_estreia_no_brasil(request: &str) -> Result<Option<Value>, String> {
-    if request.starts_with("/discover/movie") && request.contains("&region=BR&release_date.gte=2026-04-28&release_date.lte=2026-10-25&") {
+    if request.starts_with("/discover/movie") && request.contains("&region=BR&") && request.contains("&release_date.gte=2026-04-28&release_date.lte=2026-10-25&") {
         assert!(request.contains("vote_count.gte=5&"));
+        assert!(request.contains("&with_release_type=1|2|3&"));
         return Ok(Some(json!({"page": 1, "total_pages": 1, "results": [{"id": 2000}]})));
     }
     if request.starts_with("/movie/2000?") {

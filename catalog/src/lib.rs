@@ -713,13 +713,17 @@ fn discover(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<
     })
 }
 
+/// TMDB release types that count as opening in Brazil: a premiere (a festival, as Feito Pipa at
+/// Gramado), limited and wide theatrical. A streaming, DVD or TV date does not make an old film new.
+const ESTREIAS: &str = "1|2|3";
+
 /// Movies released in Brazil between `from` and `to`, whatever their first release: a film shown at
 /// a festival months before (Feito Pipa, at the Berlinale) is still a recent release here.
 fn discover_brasil(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<Vec<u32>, String> {
     discover_pages(fetch, from, to, |page| {
         format!(
             "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte={MIN_RUNTIME}\
-             &vote_count.gte={min_votes}&region=BR&release_date.gte={from}&release_date.lte={to}&page={page}"
+             &vote_count.gte={min_votes}&region=BR&with_release_type={ESTREIAS}&release_date.gte={from}&release_date.lte={to}&page={page}"
         )
     })
 }
