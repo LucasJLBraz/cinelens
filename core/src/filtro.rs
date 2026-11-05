@@ -220,11 +220,12 @@ pub(crate) struct Busca {
 pub(crate) fn searchable(m: &Movie) -> Busca {
     let palavras = |t: &str| fold(t).split_whitespace().collect::<Vec<_>>().join(" ");
     let (title, original) = (palavras(&m.title), palavras(&m.original_title));
+    let english = m.english_title.as_deref().map(palavras).unwrap_or_default();
     let juntos = |t: &str| t.replace(' ', "");
     // Composers are not searched: owners look up who directed or acted.
     let people: Vec<&str> = m.directors.iter().chain(&m.cast).map(|p| p.name.as_str()).collect();
     Busca {
-        titulos: format!("{title}\n{original}\n{} {}", juntos(&title), juntos(&original)),
+        titulos: format!("{title}\n{original}\n{english}\n{} {} {}", juntos(&title), juntos(&original), juntos(&english)),
         pessoas: fold(&people.join("\n")),
     }
 }
