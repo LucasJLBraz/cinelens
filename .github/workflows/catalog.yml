@@ -61,7 +61,7 @@ jobs:
 
       - name: Release tag
         run: |
-          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          FORMAT=$(grep -oP 'const CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
           echo "TAG=catalog-v$FORMAT" >> "$GITHUB_ENV"
           echo "TODAY=$(date -u +%F)" >> "$GITHUB_ENV"
 
