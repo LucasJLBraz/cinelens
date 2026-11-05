@@ -204,6 +204,9 @@ struct Movie {
     work_type: WorkType,
     title: String,
     original_title: String,
+    /// Searched only; a catálogo built before it has none.
+    #[serde(default)]
+    english_title: Option<String>,
     year: Option<u16>,
     poster_path: Option<String>,
     #[serde(default)]

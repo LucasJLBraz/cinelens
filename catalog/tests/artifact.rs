@@ -327,3 +327,56 @@ fn trouble_with_the_changes_api_fetches_every_filme() {
     assert_eq!(artifact.obras(), 4);
     assert_eq!(*pedidos.lock().unwrap(), 5);
 }
+
+/// The fixture plus a filme first shown at a festival long before its Brazilian release, found
+/// only by the discover over Brazilian releases, with English and Portuguese translations.
+fn fixture_com_estreia_no_brasil(request: &str) -> Result<Option<Value>, String> {
+    if request.starts_with("/discover/movie") && request.contains("&region=BR&release_date.gte=2026-04-28&release_date.lte=2026-10-25&") {
+        assert!(request.contains("vote_count.gte=5&"));
+        return Ok(Some(json!({"page": 1, "total_pages": 1, "results": [{"id": 2000}]})));
+    }
+    if request.starts_with("/movie/2000?") {
+        let mut pipa = fixture_tmdb(&request.replace("/movie/2000?", "/movie/1311?"))?.unwrap();
+        pipa["id"] = json!(2000);
+        pipa["title"] = json!("Feito Pipa");
+        pipa["original_title"] = json!("Feito Pipa");
+        pipa["release_date"] = json!("2026-02-15");
+        pipa["translations"] = json!({"translations": [
+            {"iso_639_1": "en", "iso_3166_1": "GB", "data": {"title": "Gugu's World (GB)"}},
+            {"iso_639_1": "en", "iso_3166_1": "US", "data": {"title": "Gugu's World"}},
+            {"iso_639_1": "pt", "iso_3166_1": "BR", "data": {"title": "Feito Pipa"}}
+        ]});
+        return Ok(Some(pipa));
+    }
+    let mut body = fixture_tmdb(request)?;
+    // Its English title repeats the original one: nothing to keep.
+    if request.starts_with("/movie/550?") {
+        body.as_mut().unwrap()["translations"] =
+            json!({"translations": [{"iso_639_1": "en", "iso_3166_1": "US", "data": {"title": "Fight Club"}}]});
+    }
+    Ok(body)
+}
+
+#[test]
+fn a_filme_released_in_brazil_lately_enters_however_old_its_first_release() {
+    let artifact = build(&fixture_com_estreia_no_brasil, &no_omdb, &mut BTreeMap::new(), &config(0)).unwrap();
+    let artifact = serde_json::to_value(&artifact).unwrap();
+    let pipa = artifact["movies"].as_array().unwrap().iter().find(|m| m["tmdb_id"] == 2000).unwrap();
+    assert_eq!(pipa["english_title"], "Gugu's World");
+    let fight_club = artifact["movies"].as_array().unwrap().iter().find(|m| m["tmdb_id"] == 550).unwrap();
+    assert!(fight_club.get("english_title").is_none());
+}
+
+#[test]
+fn search_finds_a_filme_by_its_english_title() {
+    let artifact = build(&fixture_com_estreia_no_brasil, &no_omdb, &mut BTreeMap::new(), &config(0)).unwrap();
+    let core = Core::open(&serde_json::to_vec(&artifact).unwrap()).unwrap();
+    let busca = |texto: &str| -> Vec<u32> {
+        let filtro = Filtro { busca: texto.into(), ..Filtro::default() };
+        core.explorar(&filtro, 0).movies.iter().map(|m| m.id.tmdb_id()).collect()
+    };
+    assert_eq!(busca("gugus world"), [2000]);
+    assert_eq!(busca("feito pipa"), [2000]);
+    // The English title stays out of what the app shows.
+    assert_eq!(core.movie(ObraId::filme(2000)).unwrap().card.title, "Feito Pipa");
+}

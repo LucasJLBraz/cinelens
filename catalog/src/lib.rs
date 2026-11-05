@@ -187,6 +187,10 @@ struct Movie {
     work_type: &'static str,
     title: String,
     original_title: String,
+    /// The English title, when it differs from both: search finds "Pretty Village, Pretty
+    /// Flame" by it. Filmes only; an asset built before it has none.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    english_title: Option<String>,
     year: Option<u16>,
     release_date: Option<String>,
     runtime: Option<u32>,
@@ -301,6 +305,27 @@ struct Details {
     watch_providers: WatchProviders,
     #[serde(default)]
     release_dates: ReleaseDates,
+    #[serde(default)]
+    translations: Translations,
+}
+
+#[derive(Deserialize, Default)]
+struct Translations {
+    translations: Vec<Translation>,
+}
+
+#[derive(Deserialize)]
+struct Translation {
+    iso_639_1: String,
+    iso_3166_1: String,
+    #[serde(default)]
+    data: TranslationData,
+}
+
+#[derive(Deserialize, Default)]
+struct TranslationData {
+    #[serde(default)]
+    title: String,
 }
 
 /// A série on TMDB.
@@ -491,6 +516,7 @@ pub fn build_incremental(
         ids.extend(discover(fetch, MIN_VOTES, &format!("{year}-01-01"), &format!("{year}-12-31"))?);
     }
     ids.extend(discover(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
+    ids.extend(discover_brasil(fetch, MIN_VOTES_RECENT, config.recent_since, config.today)?);
 
     let (pedir, reaproveitados, provedores_anteriores) = reaproveitar(fetch, anterior, ids, config.today)?;
     let (mut movies, providers): (Vec<Movie>, Vec<Vec<Provider>>) =
@@ -687,6 +713,17 @@ fn discover(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<
     })
 }
 
+/// Movies released in Brazil between `from` and `to`, whatever their first release: a film shown at
+/// a festival months before (Feito Pipa, at the Berlinale) is still a recent release here.
+fn discover_brasil(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<Vec<u32>, String> {
+    discover_pages(fetch, from, to, |page| {
+        format!(
+            "/discover/movie?language=pt-BR&include_adult=false&with_runtime.gte={MIN_RUNTIME}\
+             &vote_count.gte={min_votes}&region=BR&release_date.gte={from}&release_date.lte={to}&page={page}"
+        )
+    })
+}
+
 fn discover_series(fetch: &impl Fetch, min_votes: u32, from: &str, to: &str) -> Result<Vec<u32>, String> {
     discover_pages(fetch, from, to, |page| {
         format!(
@@ -723,7 +760,7 @@ fn discover_pages(fetch: &impl Fetch, from: &str, to: &str, request: impl Fn(u32
 }
 
 fn movie_request(id: u32) -> String {
-    format!("/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates&include_video_language=pt,en")
+    format!("/movie/{id}?language=pt-BR&append_to_response=credits,videos,watch/providers,release_dates,translations&include_video_language=pt,en")
 }
 
 fn serie_request(id: u32) -> String {
@@ -884,6 +921,7 @@ fn obra_tv(mut d: SerieDetails, id: fn(u32) -> ObraId, work_type: &'static str) 
         release_date: d.first_air_date.filter(|r| !r.is_empty()),
         title: d.name,
         original_title: d.original_name,
+        english_title: None,
         runtime: d.episode_run_time.first().copied().or(d.last_episode_to_air.and_then(|e| e.runtime)).filter(|&r| r > 0),
         genre_ids,
         original_language: d.original_language,
@@ -905,8 +943,18 @@ fn obra_tv(mut d: SerieDetails, id: fn(u32) -> ObraId, work_type: &'static str) 
     (serie, providers)
 }
 
+/// TMDB's English title (US first), unless it repeats the title or the original one.
+fn english_title(d: &Details) -> Option<String> {
+    let en = |t: &&Translation| t.iso_639_1 == "en" && !t.data.title.is_empty();
+    let us = d.translations.translations.iter().filter(en).find(|t| t.iso_3166_1 == "US");
+    let title = us.or_else(|| d.translations.translations.iter().find(en))?.data.title.trim();
+    let mesmo = |t: &str| t.trim().eq_ignore_ascii_case(title);
+    (!mesmo(&d.title) && !mesmo(&d.original_title)).then(|| title.to_string())
+}
+
 fn movie_details(d: Details, watch: Option<Watch>) -> Movie {
     Movie {
+        english_title: english_title(&d),
         tmdb_id: ObraId::filme(d.id),
         work_type: "movie",
         directors: crew(&d.credits, "Director"),
