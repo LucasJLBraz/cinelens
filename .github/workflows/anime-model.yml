@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           curl -fsSLo "$RUNNER_TEMP/anime-list-full.json" https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json
-          FORMAT=$(grep -oP 'CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
+          FORMAT=$(grep -oP 'const CATALOG_FORMAT_VERSION: u32 = \K[0-9]+' core/src/lib.rs)
           gh release download "catalog-v$FORMAT" -p animes.json.gz -D "$RUNNER_TEMP"
 
       - name: Train
@@ -68,7 +68,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FORMAT=$(grep -oP 'ANIME_MODEL_FORMAT_VERSION: u32 = \K[0-9]+' core/src/recommender.rs)
+          FORMAT=$(grep -oP 'const ANIME_MODEL_FORMAT_VERSION: u32 = \K[0-9]+' core/src/recommender.rs)
           TAG="anime-model-v$FORMAT"
           NOTES="Fatores dos animes, formato $FORMAT, treinados em $TODAY. Baixado pelo app; não é uma versão do app. Treinado na amostra de notas do MyAnimeList de Andrew Gatchalian (novembro de 2023, https://www.kaggle.com/datasets/andrewgatchalian/myanimelist-user-ratings). Contém só fatores: nenhuma nota, usuário ou texto do site (ADR 0004)."
           # Prerelease and never "latest", so Obtainium keeps tracking the app releases only.
